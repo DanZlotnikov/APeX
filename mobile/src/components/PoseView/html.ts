@@ -102,6 +102,11 @@ let drawUtils  = null;
 let rafId      = null;
 let hideTimer  = null;
 
+// Temporal smoothing: EMA applied to each landmark across frames.
+// Lower alpha → smoother but slightly more lag. 0.45 is a good balance.
+const SMOOTH_ALPHA = 0.45;
+let smoothed = null; // array of {x,y,z,visibility} mirroring the landmark array
+
 const IC_PLAY   = '<svg viewBox="0 0 24 24" width="15" height="15" fill="white"><polygon points="6,3 20,12 6,21"/></svg>';
 const IC_PAUSE  = '<svg viewBox="0 0 24 24" width="15" height="15" fill="white"><rect x="4" y="3" width="5" height="18" rx="1.5"/><rect x="15" y="3" width="5" height="18" rx="1.5"/></svg>';
 const IC_REPLAY = '<svg viewBox="0 0 24 24" width="15" height="15" fill="white"><path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/></svg>';
@@ -162,6 +167,24 @@ function sizeWrap() {
 
 window.addEventListener('resize', sizeWrap);
 
+// ── landmark smoothing ───────────────────────────────────────────────────────
+
+function applySmoothing(raw) {
+  if (!smoothed || smoothed.length !== raw.length) {
+    // First frame or landmark count changed — bootstrap with raw values.
+    smoothed = raw.map(lm => ({ x: lm.x, y: lm.y, z: lm.z, visibility: lm.visibility ?? 1 }));
+    return smoothed;
+  }
+  const a = SMOOTH_ALPHA, b = 1 - a;
+  for (let i = 0; i < raw.length; i++) {
+    smoothed[i].x          = a * raw[i].x          + b * smoothed[i].x;
+    smoothed[i].y          = a * raw[i].y          + b * smoothed[i].y;
+    smoothed[i].z          = a * raw[i].z          + b * smoothed[i].z;
+    smoothed[i].visibility = a * (raw[i].visibility ?? 1) + b * smoothed[i].visibility;
+  }
+  return smoothed;
+}
+
 // ── render loop ─────────────────────────────────────────────────────────────
 
 function renderFrame() {
@@ -171,9 +194,10 @@ function renderFrame() {
   ctx.clearRect(0, 0, cvs.width, cvs.height);
   const result = landmarker.detectForVideo(vid, performance.now());
   if (result.landmarks?.length) {
-    drawUtils.drawConnectors(result.landmarks[0], PoseLandmarker.POSE_CONNECTIONS,
+    const landmarks = applySmoothing(result.landmarks[0]);
+    drawUtils.drawConnectors(landmarks, PoseLandmarker.POSE_CONNECTIONS,
       { color: '#00FFE0', lineWidth: 3 });
-    drawUtils.drawLandmarks(result.landmarks[0],
+    drawUtils.drawLandmarks(landmarks,
       { color: '#00FF00', lineWidth: 1, radius: 4 });
   }
   rafId = requestAnimationFrame(renderFrame);
@@ -239,6 +263,7 @@ vid.addEventListener('ended', () => {
 // ── video lifecycle ──────────────────────────────────────────────────────────
 
 vid.addEventListener('loadedmetadata', sizeWrap);
+vid.addEventListener('seeked', () => { smoothed = null; });
 
 vid.addEventListener('loadeddata', () => {
   if (landmarker && vid.readyState >= 2) {
