@@ -1,11 +1,14 @@
+import { EXERCISE_ANALYZER_JS } from '../../utils/exerciseAnalyzer';
+
 /**
  * Self-contained HTML page that runs MediaPipe Pose Landmarker entirely in a
  * browser/WebView context — no backend needed.
  *
  * Communication:
  *   host → page  : postMessage({ type:'loadVideo', uri })
- *   page → host  : postMessage({ type:'ready' }) once model is loaded
- *                  postMessage({ type:'error', message }) on failure
+ *   page → host  : postMessage({ type:'ready' })          once model is loaded
+ *                  postMessage({ type:'error', message })  on failure
+ *                  postMessage({ type:'exerciseResults', results }) on video end
  */
 export const MEDIAPIPE_HTML = `<!DOCTYPE html>
 <html lang="en">
@@ -185,6 +188,8 @@ function applySmoothing(raw) {
   return smoothed;
 }
 
+${EXERCISE_ANALYZER_JS}
+
 // ── render loop ─────────────────────────────────────────────────────────────
 
 function renderFrame() {
@@ -195,6 +200,7 @@ function renderFrame() {
   const result = landmarker.detectForVideo(vid, performance.now());
   if (result.landmarks?.length) {
     const landmarks = applySmoothing(result.landmarks[0]);
+    landmarkHistory.push(copyLandmarks(landmarks));
     drawUtils.drawConnectors(landmarks, PoseLandmarker.POSE_CONNECTIONS,
       { color: '#00FFE0', lineWidth: 3 });
     drawUtils.drawLandmarks(landmarks,
@@ -229,7 +235,11 @@ ctrl.addEventListener('click', (e) => {
 pbtn.addEventListener('click', (e) => {
   e.stopPropagation();
   if (vid.paused || vid.ended) {
-    if (vid.ended) { vid.currentTime = 0; ctx.clearRect(0, 0, cvs.width, cvs.height); }
+    if (vid.ended) {
+      vid.currentTime = 0;
+      ctx.clearRect(0, 0, cvs.width, cvs.height);
+      landmarkHistory.length = 0; // reset so replay produces a fresh analysis
+    }
     void vid.play();
   } else {
     vid.pause();
@@ -257,6 +267,8 @@ vid.addEventListener('ended', () => {
   if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
   pbtn.innerHTML = IC_REPLAY;
   setMsg('');
+  const results = analyzeExercises();
+  if (results) postUp({ type: 'exerciseResults', results: results });
   showCtrl(true);
 });
 
@@ -290,6 +302,7 @@ function onMsg(e) {
   try {
     const m = JSON.parse(typeof e.data === 'string' ? e.data : '{}');
     if (m.type === 'loadVideo' && m.uri) {
+      landmarkHistory.length = 0;
       vid.src = m.uri;
       vid.load();
       setMsg('');

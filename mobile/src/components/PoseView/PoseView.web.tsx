@@ -1,28 +1,20 @@
 import React, { useEffect, useRef } from 'react';
 import { StyleSheet, View } from 'react-native';
+import { ExerciseResults } from '../../utils/exerciseAnalyzer';
 import { MEDIAPIPE_HTML } from './html';
 
 interface Props {
   videoUri: string;
+  onExerciseResults?: (results: ExerciseResults) => void;
 }
 
-/**
- * Web implementation: mounts the MediaPipe HTML page inside a programmatically
- * created <iframe> so we stay in Expo/React Native component space (no raw JSX
- * DOM elements, no TypeScript lib:dom conflicts).
- *
- * Blob URLs: the iframe is loaded from a blob: URL derived from the same origin
- * as the parent page, so the video blob: / file URI is accessible from inside.
- */
-export default function PoseView({ videoUri }: Props) {
-  // ref typed as `any` — we only use it as a DOM node in useEffect (web only).
+export default function PoseView({ videoUri, onExerciseResults }: Props) {
   const containerRef = useRef<any>(null);
 
   useEffect(() => {
     const el: HTMLElement | null = containerRef.current;
     if (!el) return;
 
-    // Create an iframe containing the full MediaPipe HTML pipeline.
     const blob = new Blob([MEDIAPIPE_HTML], { type: 'text/html' });
     const blobSrc = URL.createObjectURL(blob);
 
@@ -32,7 +24,6 @@ export default function PoseView({ videoUri }: Props) {
     iframe.setAttribute('allow', 'autoplay');
     el.appendChild(iframe);
 
-    // Forward 'ready' from iframe → send video URI back in.
     function onMessage(ev: MessageEvent) {
       try {
         const msg = JSON.parse(typeof ev.data === 'string' ? ev.data : '{}');
@@ -41,6 +32,9 @@ export default function PoseView({ videoUri }: Props) {
             JSON.stringify({ type: 'loadVideo', uri: videoUri }),
             '*',
           );
+        }
+        if (msg.type === 'exerciseResults' && onExerciseResults) {
+          onExerciseResults(msg.results);
         }
       } catch {}
     }
@@ -51,7 +45,7 @@ export default function PoseView({ videoUri }: Props) {
       URL.revokeObjectURL(blobSrc);
       if (el.contains(iframe)) el.removeChild(iframe);
     };
-  }, [videoUri]);
+  }, [videoUri, onExerciseResults]);
 
   return <View ref={containerRef} style={styles.container} />;
 }
