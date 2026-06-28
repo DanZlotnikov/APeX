@@ -27,6 +27,7 @@ export default function CameraScreen({ pickOnMount, testMode, onVideoReady, onBa
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState<number | null>(null);
   const [videoUri, setVideoUri] = useState<string | null>(null);
+  const [videoSource, setVideoSource] = useState<'record' | 'upload'>('record');
   const [error, setError] = useState<string | null>(null);
   const [preparing, setPreparing] = useState(false);
 
@@ -103,7 +104,10 @@ export default function CameraScreen({ pickOnMount, testMode, onVideoReady, onBa
         mediaTypes: ImagePicker.MediaTypeOptions.Videos,
         quality: 1,
       });
-      if (!res.canceled && res.assets?.[0]?.uri) setVideoUri(res.assets[0].uri);
+      if (!res.canceled && res.assets?.[0]?.uri) {
+        setVideoSource('upload');
+        setVideoUri(res.assets[0].uri);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not open library.');
     }
@@ -136,7 +140,13 @@ export default function CameraScreen({ pickOnMount, testMode, onVideoReady, onBa
         <View style={styles.reviewFooter}>
           {error && <StatusBanner message={error} tone="error" />}
           <PrimaryButton label="Analyze Movement" onPress={handleAnalyze} loading={preparing} disabled={preparing} />
-          <PrimaryButton label="Retry" variant="secondary" onPress={() => setVideoUri(null)} disabled={preparing} style={{ marginTop: spacing.sm }} />
+          <PrimaryButton
+            label="Retry"
+            variant="secondary"
+            onPress={() => videoSource === 'upload' ? void pickVideo() : setVideoUri(null)}
+            disabled={preparing}
+            style={{ marginTop: spacing.sm }}
+          />
           <PrimaryButton label="Back" variant="secondary" onPress={onBack} disabled={preparing} style={{ marginTop: spacing.sm }} />
         </View>
       </SafeAreaView>
@@ -151,7 +161,7 @@ export default function CameraScreen({ pickOnMount, testMode, onVideoReady, onBa
       <View style={styles.cameraWrap}>
         <LiveCamera
           ref={liveCamRef}
-          onRecordingComplete={(uri: string) => setVideoUri(uri)}
+          onRecordingComplete={(uri: string) => { setVideoSource('record'); setVideoUri(uri); }}
           onError={(msg: string) => { setIsRecording(false); setCountdown(null); setError(msg); }}
         />
       </View>
