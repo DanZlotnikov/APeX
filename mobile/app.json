@@ -1,0 +1,44 @@
+{
+  "expo": {
+    "name": "APeX",
+    "slug": "apex-athlete-performance",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#0B1220"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "This app uses the camera to record short movement tests.",
+        "NSMicrophoneUsageDescription": "Audio is recorded alongside the movement video.",
+        "NSPhotoLibraryUsageDescription": "Select a test video from your library for processing."
+      }
+    },
+    "android": {
+      "permissions": ["CAMERA", "RECORD_AUDIO", "READ_EXTERNAL_STORAGE"]
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow APeX to use the camera to record movement tests.",
+          "microphonePermission": "Allow APeX to record audio with your video.",
+          "recordAudioAndroid": true
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow APeX to select a test video from your library."
+        }
+      ]
+    ]
+  }
+}
