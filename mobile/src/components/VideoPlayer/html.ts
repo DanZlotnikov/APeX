@@ -34,12 +34,12 @@ export const VIDEO_PLAYER_HTML = `<!DOCTYPE html>
   #ctrl:not(.on) #cbar{pointer-events:none}
   #cbar{display:flex;align-items:center;gap:10px;padding:0 14px 20px}
   #pbtn{
-    width:38px;height:38px;border-radius:50%;flex-shrink:0;
-    background:rgba(0,0,0,.5);border:1.5px solid rgba(255,255,255,.75);
-    color:#fff;font-size:15px;
+    width:40px;height:40px;border-radius:50%;flex-shrink:0;
+    background:rgba(0,0,0,.5);border:1.5px solid rgba(255,255,255,.6);
     display:flex;align-items:center;justify-content:center;
     cursor:pointer;-webkit-tap-highlight-color:transparent;user-select:none;
   }
+  #pbtn svg{display:block;}
   #sk{
     flex:1;height:3px;cursor:pointer;
     accent-color:#00D4BC;
@@ -68,7 +68,7 @@ export const VIDEO_PLAYER_HTML = `<!DOCTYPE html>
   <video id="vid" playsinline webkit-playsinline muted></video>
   <div id="ctrl">
     <div id="cbar">
-      <div id="pbtn">▶</div>
+      <div id="pbtn"><svg viewBox="0 0 24 24" width="15" height="15" fill="white"><polygon points="6,3 20,12 6,21"/></svg></div>
       <input id="sk" type="range" min="0" max="1000" step="1" value="0">
       <span id="tm">0:00</span>
     </div>
@@ -85,6 +85,10 @@ var sk   = document.getElementById('sk');
 var tm   = document.getElementById('tm');
 var msg  = document.getElementById('msg');
 var hideTimer = null;
+
+var IC_PLAY   = '<svg viewBox="0 0 24 24" width="15" height="15" fill="white"><polygon points="6,3 20,12 6,21"/></svg>';
+var IC_PAUSE  = '<svg viewBox="0 0 24 24" width="15" height="15" fill="white"><rect x="4" y="3" width="5" height="18" rx="1.5"/><rect x="15" y="3" width="5" height="18" rx="1.5"/></svg>';
+var IC_REPLAY = '<svg viewBox="0 0 24 24" width="15" height="15" fill="white"><path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/></svg>';
 
 function postUp(obj) {
   var s = JSON.stringify(obj);
@@ -154,10 +158,10 @@ vid.addEventListener('timeupdate', function() {
   tm.textContent = fmt(vid.currentTime);
 });
 
-vid.addEventListener('play',  function(){ pbtn.textContent = '⏸'; });
-vid.addEventListener('pause', function(){ pbtn.textContent = '▶'; });
+vid.addEventListener('play',  function(){ pbtn.innerHTML = IC_PAUSE; });
+vid.addEventListener('pause', function(){ pbtn.innerHTML = IC_PLAY; });
 vid.addEventListener('ended', function(){
-  pbtn.textContent = '↺';
+  pbtn.innerHTML = IC_REPLAY;
   showCtrl(true);
 });
 vid.addEventListener('loadedmetadata', sizeWrap);

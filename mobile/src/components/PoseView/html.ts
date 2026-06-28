@@ -38,12 +38,12 @@ export const MEDIAPIPE_HTML = `<!DOCTYPE html>
     padding:0 14px 20px;
   }
   #pbtn{
-    width:38px;height:38px;border-radius:50%;flex-shrink:0;
-    background:rgba(0,0,0,.5);border:1.5px solid rgba(255,255,255,.75);
-    color:#fff;font-size:15px;
+    width:40px;height:40px;border-radius:50%;flex-shrink:0;
+    background:rgba(0,0,0,.5);border:1.5px solid rgba(255,255,255,.6);
     display:flex;align-items:center;justify-content:center;
     cursor:pointer;-webkit-tap-highlight-color:transparent;user-select:none;
   }
+  #pbtn svg{display:block;}
   #sk{
     flex:1;height:3px;cursor:pointer;
     accent-color:#00D4BC;
@@ -75,7 +75,7 @@ export const MEDIAPIPE_HTML = `<!DOCTYPE html>
   <canvas id="cvs"></canvas>
   <div id="ctrl">
     <div id="cbar">
-      <div id="pbtn">▶</div>
+      <div id="pbtn"><svg viewBox="0 0 24 24" width="15" height="15" fill="white"><polygon points="6,3 20,12 6,21"/></svg></div>
       <input id="sk" type="range" min="0" max="1000" step="1" value="0">
       <span id="tm">0:00</span>
     </div>
@@ -101,6 +101,10 @@ let landmarker = null;
 let drawUtils  = null;
 let rafId      = null;
 let hideTimer  = null;
+
+const IC_PLAY   = '<svg viewBox="0 0 24 24" width="15" height="15" fill="white"><polygon points="6,3 20,12 6,21"/></svg>';
+const IC_PAUSE  = '<svg viewBox="0 0 24 24" width="15" height="15" fill="white"><rect x="4" y="3" width="5" height="18" rx="1.5"/><rect x="15" y="3" width="5" height="18" rx="1.5"/></svg>';
+const IC_REPLAY = '<svg viewBox="0 0 24 24" width="15" height="15" fill="white"><path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/></svg>';
 
 // ── host communication ──────────────────────────────────────────────────────
 
@@ -223,13 +227,13 @@ vid.addEventListener('timeupdate', () => {
   tm.textContent = fmt(vid.currentTime);
 });
 
-vid.addEventListener('play',  () => { pbtn.textContent = '⏸'; });
-vid.addEventListener('pause', () => { pbtn.textContent = '▶'; });
+vid.addEventListener('play',  () => { pbtn.innerHTML = IC_PAUSE; });
+vid.addEventListener('pause', () => { pbtn.innerHTML = IC_PLAY; });
 vid.addEventListener('ended', () => {
   if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
-  pbtn.textContent = '↺';
+  pbtn.innerHTML = IC_REPLAY;
   setMsg('');
-  showCtrl(true); // keep controls visible until user interacts
+  showCtrl(true);
 });
 
 // ── video lifecycle ──────────────────────────────────────────────────────────
