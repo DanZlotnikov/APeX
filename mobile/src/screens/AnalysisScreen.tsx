@@ -1,24 +1,54 @@
-import React, { useState } from 'react';
-import { Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useRef, useState } from 'react';
+import { Dimensions, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 import PoseView from '../components/PoseView';
 import PrimaryButton from '../components/PrimaryButton';
+import AssessmentPanel from '../components/AssessmentPanel';
+import { Assessment } from '../utils/exerciseAnalyzer';
+import { useSettings } from '../state/SettingsContext';
+import { appendEntry, loadHistory, makeId } from '../utils/history';
+import { saveVideo } from '../utils/storage';
+import { compareToHistory, Comparison } from '../utils/stats';
+import { playChime } from '../utils/sound';
 import { colors, spacing } from '../theme';
-import { ExerciseResults, hasAnyExercise } from '../utils/exerciseAnalyzer';
 
 interface Props {
   videoUri: string;
+  onPoseReady: () => void;
   onRecordAgain: () => void;
   onHome: () => void;
 }
 
-const EXERCISE_LABELS: Record<keyof ExerciseResults, string> = {
-  squat:        'Squat',
-  deadlift:     'Deadlift',
-  verticalJump: 'Vertical Jump',
-};
+// The video keeps a fixed, prominent height; the assessment report scrolls in
+// beneath it once analysis completes.
+const VIEWER_H = Math.round(Dimensions.get('window').height * 0.5);
 
-export default function AnalysisScreen({ videoUri, onRecordAgain, onHome }: Props) {
-  const [results, setResults] = useState<ExerciseResults | null>(null);
+export default function AnalysisScreen({ videoUri, onPoseReady, onRecordAgain, onHome }: Props) {
+  const { settings } = useSettings();
+  const [assessment, setAssessment] = useState<Assessment | null>(null);
+  const [comparison, setComparison] = useState<Comparison | null>(null);
+  const savedRef = useRef(false); // guard: persist this session's result only once
+
+  const handleAssessment = useCallback(
+    async (a: Assessment) => {
+      setAssessment(a);
+      if (savedRef.current) return;
+      savedRef.current = true;
+
+      // Compare against PRIOR history (before this session is saved), then persist.
+      try {
+        const prior = await loadHistory();
+        setComparison(compareToHistory(a, prior, settings.windowDays));
+        void playChime();
+
+        const id = makeId();
+        const videoFile = await saveVideo(videoUri, id);
+        await appendEntry({ id, dateISO: new Date().toISOString(), videoFile, assessment: a });
+      } catch {
+        // comparison/persistence are best-effort; the report still shows
+      }
+    },
+    [settings.windowDays, videoUri],
+  );
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -26,23 +56,17 @@ export default function AnalysisScreen({ videoUri, onRecordAgain, onHome }: Prop
         <Text style={styles.title}>MOVEMENT ANALYSIS</Text>
       </View>
 
-      <View style={styles.viewer}>
-        <PoseView videoUri={videoUri} onExerciseResults={setResults} />
-      </View>
-
-      {results && hasAnyExercise(results) && (
-        <View style={styles.resultsPanel}>
-          <Text style={styles.resultsPanelLabel}>EXERCISES DETECTED</Text>
-          {(Object.keys(EXERCISE_LABELS) as (keyof ExerciseResults)[])
-            .filter(key => results[key] > 0)
-            .map(key => (
-              <View key={key} style={styles.resultRow}>
-                <Text style={styles.resultName}>{EXERCISE_LABELS[key]}</Text>
-                <Text style={styles.resultCount}>× {results[key]}</Text>
-              </View>
-            ))}
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={[styles.viewer, { height: VIEWER_H }]}>
+          <PoseView videoUri={videoUri} onReady={onPoseReady} onAssessment={handleAssessment} />
         </View>
-      )}
+
+        {assessment && <AssessmentPanel assessment={assessment} comparison={comparison} />}
+      </ScrollView>
 
       <View style={styles.footer}>
         <PrimaryButton label="Record Again" onPress={onRecordAgain} />
@@ -74,43 +98,11 @@ const styles = StyleSheet.create({
     letterSpacing: 2.5,
   },
 
-  viewer: { flex: 1 },
+  scroll: { flex: 1 },
+  scrollContent: { flexGrow: 1 },
 
-  // ── exercise results panel ───────────────────────────────────────────────────
-  resultsPanel: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    gap: spacing.xs,
-  },
-  resultsPanelLabel: {
-    color: colors.muted,
-    fontSize: 9,
-    fontWeight: '700',
-    letterSpacing: 2.5,
-    marginBottom: spacing.xs,
-  },
-  resultRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 2,
-  },
-  resultName: {
-    color: colors.text,
-    fontSize: 15,
-    fontWeight: '500',
-    letterSpacing: 0.3,
-  },
-  resultCount: {
-    color: colors.primary,
-    fontSize: 16,
-    fontWeight: '700',
-    letterSpacing: 1,
-  },
+  viewer: { width: '100%', backgroundColor: '#0B1220' },
 
-  // ── footer ───────────────────────────────────────────────────────────────────
   footer: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,

@@ -31,7 +31,14 @@ export default function LoadingScreen({ onReady }: Props) {
       Animated.timing(shimmer, { toValue: 1, duration: 1200, useNativeDriver: true }),
     ).start();
 
-    const timer = setTimeout(onReady, MIN_MS);
+    // After minimum display time, fade out then hand off to the next screen.
+    // Fading to 0 before unmounting ensures no blank flash when this View is removed.
+    const timer = setTimeout(() => {
+      Animated.timing(fade, { toValue: 0, duration: 350, useNativeDriver: true }).start(() => {
+        onReady();
+      });
+    }, MIN_MS);
+
     return () => clearTimeout(timer);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

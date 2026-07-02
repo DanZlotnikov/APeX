@@ -1,23 +1,33 @@
 import React from 'react';
 import { Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
 import PrimaryButton from '../components/PrimaryButton';
+import { useAccent } from '../state/SettingsContext';
 import { colors, spacing } from '../theme';
 
 interface Props {
   onGoToCamera: (pickFirst: boolean) => void;
+  onOpenDashboard: () => void;
   testMode: boolean;
   onToggleTestMode: () => void;
 }
 
-export default function HomeScreen({ onGoToCamera, testMode, onToggleTestMode }: Props) {
+export default function HomeScreen({ onGoToCamera, onOpenDashboard, testMode, onToggleTestMode }: Props) {
+  const accent = useAccent();
   return (
     <SafeAreaView style={styles.screen}>
       <View style={styles.inner}>
 
+        <Pressable
+          onPress={onOpenDashboard}
+          style={({ pressed }) => [styles.dashPill, { borderColor: accent }, pressed && styles.pressed]}
+        >
+          <Text style={[styles.dashText, { color: accent }]}>DASHBOARD ›</Text>
+        </Pressable>
+
         <View style={styles.brand}>
-          <Text style={styles.wordmark}>APeX</Text>
+          <Text style={[styles.wordmark, { color: accent }]}>APeX</Text>
           <Text style={styles.wordmarkSub}>ATHLETIC PERFORMANCE EXCELLENCE</Text>
-          <View style={styles.divider} />
+          <View style={[styles.divider, { backgroundColor: accent }]} />
           <Text style={styles.tagline}>
             AI movement analysis{'\n'}built for elite athletes.
           </Text>
@@ -54,6 +64,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.lg,
   },
+
+  dashPill: {
+    alignSelf: 'flex-end',
+    marginTop: spacing.md,
+    borderWidth: 1,
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  pressed: { opacity: 0.5 },
+  dashText: { fontSize: 11, fontWeight: '800', letterSpacing: 1.5 },
 
   brand: {
     flex: 1,

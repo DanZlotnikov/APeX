@@ -27,9 +27,11 @@ export default function CameraScreen({ pickOnMount, testMode, onVideoReady, onBa
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState<number | null>(null);
   const [videoUri, setVideoUri] = useState<string | null>(null);
-  const [videoSource, setVideoSource] = useState<'record' | 'upload'>('record');
   const [error, setError] = useState<string | null>(null);
   const [preparing, setPreparing] = useState(false);
+  // True while the image picker is open — suppresses camera view to avoid a
+  // brief camera flash before the system picker appears.
+  const [isPicking, setIsPicking] = useState(pickOnMount);
 
   useEffect(() => {
     if (pickOnMount) void pickVideo();
@@ -99,17 +101,19 @@ export default function CameraScreen({ pickOnMount, testMode, onVideoReady, onBa
 
   async function pickVideo() {
     setError(null);
+    setIsPicking(true);
     try {
       const res = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Videos,
         quality: 1,
       });
       if (!res.canceled && res.assets?.[0]?.uri) {
-        setVideoSource('upload');
         setVideoUri(res.assets[0].uri);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not open library.');
+    } finally {
+      setIsPicking(false);
     }
   }
 
@@ -143,7 +147,7 @@ export default function CameraScreen({ pickOnMount, testMode, onVideoReady, onBa
           <PrimaryButton
             label="Retry"
             variant="secondary"
-            onPress={() => videoSource === 'upload' ? void pickVideo() : setVideoUri(null)}
+            onPress={() => pickOnMount ? void pickVideo() : setVideoUri(null)}
             disabled={preparing}
             style={{ marginTop: spacing.sm }}
           />
@@ -151,6 +155,11 @@ export default function CameraScreen({ pickOnMount, testMode, onVideoReady, onBa
         </View>
       </SafeAreaView>
     );
+  }
+
+  // ── blank screen while picker is open ────────────────────────────────────
+  if (isPicking) {
+    return <View style={[styles.screen, { backgroundColor: colors.bg }]} />;
   }
 
   // ── live camera ───────────────────────────────────────────────────────────
@@ -161,7 +170,7 @@ export default function CameraScreen({ pickOnMount, testMode, onVideoReady, onBa
       <View style={styles.cameraWrap}>
         <LiveCamera
           ref={liveCamRef}
-          onRecordingComplete={(uri: string) => { setVideoSource('record'); setVideoUri(uri); }}
+          onRecordingComplete={(uri: string) => setVideoUri(uri)}
           onError={(msg: string) => { setIsRecording(false); setCountdown(null); setError(msg); }}
         />
       </View>

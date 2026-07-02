@@ -1,14 +1,16 @@
 import React, { useEffect, useRef } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { ExerciseResults } from '../../utils/exerciseAnalyzer';
+import { Assessment, ExerciseResults } from '../../utils/exerciseAnalyzer';
 import { MEDIAPIPE_HTML } from './html';
 
 interface Props {
   videoUri: string;
   onExerciseResults?: (results: ExerciseResults) => void;
+  onAssessment?: (assessment: Assessment) => void;
+  onReady?: () => void;
 }
 
-export default function PoseView({ videoUri, onExerciseResults }: Props) {
+export default function PoseView({ videoUri, onExerciseResults, onAssessment, onReady }: Props) {
   const containerRef = useRef<any>(null);
 
   useEffect(() => {
@@ -33,8 +35,14 @@ export default function PoseView({ videoUri, onExerciseResults }: Props) {
             '*',
           );
         }
+        if (msg.type === 'playing') {
+          onReady?.();
+        }
         if (msg.type === 'exerciseResults' && onExerciseResults) {
           onExerciseResults(msg.results);
+        }
+        if (msg.type === 'assessment' && onAssessment) {
+          onAssessment(msg.assessment);
         }
       } catch {}
     }
@@ -45,7 +53,7 @@ export default function PoseView({ videoUri, onExerciseResults }: Props) {
       URL.revokeObjectURL(blobSrc);
       if (el.contains(iframe)) el.removeChild(iframe);
     };
-  }, [videoUri, onExerciseResults]);
+  }, [videoUri, onExerciseResults, onAssessment, onReady]);
 
   return <View ref={containerRef} style={styles.container} />;
 }

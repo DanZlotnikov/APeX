@@ -1,5 +1,6 @@
 import React from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, ViewStyle } from 'react-native';
+import { useSettings } from '../state/SettingsContext';
 import { colors, spacing } from '../theme';
 
 interface Props {
@@ -20,22 +21,23 @@ export default function PrimaryButton({
   style,
 }: Props) {
   const isSecondary = variant === 'secondary';
+  const { accentColor, accentOn } = useSettings();
   return (
     <Pressable
       onPress={onPress}
       disabled={disabled || loading}
       style={({ pressed }) => [
         styles.base,
-        isSecondary ? styles.secondary : styles.primary,
+        isSecondary ? styles.secondary : [styles.primary, { backgroundColor: accentColor }],
         (disabled || loading) && styles.disabled,
         pressed && styles.pressed,
         style,
       ]}
     >
       {loading ? (
-        <ActivityIndicator color={isSecondary ? colors.text : colors.primaryText} />
+        <ActivityIndicator color={isSecondary ? colors.text : accentOn} />
       ) : (
-        <Text style={[styles.label, isSecondary && styles.secondaryLabel]}>{label}</Text>
+        <Text style={[styles.label, isSecondary ? styles.secondaryLabel : { color: accentOn }]}>{label}</Text>
       )}
     </Pressable>
   );
