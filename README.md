@@ -1,221 +1,229 @@
 # APeX — Athletic Performance Excellence
 
-Skeleton MVP for an AI athlete-movement-assessment platform.
+An AI-powered athlete movement assessment platform built with React Native (Expo).
+Record or upload a movement clip → MediaPipe analyzes every frame on-device →
+skeleton and rep counters are baked permanently into the video → a readiness
+assessment with per-rep charts is shown.
 
-**This first step does one thing end-to-end:** record (or pick) a short movement
-video → process it with **MediaPipe Pose Landmarker** → play back a video with the
-pose skeleton drawn on the athlete.
-
-It is intentionally minimal: no auth, no database, no profiles, no readiness scores,
-no injury prediction, no cloud. Just a clean, working record → process → display pipeline.
+**No backend. No cloud. Everything runs in a WebView on the device.**
 
 ---
 
-## Architecture (and why)
+## What it does end-to-end
+
+1. **Record** a movement clip with the camera, or **upload** an existing video.
+2. **Preview** the clip on the Review Clip screen, then tap **Analyze Movement**.
+3. A **BakeLoader** (APeX logo + progress bar + percentage) is shown while:
+   - MediaPipe Pose Landmarker analyzes every frame at 8× speed (preprocess pass).
+   - Exercise detection (squat / deadlift / jump / pull-up) identifies reps.
+   - A readiness assessment with per-rep metrics is computed.
+   - Skeleton + rep counter are baked frame-by-frame into an output video using
+     WebCodecs `VideoEncoder` (seek-based, ~5–10 s for a 30 s clip).
+     Falls back to MediaRecorder on Android, then returns the original video on iOS.
+4. The **Analysis Screen** reveals: the baked video with skeleton overlay, and
+   the full assessment panel with readiness score, per-rep sparklines, risk factors,
+   and historical comparison deltas (▲/▼ vs all-time average).
+5. Sessions are **saved to local storage** (JSON + copied video file) and browsable
+   in the **History** tab of the dashboard.
+
+---
+
+## Architecture
 
 ```
 APeX/
-├── mobile/     Expo + TypeScript app (UI, camera, video pick, playback)
-└── backend/    Python FastAPI + MediaPipe + OpenCV (pose processing)
+└── mobile/                     Expo + TypeScript app (target: iOS, Android, Web)
+    ├── App.tsx                  State-machine navigator: dashboard | camera | analysis
+    ├── src/
+    │   ├── components/
+    │   │   ├── PoseView/
+    │   │   │   ├── html.ts              The entire analysis pipeline (WebView HTML+JS)
+    │   │   │   ├── PoseView.native.tsx  React Native WebView host
+    │   │   │   └── PoseView.web.tsx     Web iframe host
+    │   │   ├── AssessmentPanel.tsx      Readiness + per-rep charts
+    │   │   ├── VideoPlayer/             Cross-platform video player with SVG controls
+    │   │   └── charts/LineTrend.tsx     Custom SVG sparkline
+    │   ├── screens/
+    │   │   ├── AnalysisScreen.tsx       BakeLoader → baked video + assessment reveal
+    │   │   ├── CameraScreen.tsx         Record / review clip flow
+    │   │   ├── DashboardScreen.tsx      Bottom-tab dashboard shell
+    │   │   └── dashboard/
+    │   │       ├── OverviewScreen.tsx   Athlete profile + readiness trend
+    │   │       ├── HistoryScreen.tsx    List of past sessions
+    │   │       ├── HistoryDetailScreen  Replay saved session
+    │   │       └── SettingsScreen.tsx   Accent color, units, sound, comparison window
+    │   ├── utils/
+    │   │   ├── exerciseAnalyzer.ts      EXERCISE_ANALYZER_JS injected into WebView
+    │   │   ├── history.ts               Session CRUD + aggregation helpers
+    │   │   ├── storage.ts               Cross-platform JSON + video file persistence
+    │   │   └── stats.ts                 Historical comparison engine
+    │   └── state/SettingsContext.tsx    Theme, units, sound — persisted settings
+    └── samples/                 Test videos (squat, deadlift)
 ```
 
-We use **Option A** from the brief: a React Native (Expo) app + a local Python
-backend that runs MediaPipe.
+### Why WebView for pose estimation?
 
-**Why a backend instead of on-device MediaPipe?**
+MediaPipe's JavaScript Tasks API runs natively in a browser context. Wrapping it
+in a WebView lets us ship a fully on-device pipeline with zero native modules — it
+runs identically on iOS, Android, and web.
 
-- There is no clean, well-maintained React Native binding that runs the official
-  MediaPipe Pose Landmarker *and* re-encodes a skeleton-overlaid MP4 on-device.
-- MediaPipe's **Python Tasks API + OpenCV** is mature and reliable for exactly this:
-  read frames → detect pose → draw landmarks + connections → write a new MP4.
-- This keeps the mobile app simple (record/pick/upload/play) and puts the fragile,
-  compute-heavy work in a robust, easy-to-run service.
+### The bake pipeline (`html.ts`)
 
-**Output choice:** the backend **bakes the skeleton into a new MP4** and the app just
-plays that file. This is simpler and far more reliable than streaming landmark JSON to
-the client and trying to keep an overlay perfectly synced to playback frame-by-frame.
-(The backend can also return JSON landmarks later — see TODO.)
+All analysis + rendering lives in a single self-contained HTML document
+(`MEDIAPIPE_HTML` exported from `html.ts`) that is loaded in a hidden WebView:
 
-**Why Expo (managed) and not bare React Native?**
-All heavy processing is server-side, so we never need custom native modules. Expo gives
-us camera recording, image/video picking, and video playback out of the box, and runs
-from VS Code in a browser/emulator with zero native build setup.
+**Phase 1 — Preprocess (8× speed)**
+- Video plays at 8× (`playbackRate = 8`).
+- Every rAF tick calls `runInference(videoEl, timestamp)` → 33 MediaPipe landmarks.
+- Landmarks stored in `landmarkHistory` / `timeHistory` arrays.
+- `sendProgress(pct)` posts throttled progress messages to React Native.
 
----
+**Phase 2 — Render (bake)**
+- `lookupLandmarks(t)` does binary search + linear interpolation in the precomputed arrays.
+- `drawCompositeAt(t)` draws: video frame + skeleton connections + rep counter overlay.
+- **Fast path** (Chrome/Android): WebCodecs `VideoEncoder` + `webm-muxer` — seeks
+  frame-by-frame, encodes without real-time constraint (~5–10 s for 30 s clip).
+- **Slow path** (fallback): MediaRecorder captures `canvas.captureStream(30)` at 1× playback.
+- **iOS fallback**: WKWebView has no `captureStream` → returns the original video URI.
 
-## Two ways to test
-
-### 1. Dev mode (recommended first — runs from VS Code, no phone)
-- Webcam-inside-a-mobile-emulator is unreliable, so the primary dev workflow is the
-  **"Choose Test Video"** button: pick any local `.mp4`/`.mov`, process it, see the result.
-- Run the app on **web** (`w` in Expo) or an emulator and exercise the full
-  pick → process → play pipeline against your local backend.
-
-### 2. Real phone mode
-- Open the app in **Expo Go** on your phone (same Wi-Fi as your PC).
-- **"Start Recording"** uses the real camera, records a clip, then processes it.
-- Point the app's API URL at your PC's LAN IP (see `mobile/src/config.ts`).
-
----
-
-## Prerequisites
-
-- **Node.js** 18+ and npm
-- **Python** 3.10–3.12 (verified on 3.12)
-- **ffmpeg** on your PATH (for H.264 output + the webcam recorder). Verify with `ffmpeg -version`.
-- The **Expo Go** app on your phone (optional, for real-device testing)
-
----
-
-## Setup & run
-
-### A) Backend (start this first)
-
-```bash
-cd backend
-python -m venv .venv
-
-# Windows (PowerShell):
-.venv\Scripts\Activate.ps1
-# macOS/Linux:
-# source .venv/bin/activate
-
-pip install -r requirements.txt
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+**Inference engine abstraction** — swap-point is three functions only:
+```javascript
+async function initInferenceEngine()          // load model
+function runInference(videoEl, timestampMs)   // → NormalizedLandmark[] | null
+function warmupInference(videoEl)             // optional warm-up call
 ```
+Replacing MediaPipe with a custom model = reimplement these three functions.
 
-- On first run it auto-downloads the `pose_landmarker_lite.task` model (~10 MB).
-- Health check: open http://localhost:8000/ → `{"status":"ok"}`.
-- Processed videos are served from `http://<host>:8000/videos/...`.
+**Exercise detection** (`exerciseAnalyzer.ts` → `EXERCISE_ANALYZER_JS`)
+- Squat: knee angle + hip/ankle alignment, ROM, depth per rep.
+- Deadlift: torso lean angle (hinge quality) per rep.
+- Vertical jump: ankle rise during flight phase.
+- Pull-up: elbow angle at peak contraction per rep.
+- Outputs: `perRepDepth[]`, `perRepDurationSec[]`, ROM, avgRepSec, readiness 0–100.
 
-### B) Mobile app
+### Messaging protocol (WebView ↔ React Native)
+
+| Direction | Message type | Payload |
+|-----------|-------------|---------|
+| WebView → host | `ready` | model loaded |
+| host → WebView | `loadVideo` | `{ uri }` blob URL |
+| WebView → host | `progress` | `{ pct: 0..1 }` (throttled 150 ms) |
+| WebView → host | `assessment` | full `Assessment` object |
+| WebView → host | `renderedStart` | `{ mimeType, total }` |
+| WebView → host | `renderedChunk` | `{ index, data }` base64 512 KB chunks |
+| WebView → host | `renderedDone` | completion signal |
+
+On native: video is injected in 1.5 MB base64 chunks via `injectJavaScript` because
+iOS WKWebView cannot load `file://` or large `data:` URIs in a `<video>` element.
+
+---
+
+## Running the app
 
 ```bash
 cd mobile
 npm install
-npx expo install        # aligns native package versions to the Expo SDK
-npm start               # then press: w (web), a (Android), i (iOS), or scan QR in Expo Go
+npx expo start
+# press w (web browser), a (Android emulator), i (iOS simulator)
+# or scan the QR in Expo Go on a real device
 ```
 
-> If `npx expo install` reports version mismatches, run `npx expo install --fix`.
-
-### C) Point the app at your backend
-
-Edit [`mobile/src/config.ts`](mobile/src/config.ts):
-
-| Where you run the app            | API base URL                          |
-|----------------------------------|---------------------------------------|
-| Web browser (same PC)            | `http://localhost:8000`               |
-| Android emulator                 | `http://10.0.2.2:8000`                |
-| iOS simulator                    | `http://localhost:8000`               |
-| **Physical phone (Expo Go)**     | `http://<your-PC-LAN-IP>:8000`        |
-
-The default auto-selects per platform. For a physical phone, set `MANUAL_API_URL`
-to your computer's LAN IP (e.g. `http://192.168.1.20:8000`) and make sure the backend
-is started with `--host 0.0.0.0`.
+Web is the fastest dev target — opens instantly in Chrome, full WebCodecs support.
 
 ---
 
-## Using the app
+## Key files to know before touching anything
 
-1. **Home** — title, subtitle, two buttons.
-2. **Start Recording** → camera screen → record / stop → preview → **Process Video**.
-3. **Choose Test Video** → pick a local clip → **Process Video** (great for PC dev).
-4. A loading indicator shows while the backend processes frames.
-5. **Result** — plays the processed video with the skeleton overlay + **Record Again**.
-
-Errors (no backend, bad file, no pose found) surface as a simple banner.
-
----
-
-## Bundled sample (see a skeleton on the first run)
-
-`samples/` contains a ready-to-use clip so you don't have to source your own:
-
-- **`samples/sample_movement.mp4`** — a public-domain squat demo. In the app, tap
-  **Choose Test Video** → pick this file → **Process Video**. (Pose is detected in
-  all 213 frames.)
-- **`samples/sample_movement_posed.mp4`** — the **expected output**; open it directly
-  to see what a correct skeleton overlay looks like before running anything.
+| File | What it does |
+|------|-------------|
+| `mobile/src/components/PoseView/html.ts` | Entire 800-line analysis pipeline — most sensitive file |
+| `mobile/src/utils/exerciseAnalyzer.ts` | `EXERCISE_ANALYZER_JS` template string injected into WebView |
+| `mobile/src/screens/AnalysisScreen.tsx` | BakeLoader, progress state, assessment/video gating |
+| `mobile/src/components/AssessmentPanel.tsx` | Per-rep sparklines, readiness gauge, delta chips |
+| `mobile/src/utils/storage.ts` | Native: expo-file-system documentDirectory. Web: localStorage `apex:*` |
+| `mobile/App.tsx` | Screen state machine — dashboard / camera / analysis |
 
 ---
 
-## Simulation mode on PC + record from the webcam
+## Bugs fixed (context for next session)
 
-This is the recommended flow to validate the whole pipeline on your computer, no phone.
+### Stray identifier in WebView script
+`EXERCISE_ANALYZER_JS` in `exerciseAnalyzer.ts` had a bare `DashboardScreen`
+identifier at the top level of the JS template string. This caused a
+`ReferenceError` at WebView load time, preventing `init()` from running, so
+`ready` was never sent and analysis never started. Previously masked by Metro
+bundler cache.
 
-1. **Start the backend** (Terminal 1):
-   ```bash
-   cd backend && .venv\Scripts\Activate.ps1
-   uvicorn main:app --host 0.0.0.0 --port 8000 --reload
-   ```
+### WebView restart on parent re-render
+`PoseView.web.tsx` had all callbacks in the `useEffect` dep array. When
+`SettingsContext` rehydrated from storage (changing `settings.windowDays`),
+`handleAssessment` got a new reference → effect re-fired → iframe torn down
+mid-analysis. Fixed by storing all callbacks in refs and keeping only `videoUri`
+as a dep. Same pattern applied to `PoseView.native.tsx`'s `useCallback`.
 
-2. **Start the app on web** (Terminal 2):
-   ```bash
-   cd mobile && npm start      # then press  w  to open the web app
-   ```
-   `config.ts` already points the web app at `http://localhost:8000`.
+### Assessment stats updating after reveal
+`setComparison` is async (awaits `loadHistory()`). If the bake finished before
+history loaded, the panel appeared with plain stats then updated when comparison
+arrived. Fixed by making `isReady` gate on both `renderedUri !== null` AND
+`comparison !== undefined` — the panel only appears once both are resolved.
 
-3. **Get a clip from your PC camera.** Two options:
+### Upload shows blank screen
+Tapping "Upload" navigated to `CameraScreen` (blank while file picker was open).
+Fixed: picker now runs from `App.tsx` without navigating. Only after a file is
+selected does the app navigate to `CameraScreen` with `initialVideoUri` pre-set,
+landing directly on the review screen.
 
-   - **A) In-app (may work in Chrome):** click **Start Recording**. The browser asks
-     for camera permission. *Web video recording is browser-dependent, so if it fails
-     or the preview won't play, use option B.*
-
-   - **B) Reliable webcam recorder (recommended):** in the backend terminal run
-     ```bash
-     python record_webcam.py --seconds 8
-     ```
-     A preview window opens and records ~8 s (press `q` to stop early), saving
-     `samples/my_recording.mp4` as H.264. Then in the web app: **Choose Test Video**
-     → pick `samples/my_recording.mp4` → **Process Video**.
-
-4. **See the result.** The app uploads the clip, the backend draws the pose skeleton
-   on every frame, and the **Result** screen plays it back with the overlay.
-
-> Tip: stand back far enough that your **full body** is visible and well lit — that's
-> what gives the cleanest skeleton.
+### Progress bar snap-back
+Shimmer animation (indeterminate) ran at `progress === 0`, then snapped back when
+the first real progress arrived and the fill bar started from 0. Fixed: removed
+shimmer entirely. Bar starts at 0 width and fills smoothly from the first frame.
 
 ---
 
-## Important files
+## Persistence
 
-**Mobile**
-- [`mobile/App.tsx`](mobile/App.tsx) — tiny state-based navigator (Home/Camera/Result).
-- [`mobile/src/screens/HomeScreen.tsx`](mobile/src/screens/HomeScreen.tsx)
-- [`mobile/src/screens/CameraScreen.tsx`](mobile/src/screens/CameraScreen.tsx) — record / pick / process.
-- [`mobile/src/screens/ResultScreen.tsx`](mobile/src/screens/ResultScreen.tsx) — processed playback.
-- [`mobile/src/services/api.ts`](mobile/src/services/api.ts) — uploads to `POST /process-video`.
-- [`mobile/src/hooks/useVideoProcessor.ts`](mobile/src/hooks/useVideoProcessor.ts) — upload/processing state machine.
-- [`mobile/src/config.ts`](mobile/src/config.ts) — API URL config.
+**Native:** `expo-file-system` `documentDirectory`
+- `history.json` — all session entries (date, assessment, video filename)
+- `profile.json` — athlete name, height, weight
+- `videos/` — baked video files copied by filename (path rebuilt at read time)
 
-**Backend**
-- [`backend/main.py`](backend/main.py) — FastAPI app, CORS, `POST /process-video`, static serving.
-- [`backend/pose_processor.py`](backend/pose_processor.py) — MediaPipe Pose Landmarker + OpenCV drawing, H.264 output via ffmpeg.
-- [`backend/record_webcam.py`](backend/record_webcam.py) — dev helper to record a clip from the PC webcam.
+**Web:** `localStorage` keys prefixed `apex:` — best-effort, videos ephemeral.
 
-**Samples**
-- [`samples/sample_movement.mp4`](samples/sample_movement.mp4) — input demo clip.
-- [`samples/sample_movement_posed.mp4`](samples/sample_movement_posed.mp4) — expected skeleton output.
+To clear web data: `Object.keys(localStorage).filter(k => k.startsWith('apex:')).forEach(k => localStorage.removeItem(k))`
 
 ---
 
-## Limitations (by design, for this MVP)
+## Style & design language
 
-- **Local network only.** No deployment/HTTPS; the phone must reach your PC on LAN.
-- **Single person.** `num_poses = 1`.
-- **Skeleton baked into MP4** (not an interactive/synced overlay).
-- **Output is H.264** (transcoded via ffmpeg) for broad browser/mobile playback. If
-  `ffmpeg` isn't on PATH the backend falls back to `mp4v`, which some browsers won't play.
-- **No frame caching / queue.** One video at a time; large/long videos take longer.
-- **Web recording** in some browsers is limited — prefer "Choose Test Video" on web.
+- Dark navy background (`#07101C`), teal primary (`#00FFE0`), muted gray text
+- All-caps spaced labels (`letterSpacing: 2.5`), heavy numeric weights (`800`)
+- Cards with 1px teal-tinted borders on a slightly lighter surface color
+- Readiness gauge (arc), LineTrend sparklines (custom SVG), DeltaChip pills (▲▼)
+- Accent color is user-configurable (teal / blue / violet / amber / red)
 
 ---
 
-## TODO — next phases
+## Next session prompt
 
-1. **Extract joint trajectories** (return per-frame landmark JSON alongside the video).
-2. **Segment jump / squat / hop phases** from the trajectories.
-3. **Compute basic movement metrics** (joint angles, ROM, symmetry, tempo).
-4. **Add personal baseline** (per-athlete reference once profiles exist).
-5. **Add cloud model refinement** (server-side model + deployment).
+> You are continuing work on **APeX**, a React Native (Expo) athlete movement
+> assessment app. The codebase is at `c:\Users\Admin\repos\APeX`. Run `cd mobile && npx expo start` then press `w` to open the web version.
+>
+> Read the full README at the repo root before starting — it has architecture,
+> key files, messaging protocol, and past bug context.
+>
+> The analysis pipeline lives entirely in `mobile/src/components/PoseView/html.ts`
+> (MediaPipe WebView) and `mobile/src/utils/exerciseAnalyzer.ts` (exercise JS
+> injected into the same WebView). The React Native layer is in `AnalysisScreen.tsx`
+> and `PoseView.native.tsx` / `PoseView.web.tsx`.
+>
+> Current known gaps / next priorities:
+> - **iOS bake**: WKWebView has no `captureStream` so the baked video falls back to
+>   the original (no skeleton). A proper iOS path needs investigation — potentially
+>   using a native canvas-to-video encoder or a different approach.
+> - **Model swap**: the inference engine abstraction is in place (`initInferenceEngine`,
+>   `runInference`, `warmupInference` in `html.ts`). The next step is replacing
+>   MediaPipe with a custom ONNX/TFLite model for better accuracy and speed.
+> - **Dashboard polish**: Overview readiness trend chart, History list, HistoryDetail
+>   replay are wired up but need UX polish and edge-case handling.
+> - **Onboarding**: no first-run experience yet. Profile (height/weight) needs to be
+>   prompted before first analysis for the comparison engine to be meaningful.
