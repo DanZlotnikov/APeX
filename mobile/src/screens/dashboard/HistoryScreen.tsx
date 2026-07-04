@@ -1,8 +1,6 @@
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import React, { useCallback, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import DashHeader from './DashHeader';
-import { useDashboard } from './DashboardContext';
 import { HistoryEntry, loadHistory } from '../../utils/history';
 import { colors, riskColor, spacing } from '../../theme';
 
@@ -17,7 +15,6 @@ function statusOf(readiness: number): 'green' | 'yellow' | 'red' {
 }
 
 export default function HistoryScreen() {
-  const { onExit } = useDashboard();
   const navigation = useNavigation<any>();
   const [history, setHistory] = useState<HistoryEntry[]>([]);
 
@@ -31,8 +28,8 @@ export default function HistoryScreen() {
 
   return (
     <View style={styles.screen}>
-      <DashHeader title="HISTORY" onExit={onExit} />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <Text style={styles.kicker}>HISTORY</Text>
         {history.length === 0 ? (
           <Text style={styles.empty}>No sessions saved yet. Every analysis you run is stored here.</Text>
         ) : (
@@ -65,6 +62,7 @@ export default function HistoryScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
   content: { padding: spacing.lg, paddingBottom: spacing.xxl },
+  kicker: { color: colors.muted, fontSize: 11, fontWeight: '700', letterSpacing: 2.5, marginBottom: spacing.md },
   empty: { color: colors.muted, fontSize: 13, lineHeight: 19 },
 
   row: {

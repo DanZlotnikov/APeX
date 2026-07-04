@@ -2,32 +2,27 @@
  * Physio / corrective-exercise library.
  *
  * The WebView assessment only decides *which* RecommendationKey applies (the
- * worst sub-green risk factor). All human-facing content — the exercise name,
- * rationale, step-by-step instructions, dosage, and which demo animation to
- * play — lives here in React Native so it's easy to edit and localise.
- *
- * Dosages are drawn from the corrective-exercise literature referenced in the
- * assessment module plan (glute/hip-abductor strengthening for valgus &
- * asymmetry, soft-landing neuromuscular retraining, hip-hinge patterning).
+ * worst sub-green risk factor). All human-facing content lives here in React
+ * Native so it's easy to edit and localise.
  */
 import { RecommendationKey } from './exerciseAnalyzer';
 
-/** Which looping stick-figure demo PhysioDemo should render. */
 export type DemoKey =
   | 'lateralBandWalk'
   | 'gobletSquat'
   | 'softLanding'
   | 'singleLegRDL'
-  | 'tempoSquat';
+  | 'tempoSquat'
+  | 'chinUp';
 
 export interface PhysioExercise {
   name: string;
-  target: string;      // what risk this addresses, short
-  why: string;         // one/two sentence rationale
-  steps: string[];     // numbered how-to
-  frequency: string;   // e.g. '2–3× per week'
-  duration: string;    // e.g. '3 × 15 each direction'
-  timeline: string;    // expected time to improvement
+  target: string;
+  why: string;
+  steps: string[];
+  frequency: string;
+  duration: string;
+  timeline: string;
   demoKey: DemoKey;
 }
 
@@ -116,5 +111,23 @@ export const PHYSIO_LIBRARY: Record<RecommendationKey, PhysioExercise> = {
     duration: '3 × 12 controlled-tempo reps',
     timeline: 'Endurance builds in 3–5 weeks',
     demoKey: 'tempoSquat',
+  },
+  scapular: {
+    name: 'Band-Assisted Pull-Up + Lat Hang',
+    target: 'Upper-body pulling strength & scapular control',
+    why:
+      'Left/right pulling asymmetry or partial range indicates that the lats or ' +
+      'scapular stabilisers on one side are not engaging fully. Band assistance lets ' +
+      'you train through the full range while building balanced strength.',
+    steps: [
+      'Loop a thick resistance band over the bar and kneel/stand in it for support.',
+      'Grip the bar just wider than shoulders; pack your shoulders DOWN away from your ears before each rep.',
+      'Pull until your chin clears the bar, pause briefly at the top, then lower FULLY — arms straight.',
+      'Finish each session with a 30-second passive lat hang to stretch the pulling muscles.',
+    ],
+    frequency: '2–3× per week',
+    duration: '3 × 5–8 band-assisted reps · 2 × 30 s lat hang',
+    timeline: 'Pulling strength improves noticeably in 4–8 weeks',
+    demoKey: 'chinUp',
   },
 };

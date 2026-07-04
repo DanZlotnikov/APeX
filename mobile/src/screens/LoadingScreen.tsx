@@ -3,58 +3,73 @@ import { Animated, Dimensions, SafeAreaView, StyleSheet, Text, View } from 'reac
 import { colors, spacing } from '../theme';
 
 const SCREEN_W = Dimensions.get('window').width;
-const MIN_MS = 1500;
+// Track is 60% of screen. Bar is 38% of track — sweeps end-to-end with no dead gap.
+const TRACK_W = SCREEN_W * 0.6;
+const BAR_W = TRACK_W * 0.38;
 
 interface Props {
-  onReady: () => void;
+  /** Flip to true when MediaPipe is ready; triggers the fade-out. */
+  ready: boolean;
+  /** Called after the fade-out animation completes. */
+  onDismissed: () => void;
 }
 
-export default function LoadingScreen({ onReady }: Props) {
+export default function LoadingScreen({ ready, onDismissed }: Props) {
   const pulse = useRef(new Animated.Value(0)).current;
   const shimmer = useRef(new Animated.Value(0)).current;
   const fade = useRef(new Animated.Value(0)).current;
+  // Keep stable refs for the loop handles so we can stop them on unmount.
+  const pulseLoop = useRef<Animated.CompositeAnimation | null>(null);
+  const shimmerLoop = useRef<Animated.CompositeAnimation | null>(null);
 
   useEffect(() => {
-    // Fade in
     Animated.timing(fade, { toValue: 1, duration: 400, useNativeDriver: true }).start();
 
-    // Pulsing ring
-    Animated.loop(
+    pulseLoop.current = Animated.loop(
       Animated.sequence([
-        Animated.timing(pulse, { toValue: 1, duration: 1000, useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 0, duration: 1000, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 1, duration: 900, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 0, duration: 900, useNativeDriver: true }),
       ]),
-    ).start();
+    );
+    pulseLoop.current.start();
 
-    // Shimmer bar
-    Animated.loop(
-      Animated.timing(shimmer, { toValue: 1, duration: 1200, useNativeDriver: true }),
-    ).start();
+    // Shimmer sweeps from just off-screen left to just off-screen right with no pause.
+    // outputRange covers exactly one bar-width beyond each track edge so the bar
+    // is always partially visible during the middle of the sweep and invisible only
+    // at the instant of reset — which happens off-screen and is imperceptible.
+    shimmerLoop.current = Animated.loop(
+      Animated.timing(shimmer, { toValue: 1, duration: 1100, useNativeDriver: true }),
+    );
+    shimmerLoop.current.start();
 
-    // After minimum display time, fade out then hand off to the next screen.
-    // Fading to 0 before unmounting ensures no blank flash when this View is removed.
-    const timer = setTimeout(() => {
-      Animated.timing(fade, { toValue: 0, duration: 350, useNativeDriver: true }).start(() => {
-        onReady();
-      });
-    }, MIN_MS);
-
-    return () => clearTimeout(timer);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => {
+      pulseLoop.current?.stop();
+      shimmerLoop.current?.stop();
+    };
   }, []);
+
+  // When MediaPipe signals ready, fade this screen out then hand off.
+  useEffect(() => {
+    if (!ready) return;
+    pulseLoop.current?.stop();
+    shimmerLoop.current?.stop();
+    Animated.timing(fade, { toValue: 0, duration: 350, useNativeDriver: true }).start(() => {
+      onDismissed();
+    });
+  }, [ready]);
 
   const ringScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.22] });
   const ringOpacity = pulse.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.5, 0.1, 0.5] });
+  // Sweep: bar enters from left edge, exits at right edge — no invisible dwell period.
   const shimmerX = shimmer.interpolate({
     inputRange: [0, 1],
-    outputRange: [-SCREEN_W * 0.6, SCREEN_W * 1.2],
+    outputRange: [-BAR_W, TRACK_W],
   });
 
   return (
     <SafeAreaView style={styles.screen}>
       <Animated.View style={[styles.inner, { opacity: fade }]}>
 
-        {/* pulsing ring + wordmark */}
         <View style={styles.logoWrap}>
           <Animated.View
             style={[styles.ring, { transform: [{ scale: ringScale }], opacity: ringOpacity }]}
@@ -66,10 +81,9 @@ export default function LoadingScreen({ onReady }: Props) {
 
         <Text style={styles.label}>ANALYZING MOVEMENT</Text>
 
-        {/* shimmer progress bar */}
-        <View style={styles.track}>
+        <View style={[styles.track, { width: TRACK_W }]}>
           <Animated.View
-            style={[styles.shimmerBar, { transform: [{ translateX: shimmerX }] }]}
+            style={[styles.shimmerBar, { width: BAR_W, transform: [{ translateX: shimmerX }] }]}
           />
         </View>
 
@@ -117,7 +131,6 @@ const styles = StyleSheet.create({
   },
 
   track: {
-    width: '60%',
     height: 2,
     backgroundColor: colors.surface,
     borderRadius: 1,
@@ -127,10 +140,9 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0,
     left: 0,
-    width: '60%',
     height: 2,
     backgroundColor: colors.primary,
     borderRadius: 1,
-    opacity: 0.8,
+    opacity: 0.85,
   },
 });

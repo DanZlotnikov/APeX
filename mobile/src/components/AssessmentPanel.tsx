@@ -6,6 +6,7 @@ import RiskFactorRow from './RiskFactorRow';
 import ReadinessGauge from './ReadinessGauge';
 import PhysioCard from './PhysioCard';
 import DeltaChip from './DeltaChip';
+import LineTrend from './charts/LineTrend';
 import { colors, spacing } from '../theme';
 
 interface Props {
@@ -15,12 +16,6 @@ interface Props {
 
 type ExerciseCmp = Comparison['exercises'][string] | undefined;
 
-/**
- * The full readiness report shown under the video after analysis: one card per
- * detected exercise (objective numbers + color-coded risk factors), the overall
- * readiness gauge, and — when injury risk is found — a corrective PhysioCard.
- * When prior history exists, each stat also shows a ▲/▼ change vs history.
- */
 export default function AssessmentPanel({ assessment, comparison }: Props) {
   const fade = useRef(new Animated.Value(0)).current;
 
@@ -47,7 +42,7 @@ export default function AssessmentPanel({ assessment, comparison }: Props) {
         {comparison && !comparison.baseline && (
           <View style={styles.gaugeDelta}>
             <Text style={styles.gaugeDeltaLabel}>VS HISTORY</Text>
-            <DeltaChip delta={comparison.readiness} showRecent recentLabel="recent" />
+            <DeltaChip delta={comparison.readiness} />
           </View>
         )}
       </View>
@@ -63,8 +58,40 @@ export default function AssessmentPanel({ assessment, comparison }: Props) {
   );
 }
 
+// Per-exercise chart labels and Y-axis orientation.
+// For squat/pullup: lower angle = better performance, so we invert for display.
+// For deadlift:     higher torso lean = better hinge.
+// For jump:         higher = bigger jump (already correct orientation).
+function chartConfig(key: ExerciseAssessment['key']): {
+  depthLabel: string;
+  depthUnit: string;
+  invertDepth: boolean; // if true, display (max - v) so "up" means better
+} {
+  switch (key) {
+    case 'squat':
+      return { depthLabel: 'DEPTH', depthUnit: '°', invertDepth: true };
+    case 'deadlift':
+      return { depthLabel: 'HINGE', depthUnit: '°', invertDepth: false };
+    case 'jump':
+      return { depthLabel: 'HEIGHT', depthUnit: '', invertDepth: false };
+    case 'pullup':
+      return { depthLabel: 'CONTRACTION', depthUnit: '°', invertDepth: true };
+  }
+}
+
 function ExerciseCard({ ex, cmp }: { ex: ExerciseAssessment; cmp: ExerciseCmp }) {
   const m = ex.metrics;
+  const cfg = chartConfig(ex.key);
+  const hasCharts = m.perRepDepth.length >= 2;
+
+  // When invertDepth, display the "flexion" = (180 - angle) so the chart goes
+  // up when performance improves (deeper squat / fuller pull-up contraction).
+  const depthSeries = cfg.invertDepth
+    ? m.perRepDepth.map((v) => 180 - v)
+    : m.perRepDepth;
+
+  const repLabels = m.perRepDepth.map((_, i) => `R${i + 1}`);
+
   return (
     <View style={styles.card}>
       <View style={styles.cardHead}>
@@ -72,13 +99,47 @@ function ExerciseCard({ ex, cmp }: { ex: ExerciseAssessment; cmp: ExerciseCmp })
         <Text style={styles.cardReps}>{ex.reps} {ex.reps === 1 ? 'REP' : 'REPS'}</Text>
       </View>
 
+      {/* ── Summary stats ── */}
       <View style={styles.stats}>
-        <Stat label="DEEPEST" value={`${m.minKneeAngle}°`} delta={cmp?.metrics.minKneeAngle} />
+        <Stat label={ex.key === 'pullup' ? 'PEAK' : 'DEEPEST'} value={`${m.minKneeAngle}°`} delta={cmp?.metrics.minKneeAngle} />
         <Stat label="ROM" value={`${m.romDeg}°`} delta={cmp?.metrics.romDeg} />
         <Stat label="AVG/REP" value={`${m.avgRepSec}s`} delta={cmp?.metrics.avgRepSec} />
         <Stat label="TOTAL" value={`${m.totalSec}s`} />
       </View>
 
+      {/* ── Per-rep sparklines (shown when ≥ 2 reps) ── */}
+      {hasCharts && (
+        <View style={styles.chartRow}>
+          <View style={styles.chartPane}>
+            <Text style={styles.chartTitle}>{cfg.depthLabel} / REP</Text>
+            <LineTrend
+              data={depthSeries}
+              height={64}
+              startLabel={repLabels[0]}
+              endLabel={repLabels[repLabels.length - 1]}
+            />
+            <Text style={styles.chartAvg}>
+              avg {Math.round(depthSeries.reduce((a, b) => a + b, 0) / depthSeries.length)}{cfg.depthUnit}
+            </Text>
+          </View>
+
+          <View style={[styles.chartPane, styles.chartPaneRight]}>
+            <Text style={styles.chartTitle}>PACE / REP</Text>
+            <LineTrend
+              data={m.perRepDurationSec}
+              height={64}
+              color="#F59E0B"
+              startLabel={repLabels[0]}
+              endLabel={repLabels[repLabels.length - 1]}
+            />
+            <Text style={[styles.chartAvg, styles.chartAvgAmber]}>
+              avg {(m.perRepDurationSec.reduce((a, b) => a + b, 0) / m.perRepDurationSec.length).toFixed(1)}s
+            </Text>
+          </View>
+        </View>
+      )}
+
+      {/* ── Risk factors ── */}
       {ex.factors.map((f) => (
         <RiskFactorRow key={f.id} factor={f} delta={cmp?.factors[f.id]} />
       ))}
@@ -127,11 +188,33 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.border,
     paddingTop: spacing.md,
+    marginBottom: spacing.sm,
   },
   stat: { flex: 1, alignItems: 'center' },
   statValue: { color: colors.text, fontSize: 18, fontWeight: '800' },
   statLabel: { color: colors.muted, fontSize: 9, fontWeight: '700', letterSpacing: 1, marginTop: 3 },
   statDelta: { marginTop: 5 },
+
+  // Per-rep charts
+  chartRow: {
+    flexDirection: 'row',
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingTop: spacing.sm,
+    marginBottom: spacing.sm,
+    gap: spacing.md,
+  },
+  chartPane: { flex: 1 },
+  chartPaneRight: { borderLeftWidth: 1, borderLeftColor: colors.border, paddingLeft: spacing.md },
+  chartTitle: {
+    color: colors.muted, fontSize: 9, fontWeight: '700', letterSpacing: 1.5,
+    marginBottom: 4,
+  },
+  chartAvg: {
+    color: colors.primary, fontSize: 10, fontWeight: '700',
+    textAlign: 'right', marginTop: 2,
+  },
+  chartAvgAmber: { color: '#F59E0B' },
 
   gaugeCard: {
     backgroundColor: colors.surface,

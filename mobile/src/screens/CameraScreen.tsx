@@ -16,9 +16,10 @@ interface Props {
   testMode: boolean;
   onVideoReady: (uri: string) => void;
   onBack: () => void;
+  initialVideoUri?: string; // pre-picked upload — skip picker, go straight to review
 }
 
-export default function CameraScreen({ pickOnMount, testMode, onVideoReady, onBack }: Props) {
+export default function CameraScreen({ pickOnMount, testMode, onVideoReady, onBack, initialVideoUri }: Props) {
   const liveCamRef = useRef<LiveCameraHandle>(null);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const recordTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -26,7 +27,7 @@ export default function CameraScreen({ pickOnMount, testMode, onVideoReady, onBa
   const [countdown, setCountdown] = useState<number | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState<number | null>(null);
-  const [videoUri, setVideoUri] = useState<string | null>(null);
+  const [videoUri, setVideoUri] = useState<string | null>(initialVideoUri ?? null);
   const [error, setError] = useState<string | null>(null);
   const [preparing, setPreparing] = useState(false);
   // True while the image picker is open — suppresses camera view to avoid a

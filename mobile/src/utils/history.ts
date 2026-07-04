@@ -71,7 +71,7 @@ export function readinessSeries(history: HistoryEntry[]): Point[] {
   return history.map((e) => ({ dateISO: e.dateISO, value: e.assessment.readiness }));
 }
 
-export type ExerciseKey = 'squat' | 'deadlift' | 'jump';
+export type ExerciseKey = 'squat' | 'deadlift' | 'jump' | 'pullup';
 export type MetricKey = 'minKneeAngle' | 'romDeg' | 'avgRepSec' | 'reps';
 
 /** A per-exercise metric over time (only sessions that contain that exercise). */

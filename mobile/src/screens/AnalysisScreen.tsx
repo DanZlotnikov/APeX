@@ -1,6 +1,16 @@
-import React, { useCallback, useRef, useState } from 'react';
-import { Dimensions, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  Animated,
+  Dimensions,
+  Pressable,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import PoseView from '../components/PoseView';
+import VideoPlayer from '../components/VideoPlayer';
 import PrimaryButton from '../components/PrimaryButton';
 import AssessmentPanel from '../components/AssessmentPanel';
 import { Assessment } from '../utils/exerciseAnalyzer';
@@ -13,70 +23,207 @@ import { colors, spacing } from '../theme';
 
 interface Props {
   videoUri: string;
-  onPoseReady: () => void;
-  onRecordAgain: () => void;
   onHome: () => void;
 }
 
-// The video keeps a fixed, prominent height; the assessment report scrolls in
-// beneath it once analysis completes.
-const VIEWER_H = Math.round(Dimensions.get('window').height * 0.5);
+const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
+// Fill ~56% of screen height. On portrait phone (e.g. 844 px) → ~473 px.
+// The VideoPlayer's internal sizeWrap() letterboxes any aspect ratio inside this.
+const VIDEO_H = Math.round(SCREEN_H * 0.56);
+const TRACK_W  = SCREEN_W * 0.55;
+const BAR_W    = TRACK_W * 0.38;
 
-export default function AnalysisScreen({ videoUri, onPoseReady, onRecordAgain, onHome }: Props) {
-  const { settings } = useSettings();
-  const [assessment, setAssessment] = useState<Assessment | null>(null);
-  const [comparison, setComparison] = useState<Comparison | null>(null);
-  const savedRef = useRef(false); // guard: persist this session's result only once
+function BakeLoader({ label, progress }: { label: string; progress: number }) {
+  const pulse    = useRef(new Animated.Value(0)).current;
+  const fillAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const pulseLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1, duration: 900, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 0, duration: 900, useNativeDriver: true }),
+      ]),
+    );
+    pulseLoop.start();
+    return () => pulseLoop.stop();
+  }, []);
+
+  useEffect(() => {
+    Animated.timing(fillAnim, {
+      toValue: progress,
+      duration: 120,
+      useNativeDriver: false,
+    }).start();
+  }, [progress]);
+
+  const ringScale   = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.22] });
+  const ringOpacity = pulse.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.5, 0.1, 0.5] });
+  const fillWidth   = fillAnim.interpolate({ inputRange: [0, 1], outputRange: [0, TRACK_W] });
+  const pct         = Math.round(progress * 100);
+
+  return (
+    <View style={loaderStyles.wrap}>
+      <View style={loaderStyles.logoWrap}>
+        <Animated.View style={[loaderStyles.ring, { transform: [{ scale: ringScale }], opacity: ringOpacity }]} />
+        <View style={loaderStyles.logoInner}>
+          <Text style={loaderStyles.wordmark}>APeX</Text>
+        </View>
+      </View>
+
+      <Text style={loaderStyles.label}>{label}</Text>
+
+      <View style={[loaderStyles.track, { width: TRACK_W }]}>
+        <Animated.View style={[loaderStyles.bar, { width: fillWidth }]} />
+      </View>
+
+      <Text style={loaderStyles.pct}>{pct}%</Text>
+    </View>
+  );
+}
+
+const loaderStyles = StyleSheet.create({
+  wrap: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bg },
+
+  logoWrap: { alignItems: 'center', justifyContent: 'center', marginBottom: spacing.xl },
+  ring: {
+    position: 'absolute',
+    width: 140, height: 140, borderRadius: 70,
+    borderWidth: 1.5, borderColor: colors.primary,
+  },
+  logoInner: {
+    width: 110, height: 110, borderRadius: 55,
+    backgroundColor: colors.surface,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: colors.border,
+  },
+  wordmark: { color: colors.primary, fontSize: 28, fontWeight: '900', letterSpacing: 4 },
+
+  label: {
+    color: colors.muted, fontSize: 11, fontWeight: '600',
+    letterSpacing: 3, marginBottom: spacing.xl,
+  },
+  track: { height: 2, backgroundColor: colors.surface, borderRadius: 1, overflow: 'hidden' },
+  bar: {
+    position: 'absolute', top: 0, left: 0,
+    height: 2, backgroundColor: colors.primary,
+    borderRadius: 1, opacity: 0.85,
+  },
+  pct: {
+    color: colors.muted, fontSize: 10, fontWeight: '700',
+    letterSpacing: 1, marginTop: 10,
+  },
+});
+
+export default function AnalysisScreen({ videoUri, onHome }: Props) {
+  const { settings, accentColor } = useSettings();
+  const [assessment, setAssessment]     = useState<Assessment | null>(null);
+  // undefined = loading, null = no history/failed, Comparison = ready
+  const [comparison, setComparison]     = useState<Comparison | null | undefined>(undefined);
+  const [renderedUri, setRenderedUri]   = useState<string | null>(null);
+  const [saved, setSaved]               = useState(false);
+  const [saving, setSaving]             = useState(false);
+  const [progress, setProgress]         = useState(0);
+
+  const loaderLabel = assessment === null ? 'ANALYZING MOVEMENT' : 'PREPARING VIDEO';
+
+  const assessmentLocked  = useRef(false);
+  const videoReadyLocked  = useRef(false);
+  const handleProgress    = useCallback((pct: number) => setProgress(pct), []);
 
   const handleAssessment = useCallback(
     async (a: Assessment) => {
+      if (assessmentLocked.current) return;
+      assessmentLocked.current = true;
       setAssessment(a);
-      if (savedRef.current) return;
-      savedRef.current = true;
-
-      // Compare against PRIOR history (before this session is saved), then persist.
+      setProgress(0); // reset for the upcoming bake phase
       try {
         const prior = await loadHistory();
         setComparison(compareToHistory(a, prior, settings.windowDays));
-        void playChime();
-
-        const id = makeId();
-        const videoFile = await saveVideo(videoUri, id);
-        await appendEntry({ id, dateISO: new Date().toISOString(), videoFile, assessment: a });
       } catch {
-        // comparison/persistence are best-effort; the report still shows
+        setComparison(null);
       }
+      void playChime();
     },
-    [settings.windowDays, videoUri],
+    [settings.windowDays],
   );
+
+  const handleVideoReady = useCallback(
+    (uri: string) => {
+      if (videoReadyLocked.current) return;
+      videoReadyLocked.current = true;
+      setRenderedUri(uri || videoUri);
+    },
+    [videoUri],
+  );
+
+  const handleSave = useCallback(async () => {
+    if (!assessment || saved || saving) return;
+    setSaving(true);
+    try {
+      const id = makeId();
+      const sourceUri = renderedUri || videoUri;
+      const videoFile = await saveVideo(sourceUri, id);
+      await appendEntry({ id, dateISO: new Date().toISOString(), videoFile, assessment });
+      setSaved(true);
+    } catch {
+    } finally {
+      setSaving(false);
+    }
+  }, [assessment, saved, saving, renderedUri, videoUri]);
+
+  // Wait for both the baked video AND the comparison to be resolved before
+  // showing the panel — prevents stats from visually updating after first render.
+  const isReady = renderedUri !== null && comparison !== undefined;
 
   return (
     <SafeAreaView style={styles.screen}>
       <View style={styles.header}>
-        <Text style={styles.title}>MOVEMENT ANALYSIS</Text>
-      </View>
-
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={[styles.viewer, { height: VIEWER_H }]}>
-          <PoseView videoUri={videoUri} onReady={onPoseReady} onAssessment={handleAssessment} />
-        </View>
-
-        {assessment && <AssessmentPanel assessment={assessment} comparison={comparison} />}
-      </ScrollView>
-
-      <View style={styles.footer}>
-        <PrimaryButton label="Record Again" onPress={onRecordAgain} />
         <Pressable
           onPress={onHome}
-          style={({ pressed }) => [styles.homeBtn, pressed && styles.homeBtnPressed]}
+          hitSlop={12}
+          style={({ pressed }) => [styles.back, pressed && styles.pressed]}
         >
-          <Text style={styles.homeBtnText}>MAIN MENU</Text>
+          <Text style={[styles.backIcon, { color: accentColor }]}>‹</Text>
         </Pressable>
+        <Text style={styles.title}>MOVEMENT ANALYSIS</Text>
+        <View style={styles.back} />
       </View>
+
+      {/* Hidden WebView — analysis + render pass, never shown to user */}
+      <View style={styles.hidden}>
+        <PoseView
+          videoUri={videoUri}
+          onAssessment={handleAssessment}
+          onVideoReady={handleVideoReady}
+          onProgress={handleProgress}
+        />
+      </View>
+
+      {isReady ? (
+        <>
+          <ScrollView
+            style={styles.scroll}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={{ width: '100%', height: VIDEO_H }}>
+              <VideoPlayer videoUri={renderedUri} />
+            </View>
+            {assessment && <AssessmentPanel assessment={assessment} comparison={comparison ?? null} />}
+          </ScrollView>
+
+          <View style={styles.footer}>
+            <PrimaryButton
+              label={saved ? 'Saved ✓' : 'Save Analysis'}
+              onPress={handleSave}
+              disabled={saved}
+              loading={saving}
+            />
+          </View>
+        </>
+      ) : (
+        <BakeLoader label={loaderLabel} progress={progress} />
+      )}
     </SafeAreaView>
   );
 }
@@ -85,23 +232,29 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
 
   header: {
+    flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
+  back:     { width: 32, justifyContent: 'center' },
+  backIcon: { fontSize: 30, fontWeight: '300', lineHeight: 30 },
+  pressed:  { opacity: 0.4 },
   title: {
+    flex: 1,
+    textAlign: 'center',
     color: colors.text,
     fontSize: 12,
     fontWeight: '700',
     letterSpacing: 2.5,
   },
 
-  scroll: { flex: 1 },
-  scrollContent: { flexGrow: 1 },
+  hidden: { position: 'absolute', width: 1, height: 1, opacity: 0 },
 
-  viewer: { width: '100%', backgroundColor: '#0B1220' },
+  scroll:        { flex: 1 },
+  scrollContent: { flexGrow: 1 },
 
   footer: {
     paddingHorizontal: spacing.lg,
@@ -109,17 +262,5 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.lg,
     borderTopWidth: 1,
     borderTopColor: colors.border,
-    gap: spacing.xs,
-  },
-  homeBtn: {
-    alignItems: 'center',
-    paddingVertical: spacing.md,
-  },
-  homeBtnPressed: { opacity: 0.4 },
-  homeBtnText: {
-    color: colors.muted,
-    fontSize: 11,
-    fontWeight: '600',
-    letterSpacing: 2.5,
   },
 });

@@ -5,12 +5,11 @@ import { colors, spacing } from '../../theme';
 
 interface Props {
   title: string;
-  onBack?: () => void; // shows a back chevron (detail screens)
-  onExit?: () => void; // shows a close ✕ (returns to app home)
+  onBack?: () => void; // shows a back chevron (detail / pushed screens)
 }
 
-/** Consistent top bar for dashboard screens. */
-export default function DashHeader({ title, onBack, onExit }: Props) {
+/** Header for pushed dashboard screens (e.g. session detail): back + title. */
+export default function DashHeader({ title, onBack }: Props) {
   const { accentColor, fontScale } = useSettings();
   return (
     <View style={styles.bar}>
@@ -22,13 +21,7 @@ export default function DashHeader({ title, onBack, onExit }: Props) {
         )}
       </View>
       <Text style={[styles.title, { fontSize: 13 * fontScale }]} numberOfLines={1}>{title}</Text>
-      <View style={[styles.side, styles.right]}>
-        {onExit && (
-          <Pressable hitSlop={10} onPress={onExit} style={({ pressed }) => pressed && styles.pressed}>
-            <Text style={styles.close}>✕</Text>
-          </Pressable>
-        )}
-      </View>
+      <View style={styles.side} />
     </View>
   );
 }

@@ -1,7 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
-import DashHeader from './DashHeader';
-import { useDashboard } from './DashboardContext';
+import React, { useEffect, useRef, useState } from 'react';
+import { Animated, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { useSettings } from '../../state/SettingsContext';
 import { ACCENTS, AccentKey, colors, FontScaleKey, spacing } from '../../theme';
 import { heightInputToCm, weightInputToKg } from '../../utils/units';
@@ -13,10 +11,8 @@ const FONT_OPTS: { key: FontScaleKey; label: string }[] = [
 const WINDOW_OPTS = [7, 14, 30, 90];
 
 export default function SettingsScreen() {
-  const { onExit } = useDashboard();
   const { settings, profile, update, updateProfile, accentColor, fontScale } = useSettings();
 
-  // profile text kept local so typing isn't fought by re-derivation
   const [name, setName] = useState(profile.name);
   const [height, setHeight] = useState('');
   const [weight, setWeight] = useState('');
@@ -29,7 +25,6 @@ export default function SettingsScreen() {
     if (profile.weightKg != null) {
       setWeight(String(settings.units === 'metric' ? Math.round(profile.weightKg) : Math.round(profile.weightKg * 2.2046)));
     } else setWeight('');
-  // re-derive when units change or profile identity changes
   }, [settings.units, profile.heightCm, profile.weightKg, profile.name]);
 
   const commitHeight = (t: string) => {
@@ -45,8 +40,9 @@ export default function SettingsScreen() {
 
   return (
     <View style={styles.screen}>
-      <DashHeader title="SETTINGS" onExit={onExit} />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+
+        <Text style={styles.kicker}>SETTINGS</Text>
 
         {/* ── Profile ── */}
         <Section title="ATHLETE PROFILE" fontScale={fontScale} />
@@ -152,13 +148,44 @@ function Segmented({ options, value, onChange, accent }: {
   onChange: (k: string) => void;
   accent: string;
 }) {
+  const idx = Math.max(0, options.findIndex((o) => o.key === value));
+  const anim = useRef(new Animated.Value(idx)).current;
+  const [innerWidth, setInnerWidth] = useState(0);
+
+  useEffect(() => {
+    const newIdx = Math.max(0, options.findIndex((o) => o.key === value));
+    Animated.spring(anim, {
+      toValue: newIdx,
+      useNativeDriver: false,
+      tension: 130,
+      friction: 16,
+    }).start();
+  }, [value, options]);
+
+  const itemW = innerWidth > 0 ? innerWidth / options.length : 0;
+
+  // Sliding highlight positioned absolutely within the padded container.
+  // left = padding(3) + idx * itemWidth
+  const highlightLeft = anim.interpolate({
+    inputRange: options.map((_, i) => i),
+    outputRange: options.map((_, i) => i * itemW),
+  });
+
   return (
-    <View style={styles.segment}>
+    <View
+      style={styles.segment}
+      onLayout={(e) => setInnerWidth(e.nativeEvent.layout.width - 6)} // 6 = 2×padding(3)
+    >
+      {/* Sliding pill rendered first so text sits above it */}
+      {itemW > 0 && (
+        <Animated.View
+          style={[styles.segHighlight, { backgroundColor: accent, width: itemW, left: highlightLeft }]}
+        />
+      )}
       {options.map((o) => {
         const on = o.key === value;
         return (
-          <Pressable key={o.key} onPress={() => onChange(o.key)}
-            style={[styles.segItem, on && { backgroundColor: accent }]}>
+          <Pressable key={o.key} onPress={() => onChange(o.key)} style={styles.segItem}>
             <Text style={[styles.segText, on && styles.segTextOn]}>{o.label}</Text>
           </Pressable>
         );
@@ -171,6 +198,7 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
   content: { padding: spacing.lg, paddingBottom: spacing.xxl },
 
+  kicker: { color: colors.muted, fontSize: 11, fontWeight: '700', letterSpacing: 2.5 },
   section: { color: colors.muted, fontWeight: '700', letterSpacing: 2, marginTop: spacing.lg, marginBottom: spacing.sm },
 
   card: {
@@ -192,7 +220,22 @@ const styles = StyleSheet.create({
   swatchOn: { borderColor: colors.text },
   swatchCheck: { fontSize: 16, fontWeight: '900' },
 
-  segment: { flexDirection: 'row', backgroundColor: colors.bg, borderRadius: 10, borderWidth: 1, borderColor: colors.border, padding: 3, marginBottom: spacing.sm },
+  segment: {
+    flexDirection: 'row',
+    backgroundColor: colors.bg,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 3,
+    marginBottom: spacing.sm,
+    position: 'relative',
+  },
+  segHighlight: {
+    position: 'absolute',
+    top: 3,
+    bottom: 3,
+    borderRadius: 8,
+  },
   segItem: { flex: 1, alignItems: 'center', paddingVertical: 8, borderRadius: 8 },
   segText: { color: colors.muted, fontSize: 12, fontWeight: '700' },
   segTextOn: { color: colors.bg },

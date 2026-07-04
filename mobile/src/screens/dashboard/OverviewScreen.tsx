@@ -1,8 +1,6 @@
 import { useFocusEffect } from '@react-navigation/native';
 import React, { useCallback, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import DashHeader from './DashHeader';
-import { useDashboard } from './DashboardContext';
 import LineTrend from '../../components/charts/LineTrend';
 import DeltaChip from '../../components/DeltaChip';
 import { useSettings } from '../../state/SettingsContext';
@@ -12,7 +10,6 @@ import { formatHeight, formatWeight } from '../../utils/units';
 import { colors, spacing } from '../../theme';
 
 export default function OverviewScreen() {
-  const { onExit } = useDashboard();
   const { profile, settings, accentColor } = useSettings();
   const [history, setHistory] = useState<HistoryEntry[]>([]);
 
@@ -44,9 +41,9 @@ export default function OverviewScreen() {
 
   return (
     <View style={styles.screen}>
-      <DashHeader title="OVERVIEW" onExit={onExit} />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
 
+        <Text style={styles.kicker}>OVERVIEW</Text>
         <Text style={styles.name}>{profile.name?.trim() ? profile.name : 'Athlete'}</Text>
 
         <View style={styles.profileRow}>
@@ -107,6 +104,7 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
   content: { padding: spacing.lg, paddingBottom: spacing.xxl },
 
+  kicker: { color: colors.muted, fontSize: 11, fontWeight: '700', letterSpacing: 2.5, marginBottom: spacing.xs },
   name: { color: colors.text, fontSize: 26, fontWeight: '900', letterSpacing: 0.5 },
 
   profileRow: {

@@ -122,6 +122,14 @@ function showCtrl(sticky) {
   if (!sticky) hideTimer = setTimeout(function(){ ctrl.classList.remove('on'); }, 3000);
 }
 
+// Hover: show controls while mouse is over the video, hide when it leaves
+wrap.addEventListener('mouseenter', function(){ showCtrl(); });
+wrap.addEventListener('mousemove',  function(){ showCtrl(); });
+wrap.addEventListener('mouseleave', function(){
+  clearTimeout(hideTimer);
+  ctrl.classList.remove('on');
+});
+
 ctrl.addEventListener('click', function(e) {
   if (e.target === sk || e.target === pbtn) return;
   if (ctrl.classList.contains('on')) {
@@ -163,6 +171,14 @@ vid.addEventListener('pause', function(){ pbtn.innerHTML = IC_PLAY; });
 vid.addEventListener('ended', function(){
   pbtn.innerHTML = IC_REPLAY;
   showCtrl(true);
+});
+vid.addEventListener('seeked', function(){
+  // When the user scrubs away from the end position, revert from IC_REPLAY to
+  // the correct play/pause icon (IC_REPLAY is set by 'ended' and stays until
+  // the video restarts — seek doesn't trigger 'play' or 'pause').
+  if (!vid.ended) {
+    pbtn.innerHTML = vid.paused ? IC_PLAY : IC_PAUSE;
+  }
 });
 vid.addEventListener('loadedmetadata', sizeWrap);
 vid.addEventListener('error', function(){ setMsg('Video load error.'); });

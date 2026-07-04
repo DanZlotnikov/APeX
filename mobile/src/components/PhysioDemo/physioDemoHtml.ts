@@ -27,7 +27,7 @@ interface Pose {
 }
 
 interface Demo {
-  arm: 'hips' | 'chest' | 'hang' | 'front';
+  arm: 'hips' | 'chest' | 'hang' | 'front' | 'overhead';
   mode: 'cycle' | 'pingpong';
   period: number;  // seconds for one full loop
   feet?: boolean;  // author foot X positions directly (lateral shuffle)
@@ -82,6 +82,16 @@ const DEMOS: Record<DemoKey, Demo> = {
     frames: [
       { s: 0.05, stance: 58, lean: 6 },
       { s: 0.95, stance: 62, lean: 16 },
+    ],
+  },
+  // Band-assisted pull-up: figure hangs from a bar at the top of the stage, arms
+  // cycle from fully extended (hang) to fully contracted (chin above bar) and back.
+  // s=0 → hanging (body low, arms straight); s=1 → pulled up (body high, arms bent).
+  chinUp: {
+    arm: 'overhead', mode: 'pingpong', period: 3.2,
+    frames: [
+      { s: 0.04 }, // dead hang — arms almost fully extended
+      { s: 0.94 }, // chin-over-bar — elbows fully flexed
     ],
   },
 };
@@ -227,6 +237,26 @@ function draw() {
   var shR = { x: shMidX + SHW / 2, y: shMidY + tip * 4 };
   var head = { x: shMidX, y: shMidY - HEADR * 1.55 };
 
+  // ── overhead (pull-up) override — body position derives from bar, not ground ──
+  var isOverhead = DEMO.arm === 'overhead';
+  var BAR_Y_OH = 22;
+  if (isOverhead) {
+    var ohBase = BAR_Y_OH + UPARM + FOREARM; // shoulder Y when arms fully extended (~80)
+    shMidY = ohBase - s * (ohBase - (BAR_Y_OH + 10));
+    shMidX = CX;
+    shL = { x: CX - SHW / 2, y: shMidY };
+    shR = { x: CX + SHW / 2, y: shMidY };
+    head = { x: CX, y: shMidY - HEADR * 1.55 };
+    hipY = shMidY + TORSO;
+    pelvisX = CX;
+    hipL = { x: CX - HIPW / 2, y: hipY };
+    hipR = { x: CX + HIPW / 2, y: hipY };
+    footLx = CX - 14; footRx = CX + 14;
+    footLy = hipY + 80; footRy = hipY + 80;
+    kneeL = { x: CX - 12, y: (hipY + footLy) / 2 };
+    kneeR = { x: CX + 12, y: (hipY + footLy) / 2 };
+  }
+
   // arms
   var arm = DEMO.arm, elbL, elbR, hndL, hndR;
   if (arm === 'hang') {
@@ -238,6 +268,15 @@ function draw() {
   } else if (arm === 'chest') {
     elbL = { x: shL.x - 6, y: shL.y + UPARM * 0.7 }; hndL = { x: shMidX - 7, y: shMidY + 20 };
     elbR = { x: shR.x + 6, y: shR.y + UPARM * 0.7 }; hndR = { x: shMidX + 7, y: shMidY + 20 };
+  } else if (arm === 'overhead') {
+    // Arms reach up to bar (fixed); elbows flare outward as body rises with s
+    var hndLX = CX - 25, hndRX = CX + 25;
+    var elbFlare = s * 24;
+    var elbY = (BAR_Y_OH + shMidY) / 2 + s * 5;
+    hndL = { x: hndLX, y: BAR_Y_OH };
+    hndR = { x: hndRX, y: BAR_Y_OH };
+    elbL = { x: hndLX - elbFlare, y: elbY };
+    elbR = { x: hndRX + elbFlare, y: elbY };
   } else { // front — arms reaching forward (toward viewer, drawn raised)
     elbL = { x: shL.x - 3, y: shL.y + UPARM * 0.55 }; hndL = { x: shMidX - 14, y: shMidY + 30 };
     elbR = { x: shR.x + 3, y: shR.y + UPARM * 0.55 }; hndR = { x: shMidX + 14, y: shMidY + 30 };
@@ -253,8 +292,10 @@ function draw() {
     ctx.ellipse(c.x, c.y, 26 * SC * k, 5 * SC * k, 0, 0, Math.PI * 2);
     ctx.fill();
   }
-  shadow(footLx, footLy, (1 - air) * (liftR > 0.02 ? 1 : 1));
-  shadow(footRx, footRy, (1 - air) * (1 - liftR));
+  if (!isOverhead) {
+    shadow(footLx, footLy, (1 - air) * (liftR > 0.02 ? 1 : 1));
+    shadow(footRx, footRy, (1 - air) * (1 - liftR));
+  }
   ctx.restore();
 
   // ── skeleton ──
@@ -298,16 +339,21 @@ function draw() {
   joint(shL, 4.5); joint(shR, 4.5);
   joint(hndL, 3.5); joint(hndR, 3.5);
 
-  // ── equipment on top, with a soft purple glow ──
+  // ── equipment on top (bar for overhead, resistance gear for others) ──
+  ctx.save();
+  ctx.shadowColor = 'rgba(192,140,255,0.55)';
+  ctx.shadowBlur = 8 * SC;
+  if (isOverhead) {
+    var barL = P(CX - 64, BAR_Y_OH), barR = P(CX + 64, BAR_Y_OH);
+    ctx.strokeStyle = PURPLE; ctx.lineWidth = 7 * SC; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(barL.x, barL.y); ctx.lineTo(barR.x, barR.y); ctx.stroke();
+  }
   if (DEMO.equip) {
-    ctx.save();
-    ctx.shadowColor = 'rgba(192,140,255,0.55)';
-    ctx.shadowBlur = 8 * SC;
     if (DEMO.equip === 'band') eqBand(kneeL, kneeR);
     else if (DEMO.equip === 'goblet') eqGoblet({ x: (hndL.x + hndR.x) / 2, y: (hndL.y + hndR.y) / 2 });
     else if (DEMO.equip === 'dumbbell') eqDumbbell(hndR);
-    ctx.restore();
   }
+  ctx.restore();
 }
 
 var t0 = null;

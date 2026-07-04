@@ -25,7 +25,7 @@ export interface Settings {
 const DEFAULTS: Settings = {
   accent: 'teal',
   fontScale: 'M',
-  sound: true,
+  sound: false,
   units: 'metric',
   windowDays: 30,
 };
