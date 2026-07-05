@@ -7,18 +7,15 @@ import { colors, spacing } from '../../theme';
 interface Props {
   onRecord: () => void;
   onUpload: () => void;
+  onLogout: () => void;
 }
 
-/**
- * Persistent top bar for the dashboard (the app's main screen). Record + Upload
- * live top-left as icon buttons; the APeX wordmark sits on the right.
- */
-export default function AppBar({ onRecord, onUpload }: Props) {
+export default function AppBar({ onRecord, onUpload, onLogout }: Props) {
   const insets = useSafeAreaInsets();
   const { accentColor, accentOn } = useSettings();
 
   return (
-    <View style={[styles.bar, { paddingTop: insets.top + spacing.sm }]}>
+    <View style={[styles.bar, { paddingTop: insets.top + spacing.md }]}>
       <View style={styles.actions}>
         <Pressable
           onPress={onRecord}
@@ -37,7 +34,13 @@ export default function AppBar({ onRecord, onUpload }: Props) {
         </Pressable>
       </View>
 
-      <Text style={[styles.wordmark, { color: accentColor }]}>APeX</Text>
+      <Pressable
+        onPress={onLogout}
+        style={({ pressed }) => [styles.logoutBtn, pressed && styles.pressed]}
+        hitSlop={8}
+      >
+        <Text style={styles.logoutIcon}>⏻</Text>
+      </Pressable>
     </View>
   );
 }
@@ -80,7 +83,17 @@ const styles = StyleSheet.create({
   upIcon: { fontSize: 15, fontWeight: '900', lineHeight: 16 },
   btnOutlineLabel: { color: colors.text, fontSize: 12, fontWeight: '800', letterSpacing: 1 },
 
-  pressed: { opacity: 0.6 },
+  logoutBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logoutIcon: { color: colors.muted, fontSize: 15, lineHeight: 17 },
 
-  wordmark: { fontSize: 22, fontWeight: '900', letterSpacing: 2 },
+  pressed: { opacity: 0.6 },
 });

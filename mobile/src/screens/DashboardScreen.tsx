@@ -35,9 +35,10 @@ const navTheme = {
 interface Props {
   onRecord: () => void;
   onUpload: () => void;
+  onLogout: () => void;
 }
 
-export default function DashboardScreen({ onRecord, onUpload }: Props) {
+export default function DashboardScreen({ onRecord, onUpload, onLogout }: Props) {
   const { accentColor } = useSettings();
   const insets = useSafeAreaInsets();
 
@@ -46,7 +47,7 @@ export default function DashboardScreen({ onRecord, onUpload }: Props) {
 
   return (
     <View style={styles.root}>
-      <AppBar onRecord={onRecord} onUpload={onUpload} />
+      <AppBar onRecord={onRecord} onUpload={onUpload} onLogout={onLogout} />
       <View style={styles.body}>
         <NavigationContainer theme={navTheme}>
           <Tab.Navigator
@@ -81,19 +82,18 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     borderRadius: 32,
     borderWidth: 1,
-    borderTopWidth: 1, // full border, not just the default top edge
+    borderTopWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surfaceHigh,
     paddingTop: 0,
     paddingBottom: 0,
-    // lift + float clarity
     shadowColor: '#000',
     shadowOpacity: 0.35,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 6 },
     elevation: 12,
   },
-  tabItem: { marginTop: 3,flex: 1, height: 60, alignItems: 'center', justifyContent: 'center', borderRadius: 24 },
+  tabItem: { marginTop: 3, flex: 1, height: 60, alignItems: 'center', justifyContent: 'center', borderRadius: 24 },
   tabLabel: { fontSize: 10, fontWeight: '700', letterSpacing: 1, marginTop: -2 },
   glyph: { fontSize: 18, lineHeight: 20 },
 });

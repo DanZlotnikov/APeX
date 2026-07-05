@@ -1,10 +1,31 @@
 import { AVPlaybackStatus, ResizeMode, Video } from 'expo-av';
 import React, { useCallback, useRef, useState } from 'react';
-import { GestureResponderEvent, Pressable, StyleSheet, Text, View } from 'react-native';
+import { PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
+import Svg, { Path, Rect } from 'react-native-svg';
 import { colors } from '../../theme';
 
-// Native implementation uses expo-av Video directly — no WebView, no base64.
-// This handles any file:// URI on iOS regardless of size.
+function PlayIcon() {
+  return (
+    <Svg width={14} height={14} viewBox="0 0 24 24" fill="white">
+      <Path d="M5 3l14 9-14 9V3z" />
+    </Svg>
+  );
+}
+function PauseIcon() {
+  return (
+    <Svg width={14} height={14} viewBox="0 0 24 24" fill="white">
+      <Rect x="4" y="3" width="5" height="18" rx="1.5" />
+      <Rect x="15" y="3" width="5" height="18" rx="1.5" />
+    </Svg>
+  );
+}
+function ReplayIcon() {
+  return (
+    <Svg width={14} height={14} viewBox="0 0 24 24" fill="white">
+      <Path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z" />
+    </Svg>
+  );
+}
 
 interface Props {
   videoUri: string;
@@ -15,24 +36,23 @@ function fmtMs(ms: number): string {
   return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 }
 
-const IC_PLAY   = '▶';
-const IC_PAUSE  = '⏸';
-const IC_REPLAY = '↺';
-
 export default function VideoPlayer({ videoUri }: Props) {
-  const videoRef     = useRef<Video>(null);
-  const hideTimer    = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const barWidth     = useRef(0);
+  const videoRef  = useRef<Video>(null);
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const barWidth  = useRef(0);
+  // statusRef lets the stable PanResponder always read the latest playback state
+  const statusRef = useRef<AVPlaybackStatus | null>(null);
 
-  const [status,  setStatus]  = useState<AVPlaybackStatus | null>(null);
-  const [ctrlsOn, setCtrlsOn] = useState(false);
+  const [status,     setStatus]     = useState<AVPlaybackStatus | null>(null);
+  const [ctrlsOn,    setCtrlsOn]    = useState(false);
+  // isFinished persists until user acts — didJustFinish is only true for one tick
+  const [isFinished, setIsFinished] = useState(false);
 
-  const loaded   = status?.isLoaded === true;
-  const playing  = loaded && (status as any).isPlaying  === true;
-  const finished = loaded && (status as any).didJustFinish === true;
-  const posMs    = loaded ? ((status as any).positionMillis ?? 0) : 0;
-  const durMs    = loaded ? ((status as any).durationMillis ?? 1) : 1;
-  const pct      = Math.min(1, Math.max(0, posMs / durMs));
+  const loaded  = status?.isLoaded === true;
+  const playing = loaded && (status as any).isPlaying === true;
+  const posMs   = loaded ? ((status as any).positionMillis ?? 0) : 0;
+  const durMs   = loaded ? ((status as any).durationMillis ?? 1) : 1;
+  const pct     = Math.min(1, Math.max(0, posMs / durMs));
 
   function showCtrls(sticky = false) {
     setCtrlsOn(true);
@@ -40,15 +60,24 @@ export default function VideoPlayer({ videoUri }: Props) {
     if (!sticky) hideTimer.current = setTimeout(() => setCtrlsOn(false), 3000);
   }
 
+  // Ref so the PanResponder (created once) always calls the current showCtrls
+  const showCtrlsRef = useRef(showCtrls);
+  showCtrlsRef.current = showCtrls;
+
   const onStatusUpdate = useCallback((s: AVPlaybackStatus) => {
+    statusRef.current = s;
     setStatus(s);
-    if (s.isLoaded && s.didJustFinish) showCtrls(true);
+    if (s.isLoaded && (s as any).didJustFinish) {
+      setIsFinished(true);
+      showCtrlsRef.current(true);
+    }
   }, []);
 
   async function togglePlay() {
     const v = videoRef.current;
     if (!v || !loaded) return;
-    if (finished) {
+    if (isFinished) {
+      setIsFinished(false);
       await v.replayAsync();
     } else if (playing) {
       await v.pauseAsync();
@@ -58,18 +87,34 @@ export default function VideoPlayer({ videoUri }: Props) {
     showCtrls();
   }
 
-  function handleSeek(e: GestureResponderEvent) {
-    if (!loaded || !barWidth.current) return;
-    const ratio = Math.max(0, Math.min(1, e.nativeEvent.locationX / barWidth.current));
-    videoRef.current?.setPositionAsync(ratio * durMs);
-    showCtrls();
-  }
+  // PanResponder is created once — reads statusRef.current to avoid stale closures
+  const seekPan = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder:  () => true,
+      onPanResponderGrant: (e) => {
+        const s = statusRef.current;
+        if (!s?.isLoaded || !barWidth.current) return;
+        const dur   = (s as any).durationMillis ?? 1;
+        const ratio = Math.max(0, Math.min(1, e.nativeEvent.locationX / barWidth.current));
+        videoRef.current?.setPositionAsync(ratio * dur);
+        setIsFinished(false);
+        showCtrlsRef.current();
+      },
+      onPanResponderMove: (e) => {
+        const s = statusRef.current;
+        if (!s?.isLoaded || !barWidth.current) return;
+        const dur   = (s as any).durationMillis ?? 1;
+        const ratio = Math.max(0, Math.min(1, e.nativeEvent.locationX / barWidth.current));
+        videoRef.current?.setPositionAsync(ratio * dur);
+      },
+    }),
+  ).current;
 
-  const icon = finished ? IC_REPLAY : playing ? IC_PAUSE : IC_PLAY;
+  const Icon = isFinished ? ReplayIcon : playing ? PauseIcon : PlayIcon;
 
   return (
     <View style={styles.root}>
-      {/* video — fills the container, native decoder handles any file size */}
       <Pressable style={styles.videoWrap} onPress={() => showCtrls()}>
         <Video
           ref={videoRef}
@@ -83,24 +128,22 @@ export default function VideoPlayer({ videoUri }: Props) {
         />
       </Pressable>
 
-      {/* controls overlay — shown on tap, auto-hides after 3 s */}
       {ctrlsOn && (
         <View style={styles.overlay} pointerEvents="box-none">
           <View style={styles.cbar} pointerEvents="box-none">
             <Pressable onPress={togglePlay} style={styles.pbtn}>
-              <Text style={styles.pbtnText}>{icon}</Text>
+              <Icon />
             </Pressable>
 
-            {/* seek bar: tap to jump to position */}
-            <Pressable
+            <View
               style={styles.track}
               onLayout={e => { barWidth.current = e.nativeEvent.layout.width; }}
-              onPress={handleSeek}
+              {...seekPan.panHandlers}
             >
               <View style={styles.trackBg} />
               <View style={[styles.trackFill, { width: `${Math.round(pct * 100)}%` as any }]} />
-              <View style={[styles.thumb, { left: `${Math.round(pct * 100)}%` as any }]} />
-            </Pressable>
+              <View style={[styles.thumb,     { left: `${Math.round(pct * 100)}%` as any }]} />
+            </View>
 
             <Text style={styles.time}>{fmtMs(posMs)}</Text>
           </View>
@@ -118,7 +161,6 @@ const styles = StyleSheet.create({
   overlay: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'flex-end',
-    background: undefined, // RN doesn't support CSS gradients; use a dark cbar bg instead
   },
   cbar: {
     flexDirection: 'row',
@@ -140,14 +182,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     flexShrink: 0,
   },
-  pbtnText: {
-    color: '#fff',
-    fontSize: 14,
-  },
 
   track: {
     flex: 1,
-    height: 20,
+    height: 28,
     justifyContent: 'center',
   },
   trackBg: {
@@ -172,7 +210,7 @@ const styles = StyleSheet.create({
     borderRadius: 7,
     backgroundColor: colors.primary,
     marginLeft: -7,
-    top: 3,
+    top: 7,
   },
 
   time: {

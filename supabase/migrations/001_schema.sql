@@ -1,0 +1,217 @@
+-- APeX · Initial Schema
+-- Run this in the Supabase SQL Editor (Dashboard → SQL Editor → New query)
+-- ─────────────────────────────────────────────────────────────────────────────
+
+-- ── Teams ────────────────────────────────────────────────────────────────────
+
+CREATE TABLE public.teams (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name       TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE public.team_settings (
+  team_id                UUID PRIMARY KEY REFERENCES public.teams(id) ON DELETE CASCADE,
+  readiness_threshold    INT  NOT NULL DEFAULT 75,
+  max_lr_imbalance       INT  NOT NULL DEFAULT 15,
+  required_tests_per_day INT  NOT NULL DEFAULT 3,
+  updated_at             TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE public.required_tests (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  team_id    UUID NOT NULL REFERENCES public.teams(id) ON DELETE CASCADE,
+  label      TEXT NOT NULL,
+  enabled    BOOLEAN NOT NULL DEFAULT TRUE,
+  sort_order INT NOT NULL DEFAULT 0
+);
+
+-- ── Users ────────────────────────────────────────────────────────────────────
+
+-- One row per Supabase auth user; id mirrors auth.users.id
+CREATE TABLE public.profiles (
+  id         UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  role       TEXT NOT NULL CHECK (role IN ('athlete', 'manager')),
+  team_id    UUID REFERENCES public.teams(id),
+  full_name  TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Physical attributes — only for athletes
+CREATE TABLE public.athlete_profiles (
+  id            UUID PRIMARY KEY REFERENCES public.profiles(id) ON DELETE CASCADE,
+  height_cm     INT,
+  weight_kg     INT,
+  position      TEXT,
+  date_of_birth DATE
+);
+
+-- ── Sessions ─────────────────────────────────────────────────────────────────
+
+CREATE TABLE public.sessions (
+  id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  athlete_id         UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  exercise_type      TEXT NOT NULL CHECK (exercise_type IN ('squat','deadlift','jump','pullup')),
+  recorded_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  rep_count          INT NOT NULL DEFAULT 0,
+  readiness_score    INT,               -- 0–100, computed client-side
+  video_storage_path TEXT,              -- Supabase Storage key (future)
+  analysis_json      JSONB,             -- full Assessment object for audit/replay
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Key-value aggregate metrics extracted from analysis_json for fast queries
+CREATE TABLE public.session_metrics (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id UUID NOT NULL REFERENCES public.sessions(id) ON DELETE CASCADE,
+  metric_key TEXT  NOT NULL,
+  value      FLOAT NOT NULL
+  -- metric_key examples: squat_rom_deg, jump_rom_deg, flight_time_s,
+  --                       lr_imbalance_pct, squat_reps, jump_reps
+);
+
+-- ── Notifications ─────────────────────────────────────────────────────────────
+
+CREATE TABLE public.notifications (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  team_id    UUID NOT NULL REFERENCES public.teams(id) ON DELETE CASCADE,
+  athlete_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  session_id UUID REFERENCES public.sessions(id) ON DELETE SET NULL,
+  message    TEXT NOT NULL,
+  severity   TEXT NOT NULL CHECK (severity IN ('info','warning','critical')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Tracks which managers have dismissed which notifications
+CREATE TABLE public.notification_reads (
+  manager_id      UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  notification_id UUID NOT NULL REFERENCES public.notifications(id) ON DELETE CASCADE,
+  read_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (manager_id, notification_id)
+);
+
+-- ── Indexes ───────────────────────────────────────────────────────────────────
+
+CREATE INDEX idx_sessions_athlete_time ON public.sessions (athlete_id, recorded_at DESC);
+CREATE INDEX idx_sessions_exercise     ON public.sessions (exercise_type);
+CREATE INDEX idx_notif_team_time       ON public.notifications (team_id, created_at DESC);
+CREATE INDEX idx_metrics_session       ON public.session_metrics (session_id, metric_key);
+CREATE INDEX idx_profiles_team_role    ON public.profiles (team_id, role);
+
+-- ── Trigger: auto-update team_settings.updated_at ────────────────────────────
+
+CREATE OR REPLACE FUNCTION public.touch_updated_at()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN NEW.updated_at = NOW(); RETURN NEW; END;
+$$;
+
+CREATE TRIGGER trg_team_settings_updated_at
+  BEFORE UPDATE ON public.team_settings
+  FOR EACH ROW EXECUTE FUNCTION public.touch_updated_at();
+
+-- ── Helper: caller's team_id ──────────────────────────────────────────────────
+
+CREATE OR REPLACE FUNCTION public.my_team_id()
+RETURNS UUID LANGUAGE sql STABLE SECURITY DEFINER AS $$
+  SELECT team_id FROM public.profiles WHERE id = auth.uid()
+$$;
+
+-- ── Row Level Security ────────────────────────────────────────────────────────
+
+ALTER TABLE public.teams              ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.team_settings      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.required_tests     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.profiles           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.athlete_profiles   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.sessions           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.session_metrics    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.notifications      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.notification_reads ENABLE ROW LEVEL SECURITY;
+
+-- teams: members can read their own team
+CREATE POLICY "read own team" ON public.teams
+  FOR SELECT USING (id = public.my_team_id());
+
+-- team_settings: team members can read; only managers update
+CREATE POLICY "read team settings" ON public.team_settings
+  FOR SELECT USING (team_id = public.my_team_id());
+
+CREATE POLICY "manager updates team settings" ON public.team_settings
+  FOR UPDATE USING (
+    team_id = public.my_team_id()
+    AND (SELECT role FROM public.profiles WHERE id = auth.uid()) = 'manager'
+  );
+
+-- required_tests: all team members read; managers write
+CREATE POLICY "read required tests" ON public.required_tests
+  FOR SELECT USING (team_id = public.my_team_id());
+
+CREATE POLICY "manager manages required tests" ON public.required_tests
+  FOR ALL USING (
+    team_id = public.my_team_id()
+    AND (SELECT role FROM public.profiles WHERE id = auth.uid()) = 'manager'
+  ) WITH CHECK (team_id = public.my_team_id());
+
+-- profiles: read all same-team; update own
+CREATE POLICY "read team profiles" ON public.profiles
+  FOR SELECT USING (team_id = public.my_team_id());
+
+CREATE POLICY "insert own profile" ON public.profiles
+  FOR INSERT WITH CHECK (id = auth.uid());
+
+CREATE POLICY "update own profile" ON public.profiles
+  FOR UPDATE USING (id = auth.uid()) WITH CHECK (id = auth.uid());
+
+-- athlete_profiles: athletes own; managers in same team can read
+CREATE POLICY "athlete manages own profile" ON public.athlete_profiles
+  FOR ALL USING (id = auth.uid()) WITH CHECK (id = auth.uid());
+
+CREATE POLICY "manager reads team athlete profiles" ON public.athlete_profiles
+  FOR SELECT USING (
+    (SELECT role FROM public.profiles WHERE id = auth.uid()) = 'manager'
+    AND (SELECT team_id FROM public.profiles WHERE id = athlete_profiles.id)
+        = public.my_team_id()
+  );
+
+-- sessions: athletes own; managers can read team's
+CREATE POLICY "athlete owns sessions" ON public.sessions
+  FOR ALL USING (athlete_id = auth.uid())
+  WITH CHECK (athlete_id = auth.uid());
+
+CREATE POLICY "manager reads team sessions" ON public.sessions
+  FOR SELECT USING (
+    (SELECT role FROM public.profiles WHERE id = auth.uid()) = 'manager'
+    AND (SELECT team_id FROM public.profiles WHERE id = sessions.athlete_id)
+        = public.my_team_id()
+  );
+
+-- session_metrics: follow session access
+CREATE POLICY "athlete owns session metrics" ON public.session_metrics
+  FOR ALL USING (
+    (SELECT athlete_id FROM public.sessions WHERE id = session_metrics.session_id)
+    = auth.uid()
+  ) WITH CHECK (
+    (SELECT athlete_id FROM public.sessions WHERE id = session_metrics.session_id)
+    = auth.uid()
+  );
+
+CREATE POLICY "manager reads team session metrics" ON public.session_metrics
+  FOR SELECT USING (
+    (SELECT role FROM public.profiles WHERE id = auth.uid()) = 'manager'
+    AND (
+      SELECT team_id FROM public.profiles
+      WHERE id = (SELECT athlete_id FROM public.sessions WHERE id = session_metrics.session_id)
+    ) = public.my_team_id()
+  );
+
+-- notifications: all team members can read; athletes + managers can insert
+CREATE POLICY "team notifications read" ON public.notifications
+  FOR SELECT USING (team_id = public.my_team_id());
+
+CREATE POLICY "team notifications insert" ON public.notifications
+  FOR INSERT WITH CHECK (team_id = public.my_team_id());
+
+-- notification_reads: managers manage their own
+CREATE POLICY "own notification reads" ON public.notification_reads
+  FOR ALL USING (manager_id = auth.uid())
+  WITH CHECK (manager_id = auth.uid());

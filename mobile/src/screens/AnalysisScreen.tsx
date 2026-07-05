@@ -20,15 +20,17 @@ import { saveVideo } from '../utils/storage';
 import { compareToHistory, Comparison } from '../utils/stats';
 import { playChime } from '../utils/sound';
 import { colors, spacing } from '../theme';
+import { createSession } from '../api/sessions';
 
 interface Props {
   videoUri: string;
   onHome: () => void;
+  userId?: string;
+  teamId?: string;
+  athleteName?: string;
 }
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
-// Fill ~56% of screen height. On portrait phone (e.g. 844 px) → ~473 px.
-// The VideoPlayer's internal sizeWrap() letterboxes any aspect ratio inside this.
 const VIDEO_H = Math.round(SCREEN_H * 0.56);
 const TRACK_W  = SCREEN_W * 0.55;
 const BAR_W    = TRACK_W * 0.38;
@@ -114,17 +116,21 @@ const loaderStyles = StyleSheet.create({
   },
 });
 
-export default function AnalysisScreen({ videoUri, onHome }: Props) {
+export default function AnalysisScreen({ videoUri, onHome, userId, teamId, athleteName }: Props) {
   const { settings, accentColor } = useSettings();
   const [assessment, setAssessment]     = useState<Assessment | null>(null);
-  // undefined = loading, null = no history/failed, Comparison = ready
   const [comparison, setComparison]     = useState<Comparison | null | undefined>(undefined);
   const [renderedUri, setRenderedUri]   = useState<string | null>(null);
   const [saved, setSaved]               = useState(false);
   const [saving, setSaving]             = useState(false);
+  const [saveError, setSaveError]       = useState<string | null>(null);
   const [progress, setProgress]         = useState(0);
 
-  const loaderLabel = assessment === null ? 'ANALYZING MOVEMENT' : 'PREPARING VIDEO';
+  const loaderLabel = assessment !== null
+    ? 'PREPARING VIDEO'
+    : progress > 0
+      ? 'ANALYZING MOVEMENT'
+      : 'LOADING POSE MODEL';
 
   const assessmentLocked  = useRef(false);
   const videoReadyLocked  = useRef(false);
@@ -135,7 +141,7 @@ export default function AnalysisScreen({ videoUri, onHome }: Props) {
       if (assessmentLocked.current) return;
       assessmentLocked.current = true;
       setAssessment(a);
-      setProgress(0); // reset for the upcoming bake phase
+      setProgress(0);
       try {
         const prior = await loadHistory();
         setComparison(compareToHistory(a, prior, settings.windowDays));
@@ -159,20 +165,30 @@ export default function AnalysisScreen({ videoUri, onHome }: Props) {
   const handleSave = useCallback(async () => {
     if (!assessment || saved || saving) return;
     setSaving(true);
+    setSaveError(null);
     try {
-      const id = makeId();
+      const id        = makeId();
       const sourceUri = renderedUri || videoUri;
       const videoFile = await saveVideo(sourceUri, id);
+
+      // Local save (always — offline capable)
       await appendEntry({ id, dateISO: new Date().toISOString(), videoFile, assessment });
+
+      // DB sync (when authenticated and on a team)
+      if (teamId) {
+        await createSession(assessment, teamId, athleteName ?? 'Athlete');
+      }
+
       setSaved(true);
-    } catch {
+    } catch (e: any) {
+      const msg = e?.message ?? e?.code ?? String(e);
+      console.warn('[APeX] handleSave error:', msg, e);
+      setSaveError(msg);
     } finally {
       setSaving(false);
     }
-  }, [assessment, saved, saving, renderedUri, videoUri]);
+  }, [assessment, saved, saving, renderedUri, videoUri, userId, teamId, athleteName]);
 
-  // Wait for both the baked video AND the comparison to be resolved before
-  // showing the panel — prevents stats from visually updating after first render.
   const isReady = renderedUri !== null && comparison !== undefined;
 
   return (
@@ -189,7 +205,6 @@ export default function AnalysisScreen({ videoUri, onHome }: Props) {
         <View style={styles.back} />
       </View>
 
-      {/* Hidden WebView — analysis + render pass, never shown to user */}
       <View style={styles.hidden}>
         <PoseView
           videoUri={videoUri}
@@ -219,6 +234,7 @@ export default function AnalysisScreen({ videoUri, onHome }: Props) {
               disabled={saved}
               loading={saving}
             />
+            {saveError && <Text style={styles.saveError}>{saveError}</Text>}
           </View>
         </>
       ) : (
@@ -262,5 +278,11 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.lg,
     borderTopWidth: 1,
     borderTopColor: colors.border,
+  },
+  saveError: {
+    color: colors.danger,
+    fontSize: 11,
+    textAlign: 'center',
+    marginTop: spacing.sm,
   },
 });

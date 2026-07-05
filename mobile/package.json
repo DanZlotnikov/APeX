@@ -6,13 +6,17 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "seed": "node scripts/seed.js",
+    "setup": "node scripts/seed.js"
   },
   "dependencies": {
     "@expo/metro-runtime": "~6.1.2",
+    "@react-native-async-storage/async-storage": "^2.2.0",
     "@react-navigation/bottom-tabs": "^7.18.5",
     "@react-navigation/native": "^7.3.5",
     "@react-navigation/native-stack": "^7.17.7",
+    "@supabase/supabase-js": "^2.110.0",
     "expo": "~54.0.0",
     "expo-av": "~16.0.8",
     "expo-camera": "~17.0.10",

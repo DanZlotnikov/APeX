@@ -1,0 +1,345 @@
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  Animated,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { lookupTeamByCode, signUpAthlete, signUpManager } from '../api/auth';
+import { getProfile } from '../api/auth';
+import { colors, spacing } from '../theme';
+
+interface Props {
+  onSuccess: (userId: string, teamId: string, role: 'athlete' | 'manager', name: string) => void;
+  onBack: () => void;
+}
+
+type Role = 'manager' | 'athlete';
+type Step = 'role' | 'form';
+
+export default function SignUpScreen({ onSuccess, onBack }: Props) {
+  const insets = useSafeAreaInsets();
+  const fade   = useRef(new Animated.Value(0)).current;
+
+  const [step,        setStep]        = useState<Step>('role');
+  const [role,        setRole]        = useState<Role | null>(null);
+  const [name,        setName]        = useState('');
+  const [teamName,    setTeamName]    = useState('');
+  const [inviteCode,  setInviteCode]  = useState('');
+  const [email,       setEmail]       = useState('');
+  const [password,    setPassword]    = useState('');
+  const [loading,     setLoading]     = useState(false);
+  const [error,       setError]       = useState('');
+  const [codePreview, setCodePreview] = useState<string | null>(null);
+  const codeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    Animated.timing(fade, { toValue: 1, duration: 400, useNativeDriver: true }).start();
+  }, []);
+
+  function selectRole(r: Role) {
+    setRole(r);
+    setStep('form');
+    setError('');
+  }
+
+  function handleCodeChange(code: string) {
+    setInviteCode(code);
+    setCodePreview(null);
+    if (codeTimer.current) clearTimeout(codeTimer.current);
+    if (code.trim().length >= 4) {
+      codeTimer.current = setTimeout(async () => {
+        const team = await lookupTeamByCode(code);
+        setCodePreview(team ? team.teamName : '');
+      }, 500);
+    }
+  }
+
+  async function handleSubmit() {
+    if (!role || !name.trim() || !email.trim() || !password) return;
+    setError('');
+    setLoading(true);
+    try {
+      let user;
+      if (role === 'manager') {
+        if (!teamName.trim()) { setError('Enter a team name.'); setLoading(false); return; }
+        user = await signUpManager(email.trim(), password, name.trim(), teamName.trim());
+      } else {
+        if (!inviteCode.trim()) { setError('Enter your invite code.'); setLoading(false); return; }
+        user = await signUpAthlete(email.trim(), password, name.trim(), inviteCode.trim());
+      }
+
+      const profile = await getProfile(user.id);
+      if (!profile) throw new Error('Profile not created. Try logging in.');
+      onSuccess(user.id, profile.team_id, role, profile.full_name);
+    } catch (e: any) {
+      setError(e?.message ?? 'Sign-up failed. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <KeyboardAvoidingView
+      style={{ flex: 1, backgroundColor: colors.bg }}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <ScrollView
+        contentContainerStyle={[
+          styles.root,
+          { paddingTop: insets.top + spacing.md, paddingBottom: insets.bottom + spacing.xl },
+        ]}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        {/* ── Header ── */}
+        <View style={styles.header}>
+          <Pressable onPress={onBack} style={({ pressed }) => [styles.back, pressed && { opacity: 0.5 }]}>
+            <Text style={styles.backArrow}>←</Text>
+            <Text style={styles.backLabel}>Sign in</Text>
+          </Pressable>
+          <Text style={styles.title}>CREATE ACCOUNT</Text>
+          <View style={styles.back} />
+        </View>
+
+        <Animated.View style={[styles.content, { opacity: fade }]}>
+
+          {/* ── Step 1: Role selection ── */}
+          {step === 'role' && (
+            <View style={styles.roleSection}>
+              <Text style={styles.rolePrompt}>I am joining as a…</Text>
+
+              <View style={styles.roleRow}>
+                <RoleCard
+                  label="MANAGER"
+                  description="Create a team and monitor athlete readiness"
+                  icon="⊞"
+                  color="#B794F6"
+                  onPress={() => selectRole('manager')}
+                />
+                <RoleCard
+                  label="ATHLETE"
+                  description="Join a team and track your movement data"
+                  icon="◉"
+                  color={colors.primary}
+                  onPress={() => selectRole('athlete')}
+                />
+              </View>
+            </View>
+          )}
+
+          {/* ── Step 2: Form ── */}
+          {step === 'form' && role && (
+            <View style={styles.formSection}>
+              {/* Role badge */}
+              <View style={styles.roleBadge}>
+                <Text style={[styles.roleBadgeText, { color: role === 'manager' ? '#B794F6' : colors.primary }]}>
+                  {role === 'manager' ? '⊞  MANAGER' : '◉  ATHLETE'}
+                </Text>
+                <Pressable onPress={() => { setStep('role'); setError(''); }}>
+                  <Text style={styles.changeRole}>Change</Text>
+                </Pressable>
+              </View>
+
+              <Field label="FULL NAME" value={name} onChange={setName} placeholder="Your name" />
+
+              {role === 'manager' && (
+                <Field label="TEAM NAME" value={teamName} onChange={setTeamName} placeholder="e.g. Wingate U21" />
+              )}
+
+              {role === 'athlete' && (
+                <View style={styles.field}>
+                  <Text style={styles.fieldLabel}>INVITE CODE</Text>
+                  <TextInput
+                    style={[styles.input, codePreview === '' && styles.inputError]}
+                    value={inviteCode}
+                    onChangeText={handleCodeChange}
+                    placeholder="6-character code from your manager"
+                    placeholderTextColor={colors.muted}
+                    autoCapitalize="characters"
+                    autoCorrect={false}
+                    selectionColor={colors.primary}
+                    maxLength={8}
+                  />
+                  {codePreview === null && inviteCode.length >= 4 && (
+                    <Text style={styles.codeHint}>Checking…</Text>
+                  )}
+                  {codePreview !== null && codePreview !== '' && (
+                    <Text style={styles.codeValid}>✓  {codePreview}</Text>
+                  )}
+                  {codePreview === '' && inviteCode.length >= 4 && (
+                    <Text style={styles.codeInvalid}>Code not found</Text>
+                  )}
+                  <Text style={styles.codeNote}>Ask your manager or coach for this code.</Text>
+                </View>
+              )}
+
+              <Field label="EMAIL" value={email} onChange={setEmail} placeholder="you@example.com" keyboardType="email-address" autoCapitalize="none" />
+              <Field label="PASSWORD" value={password} onChange={setPassword} placeholder="8+ characters" secureTextEntry />
+
+              {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
+              <Pressable
+                onPress={handleSubmit}
+                disabled={loading}
+                style={({ pressed }) => [
+                  styles.submitBtn,
+                  { backgroundColor: role === 'manager' ? '#B794F6' : colors.primary },
+                  loading && styles.submitBtnDisabled,
+                  pressed && !loading && { opacity: 0.8 },
+                ]}
+              >
+                {loading
+                  ? <ActivityIndicator color={colors.bg} size="small" />
+                  : <Text style={styles.submitBtnText}>
+                      {role === 'manager' ? 'CREATE TEAM' : 'JOIN TEAM'}
+                    </Text>}
+              </Pressable>
+            </View>
+          )}
+        </Animated.View>
+      </ScrollView>
+    </KeyboardAvoidingView>
+  );
+}
+
+function RoleCard({ label, description, icon, color, onPress }: {
+  label: string; description: string; icon: string; color: string; onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.roleCard,
+        { borderColor: `${color}55` },
+        pressed && { opacity: 0.75, transform: [{ scale: 0.97 }] },
+      ]}
+    >
+      <View style={[styles.roleIcon, { backgroundColor: `${color}18` }]}>
+        <Text style={[styles.roleIconText, { color }]}>{icon}</Text>
+      </View>
+      <Text style={[styles.roleLabel, { color }]}>{label}</Text>
+      <Text style={styles.roleDesc}>{description}</Text>
+    </Pressable>
+  );
+}
+
+function Field({
+  label, value, onChange, placeholder, keyboardType, autoCapitalize, secureTextEntry,
+}: {
+  label: string; value: string; onChange: (v: string) => void; placeholder: string;
+  keyboardType?: any; autoCapitalize?: any; secureTextEntry?: boolean;
+}) {
+  return (
+    <View style={styles.field}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      <TextInput
+        style={styles.input}
+        value={value}
+        onChangeText={onChange}
+        placeholder={placeholder}
+        placeholderTextColor={colors.muted}
+        keyboardType={keyboardType ?? 'default'}
+        autoCapitalize={autoCapitalize ?? 'words'}
+        autoCorrect={false}
+        secureTextEntry={secureTextEntry}
+        selectionColor={colors.primary}
+      />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  root: {
+    paddingHorizontal: spacing.lg,
+    gap: spacing.lg,
+  },
+
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.sm,
+  },
+  back:      { width: 80, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  backArrow: { color: colors.primary, fontSize: 18, fontWeight: '700' },
+  backLabel: { color: colors.primary, fontSize: 13, fontWeight: '700' },
+  title:     { color: colors.text, fontSize: 13, fontWeight: '900', letterSpacing: 2.5 },
+
+  content: { gap: spacing.lg },
+
+  // ── Role selection ──────────────────────────────────────────────────────────
+  roleSection: { gap: spacing.lg, paddingTop: spacing.lg },
+  rolePrompt: { color: colors.text, fontSize: 20, fontWeight: '800', textAlign: 'center' },
+
+  roleRow: { flexDirection: 'row', gap: spacing.md },
+  roleCard: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingVertical: spacing.xl,
+    paddingHorizontal: spacing.md,
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  roleIcon:     { width: 52, height: 52, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  roleIconText: { fontSize: 22, fontWeight: '600', lineHeight: 24 },
+  roleLabel:    { fontSize: 13, fontWeight: '900', letterSpacing: 2 },
+  roleDesc:     { color: colors.muted, fontSize: 11, fontWeight: '500', textAlign: 'center', lineHeight: 16 },
+
+  // ── Form ───────────────────────────────────────────────────────────────────
+  formSection: { gap: spacing.md },
+
+  roleBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.surface,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  roleBadgeText: { fontSize: 12, fontWeight: '900', letterSpacing: 1.5 },
+  changeRole:    { color: colors.muted, fontSize: 12, fontWeight: '600' },
+
+  field:      { gap: 6 },
+  fieldLabel: { color: colors.muted, fontSize: 10, fontWeight: '700', letterSpacing: 1.5 },
+  input: {
+    backgroundColor: colors.surface,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '500',
+    paddingHorizontal: spacing.md,
+    paddingVertical: 14,
+  },
+  inputError: { borderColor: '#FF3B30' },
+
+  codeHint:    { color: colors.muted, fontSize: 11, fontWeight: '500' },
+  codeValid:   { color: '#00D4BC', fontSize: 11, fontWeight: '700' },
+  codeInvalid: { color: '#FF3B30', fontSize: 11, fontWeight: '700' },
+  codeNote:    { color: colors.muted, fontSize: 10, fontWeight: '500', fontStyle: 'italic' },
+
+  errorText: { color: '#FF3B30', fontSize: 12, fontWeight: '600', textAlign: 'center' },
+
+  submitBtn: {
+    borderRadius: 12,
+    paddingVertical: 15,
+    alignItems: 'center',
+    marginTop: spacing.sm,
+  },
+  submitBtnDisabled: { opacity: 0.5 },
+  submitBtnText:     { color: colors.bg, fontSize: 14, fontWeight: '900', letterSpacing: 2 },
+});

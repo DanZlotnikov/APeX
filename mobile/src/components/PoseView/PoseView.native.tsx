@@ -148,6 +148,10 @@ export default function PoseView({ videoUri, onExerciseResults, onAssessment, on
       javaScriptEnabled
       domStorageEnabled
       cacheEnabled
+      // Required on iOS: WKWebView blocks cross-origin fetches (CDN imports)
+      // from a file:// base URL without this flag.
+      allowUniversalAccessFromFileURLs
+      allowFileAccess
       style={styles.webview}
     />
   );
