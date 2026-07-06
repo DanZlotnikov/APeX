@@ -10,13 +10,11 @@ import {
   View,
 } from 'react-native';
 import PoseView from '../components/PoseView';
-import VideoPlayer from '../components/VideoPlayer';
 import PrimaryButton from '../components/PrimaryButton';
 import AssessmentPanel from '../components/AssessmentPanel';
 import { Assessment } from '../utils/exerciseAnalyzer';
 import { useSettings } from '../state/SettingsContext';
 import { appendEntry, loadHistory, makeId } from '../utils/history';
-import { saveVideo } from '../utils/storage';
 import { compareToHistory, Comparison } from '../utils/stats';
 import { playChime } from '../utils/sound';
 import { colors, spacing } from '../theme';
@@ -120,20 +118,14 @@ export default function AnalysisScreen({ videoUri, onHome, userId, teamId, athle
   const { settings, accentColor } = useSettings();
   const [assessment, setAssessment]     = useState<Assessment | null>(null);
   const [comparison, setComparison]     = useState<Comparison | null | undefined>(undefined);
-  const [renderedUri, setRenderedUri]   = useState<string | null>(null);
   const [saved, setSaved]               = useState(false);
   const [saving, setSaving]             = useState(false);
   const [saveError, setSaveError]       = useState<string | null>(null);
   const [progress, setProgress]         = useState(0);
 
-  const loaderLabel = assessment !== null
-    ? 'PREPARING VIDEO'
-    : progress > 0
-      ? 'ANALYZING MOVEMENT'
-      : 'LOADING POSE MODEL';
+  const loaderLabel = progress > 0 ? 'ANALYZING MOVEMENT' : 'LOADING POSE MODEL';
 
   const assessmentLocked  = useRef(false);
-  const videoReadyLocked  = useRef(false);
   const handleProgress    = useCallback((pct: number) => setProgress(pct), []);
 
   const handleAssessment = useCallback(
@@ -141,7 +133,6 @@ export default function AnalysisScreen({ videoUri, onHome, userId, teamId, athle
       if (assessmentLocked.current) return;
       assessmentLocked.current = true;
       setAssessment(a);
-      setProgress(0);
       try {
         const prior = await loadHistory();
         setComparison(compareToHistory(a, prior, settings.windowDays));
@@ -153,26 +144,17 @@ export default function AnalysisScreen({ videoUri, onHome, userId, teamId, athle
     [settings.windowDays],
   );
 
-  const handleVideoReady = useCallback(
-    (uri: string) => {
-      if (videoReadyLocked.current) return;
-      videoReadyLocked.current = true;
-      setRenderedUri(uri || videoUri);
-    },
-    [videoUri],
-  );
-
   const handleSave = useCallback(async () => {
     if (!assessment || saved || saving) return;
     setSaving(true);
     setSaveError(null);
     try {
-      const id        = makeId();
-      const sourceUri = renderedUri || videoUri;
-      const videoFile = await saveVideo(sourceUri, id);
+      const id = makeId();
 
-      // Local save (always — offline capable)
-      await appendEntry({ id, dateISO: new Date().toISOString(), videoFile, assessment });
+      // Local save (always — offline capable). No video file is persisted —
+      // the skeleton is drawn live over the original clip, never baked to a
+      // separate file, and replaying past sessions is a separate future task.
+      await appendEntry({ id, dateISO: new Date().toISOString(), videoFile: null, assessment });
 
       // DB sync (when authenticated and on a team)
       if (teamId) {
@@ -187,9 +169,9 @@ export default function AnalysisScreen({ videoUri, onHome, userId, teamId, athle
     } finally {
       setSaving(false);
     }
-  }, [assessment, saved, saving, renderedUri, videoUri, userId, teamId, athleteName]);
+  }, [assessment, saved, saving, teamId, athleteName]);
 
-  const isReady = renderedUri !== null && comparison !== undefined;
+  const isReady = comparison !== undefined;
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -205,11 +187,13 @@ export default function AnalysisScreen({ videoUri, onHome, userId, teamId, athle
         <View style={styles.back} />
       </View>
 
-      <View style={styles.hidden}>
+      {/* Always mounted (drives the analysis from the start) — style toggles
+          between hidden (1×1, while analyzing) and the visible video area
+          (once ready) so it's never remounted mid-analysis. */}
+      <View style={isReady ? styles.videoVisible : styles.hidden}>
         <PoseView
           videoUri={videoUri}
           onAssessment={handleAssessment}
-          onVideoReady={handleVideoReady}
           onProgress={handleProgress}
         />
       </View>
@@ -221,9 +205,6 @@ export default function AnalysisScreen({ videoUri, onHome, userId, teamId, athle
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
           >
-            <View style={{ width: '100%', height: VIDEO_H }}>
-              <VideoPlayer videoUri={renderedUri} />
-            </View>
             {assessment && <AssessmentPanel assessment={assessment} comparison={comparison ?? null} />}
           </ScrollView>
 
@@ -267,7 +248,8 @@ const styles = StyleSheet.create({
     letterSpacing: 2.5,
   },
 
-  hidden: { position: 'absolute', width: 1, height: 1, opacity: 0 },
+  hidden:       { position: 'absolute', width: 1, height: 1, opacity: 0 },
+  videoVisible: { width: '100%', height: VIDEO_H },
 
   scroll:        { flex: 1 },
   scrollContent: { flexGrow: 1 },

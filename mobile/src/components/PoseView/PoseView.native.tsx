@@ -9,11 +9,9 @@ interface Props {
   videoUri: string;
   onExerciseResults?: (results: ExerciseResults) => void;
   onAssessment?: (assessment: Assessment) => void;
-  /** Called once when analysis is complete (assessment received). */
+  /** Called once real 1× playback starts (skeleton now visible to the user). */
   onReady?: () => void;
-  /** Called with the file URI of the rendered video (skeleton baked in). */
-  onVideoReady?: (uri: string) => void;
-  /** 0–1 progress of the current phase (preprocess or bake). */
+  /** 0–1 progress of the silent analysis pass preceding visible playback. */
   onProgress?: (pct: number) => void;
 }
 
@@ -68,9 +66,12 @@ async function injectVideoChunked(
   );
 }
 
+// Module-level constant so the reference never changes across renders.
+// react-native-webview reloads the page if the `source` prop reference changes,
+// which was happening every time AnalysisScreen re-rendered (e.g. on setResults).
 const WEBVIEW_SOURCE = { html: MEDIAPIPE_HTML, baseUrl: 'file://' };
 
-export default function PoseView({ videoUri, onExerciseResults, onAssessment, onReady, onVideoReady, onProgress }: Props) {
+export default function PoseView({ videoUri, onExerciseResults, onAssessment, onReady, onProgress }: Props) {
   const webViewRef  = useRef<WebView>(null);
   const videoUriRef = useRef(videoUri);
   videoUriRef.current = videoUri;
@@ -80,17 +81,11 @@ export default function PoseView({ videoUri, onExerciseResults, onAssessment, on
   const onExerciseResultsRef = useRef(onExerciseResults);
   const onAssessmentRef      = useRef(onAssessment);
   const onReadyRef           = useRef(onReady);
-  const onVideoReadyRef      = useRef(onVideoReady);
   const onProgressRef        = useRef(onProgress);
   onExerciseResultsRef.current = onExerciseResults;
   onAssessmentRef.current      = onAssessment;
   onReadyRef.current           = onReady;
-  onVideoReadyRef.current      = onVideoReady;
   onProgressRef.current        = onProgress;
-
-  // Rendered video chunk assembly
-  const renderedChunks = useRef<string[]>([]);
-  const renderedMime   = useRef('video/mp4');
 
   const onMessage = useCallback(
     (e: WebViewMessageEvent) => {
@@ -103,34 +98,14 @@ export default function PoseView({ videoUri, onExerciseResults, onAssessment, on
         if (msg.type === 'progress') {
           onProgressRef.current?.(msg.pct);
         }
+        if (msg.type === 'playing') {
+          onReadyRef.current?.();
+        }
         if (msg.type === 'exerciseResults') {
           onExerciseResultsRef.current?.(msg.results);
         }
         if (msg.type === 'assessment') {
           onAssessmentRef.current?.(msg.assessment);
-          onReadyRef.current?.();
-        }
-        if (msg.type === 'renderedStart') {
-          renderedChunks.current = [];
-          renderedMime.current = msg.mimeType || 'video/mp4';
-        }
-        if (msg.type === 'renderedChunk') {
-          renderedChunks.current[msg.index] = msg.data;
-        }
-        if (msg.type === 'renderedDone') {
-          if (msg.error) {
-            onVideoReadyRef.current?.('');
-            return;
-          }
-          const b64 = renderedChunks.current.join('');
-          renderedChunks.current = [];
-          const ext     = renderedMime.current.includes('mp4') ? 'mp4' : 'webm';
-          const destUri = (FileSystem.documentDirectory ?? '') + 'rendered_' + Date.now() + '.' + ext;
-          FileSystem.writeAsStringAsync(destUri, b64, {
-            encoding: FileSystem.EncodingType.Base64,
-          })
-            .then(() => onVideoReadyRef.current?.(destUri))
-            .catch(() => onVideoReadyRef.current?.(''));
         }
       } catch {}
     },
