@@ -567,7 +567,7 @@ var mediaRecorder = null;
 function lookupLandmarks(t) {
   var n = timeHistory.length;
   if (!n) return null;
-  if (t < timeHistory[0]) return null;           // before first detection — hide skeleton
+  if (t < timeHistory[0]) return landmarkHistory[0]; // hold first pose — avoids blank start in baked video
   if (n === 1 || t <= timeHistory[0]) return landmarkHistory[0];
   var lastT = timeHistory[n - 1];
   // The 8× preprocess pass often misses the last ~1s of video frames, so the
