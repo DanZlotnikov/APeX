@@ -1030,8 +1030,17 @@ function onMsg(e) {
       vid.load();
       setMsg('');
       vid.addEventListener('canplay', () => {
-        vid.playbackRate = 8;
+        // Play at 1× for the first real second so MediaPipe can warm up and
+        // detect the very first frame.  At 8× it takes ~200 ms real time to
+        // detect the first pose, meaning ~1.6 s of video is already gone.
+        // After the warmup window, switch to 8× for the rest of the pass.
+        vid.playbackRate = 1;
         void vid.play();
+        setTimeout(function() {
+          if (phase === 'preprocess' && !vid.paused && !vid.ended) {
+            vid.playbackRate = 8;
+          }
+        }, 1000);
       }, { once: true });
     }
   } catch {}
