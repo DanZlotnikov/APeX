@@ -1,3 +1,4 @@
+import { useFocusEffect } from '@react-navigation/native';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { getTeamAthletes } from '../../api/athletes';
@@ -16,10 +17,9 @@ interface Props {
   onAthleteSelect: (athlete: AthleteViewModel) => void;
 }
 
-function computeTeamStats(athletes: AthleteViewModel[]): TeamStatsViewModel {
+function computeTeamStats(athletes: AthleteViewModel[], injuredCount: number): TeamStatsViewModel {
   const total       = athletes.length;
   const ready       = athletes.filter((a) => a.status === 'green').length;
-  const needsReview = athletes.filter((a) => a.status !== 'green').length;
   const missing     = athletes.filter((a) => a.missingTests > 0).length;
   const avgReadiness = total > 0
     ? Math.round(athletes.reduce((s, a) => s + a.readiness, 0) / total)
@@ -36,7 +36,7 @@ function computeTeamStats(athletes: AthleteViewModel[]): TeamStatsViewModel {
   return {
     totalAthletes:   total,
     ready,
-    needsReview,
+    injuredCount,
     missingTests:    missing,
     readinessAverage: avgReadiness,
     readinessTrend:  0,
@@ -72,8 +72,11 @@ export default function ManagerDashboard({ teamId, onAthleteSelect }: Props) {
   useEffect(() => {
     void loadAthletes();
 
-    // Realtime: refresh when any session is inserted for this team
-    // NOTE: Supabase → Database → Replication must have 'sessions' enabled
+    // Realtime: refresh on new sessions, and on any change to what's required
+    // per athlete (team-wide toggle in ExercisesScreen, or a per-athlete
+    // assignment override) — so a manager ticking an exercise on/off there
+    // is reflected here immediately, not just on next mount/session.
+    // NOTE: Supabase → Database → Replication must have these tables enabled.
     const channel = supabase
       .channel(`sessions:${teamId}`)
       .on(
@@ -81,10 +84,28 @@ export default function ManagerDashboard({ teamId, onAthleteSelect }: Props) {
         { event: 'INSERT', schema: 'public', table: 'sessions' },
         () => { void loadAthletes(); },
       )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'athlete_exercise_assignments' },
+        () => { void loadAthletes(); },
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'team_exercises' },
+        () => { void loadAthletes(); },
+      )
       .subscribe();
 
     return () => { void supabase.removeChannel(channel); };
   }, [loadAthletes, teamId]);
+
+  // Switching tabs (e.g. Exercises → Athletes) doesn't unmount this screen,
+  // so it won't pick up an assignment/config change made on the Exercises
+  // tab on its own — refetch on every focus so it can't go stale just by
+  // tabbing away and back. This is the dependable path; the realtime
+  // subscription above is best-effort on top of it (requires Replication to
+  // be enabled for those tables in the Supabase dashboard).
+  useFocusEffect(useCallback(() => { void loadAthletes(); }, [loadAthletes]));
 
   // Injured athletes get their own inspection-only table below (see
   // AthleteMonitoringTable's colorMode='neutral') and drop out of team-wide
@@ -92,7 +113,7 @@ export default function ManagerDashboard({ teamId, onAthleteSelect }: Props) {
   // being compared against the rest of the roster.
   const healthyAthletes = athletes.filter((a) => !a.injured);
   const injuredAthletes = athletes.filter((a) => a.injured);
-  const stats = computeTeamStats(healthyAthletes);
+  const stats = computeTeamStats(healthyAthletes, injuredAthletes.length);
 
   if (loading) {
     return (

@@ -12,7 +12,7 @@ export default function TeamSummaryCards({ stats }: Props) {
     <View style={styles.row}>
       <SummaryCard label="TOTAL" value={stats.totalAthletes} valueColor={colors.text} />
       <SummaryCard label="READY" value={stats.ready} valueColor="#00D4BC" />
-      <SummaryCard label="REVIEW" value={stats.needsReview} valueColor="#F5A623" />
+      <SummaryCard label="INJURED" value={stats.injuredCount} valueColor="#3B82F6" />
       <SummaryCard label="MISSING" value={stats.missingTests} valueColor="#FF3B30" />
     </View>
   );

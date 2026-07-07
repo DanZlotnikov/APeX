@@ -1,4 +1,4 @@
-import { EXERCISE_KEYS, ExerciseKey } from '../utils/exerciseMetrics';
+import { ExerciseKey } from '../utils/exerciseMetrics';
 import { supabase } from './supabase';
 
 export interface TeamExerciseConfig {
@@ -45,42 +45,64 @@ export async function updateTeamExercise(
   if (error) throw error;
 }
 
-// Effective per-athlete assignment: team_exercises.enabled is the default,
-// overridden by any explicit row in athlete_exercise_assignments.
-export async function getEffectiveAssignments(
-  teamId: string,
+// Raw per-athlete override rows, keyed by athlete then exercise. Absence of
+// an entry for a given exercise means "no override for this athlete" — the
+// team default applies. This is the only place that reads
+// athlete_exercise_assignments; resolveRequiredExercises below is the only
+// place that interprets it.
+async function getAssignmentOverrides(
   athleteIds: string[],
-): Promise<Map<string, Set<ExerciseKey>>> {
-  const [{ data: configs, error: cErr }, { data: overrides, error: oErr }] = await Promise.all([
-    supabase.from('team_exercises').select('exercise_key, enabled').eq('team_id', teamId),
-    athleteIds.length
-      ? supabase.from('athlete_exercise_assignments').select('athlete_id, exercise_key, assigned').in('athlete_id', athleteIds)
-      : Promise.resolve({ data: [] as any[], error: null }),
-  ]);
-  if (cErr) throw cErr;
-  if (oErr) throw oErr;
-
-  const enabledDefaults = new Set(
-    (configs ?? []).filter((c: any) => c.enabled).map((c: any) => c.exercise_key as ExerciseKey),
-  );
-
+): Promise<Map<string, Map<ExerciseKey, boolean>>> {
   const overrideMap = new Map<string, Map<ExerciseKey, boolean>>();
-  for (const o of overrides ?? []) {
+  if (!athleteIds.length) return overrideMap;
+
+  const { data, error } = await supabase
+    .from('athlete_exercise_assignments')
+    .select('athlete_id, exercise_key, assigned')
+    .in('athlete_id', athleteIds);
+  if (error) throw error;
+
+  for (const o of data ?? []) {
     const m = overrideMap.get(o.athlete_id) ?? new Map<ExerciseKey, boolean>();
     m.set(o.exercise_key as ExerciseKey, o.assigned);
     overrideMap.set(o.athlete_id, m);
   }
+  return overrideMap;
+}
+
+// SINGLE SOURCE OF TRUTH for "is this exercise required for this athlete?"
+// team_exercises.enabled is only the default; an explicit per-athlete row in
+// athlete_exercise_assignments always wins over it, in either direction (can
+// turn an exercise ON for one athlete when the team default is off, or OFF
+// when the default is on). Every other computation that needs to know an
+// athlete's required exercises — readiness, the monitoring table, compliance
+// counts — must derive it by calling this, not by re-deriving the rule.
+export function resolveRequiredExercises(
+  teamExercises: TeamExerciseConfig[],
+  overrides: Map<ExerciseKey, boolean> | undefined,
+): ExerciseKey[] {
+  return teamExercises
+    .filter((c) => overrides?.get(c.exerciseKey) ?? c.enabled)
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map((c) => c.exerciseKey);
+}
+
+// Effective per-athlete assignment for every athlete in athleteIds. Pass
+// `teamExercises` if the caller already fetched it (e.g. alongside other
+// team-scoped queries) to avoid re-fetching the same table.
+export async function getEffectiveAssignments(
+  teamId: string,
+  athleteIds: string[],
+  teamExercises?: TeamExerciseConfig[],
+): Promise<Map<string, Set<ExerciseKey>>> {
+  const [configs, overrideMap] = await Promise.all([
+    teamExercises ?? getTeamExercises(teamId),
+    getAssignmentOverrides(athleteIds),
+  ]);
 
   const result = new Map<string, Set<ExerciseKey>>();
   for (const athleteId of athleteIds) {
-    const athleteOverrides = overrideMap.get(athleteId);
-    const set = new Set<ExerciseKey>();
-    for (const key of EXERCISE_KEYS) {
-      const override = athleteOverrides?.get(key);
-      const assigned = override !== undefined ? override : enabledDefaults.has(key);
-      if (assigned) set.add(key);
-    }
-    result.set(athleteId, set);
+    result.set(athleteId, new Set(resolveRequiredExercises(configs, overrideMap.get(athleteId))));
   }
   return result;
 }

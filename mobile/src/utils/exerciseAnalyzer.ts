@@ -208,16 +208,26 @@ function jumpBaseline(f, baseN) {
 
 // Vertical jump: ankles rise > 10 % of the athlete's own standing
 // shoulder-to-ankle height above baseline (see jumpBaseline above).
+// MIN_FLIGHT_SEC filters landmark-noise blips (e.g. a heel rise at the bottom
+// of a squat can momentarily nudge ankleY past JUMP_THRESH for a single
+// frame) from being read as a real jump — a genuine airborne phase lasts much
+// longer than one frame. Without this gate a false "jump" wrongly zeroes out
+// the whole squat count via the mutual-exclusion rule below.
+var MIN_FLIGHT_SEC = 0.15;
+
 function countJumps(f) {
   if (f.length < 10) return 0;
   var baseN = Math.max(5, Math.floor(f.length * 0.12));
   var base = jumpBaseline(f, baseN);
   var JUMP_THRESH = base.bodyScale * 0.10, LAND_THRESH = base.bodyScale * 0.04;
-  var count = 0, inFlight = false;
+  var count = 0, inFlight = false, takeoffIdx = 0;
   for (var j = 0; j < f.length; j++) {
     var rise = base.ankleBaseline - f[j].ankleY;
-    if (!inFlight && rise > JUMP_THRESH) inFlight = true;
-    else if (inFlight && rise < LAND_THRESH) { count++; inFlight = false; }
+    if (!inFlight && rise > JUMP_THRESH) { inFlight = true; takeoffIdx = j; }
+    else if (inFlight && rise < LAND_THRESH) {
+      if (timeHistory[j] - timeHistory[takeoffIdx] >= MIN_FLIGHT_SEC) count++;
+      inFlight = false;
+    }
   }
   return count;
 }
@@ -440,7 +450,10 @@ function segmentJumps(f) {
   for (var j = 0; j < f.length; j++) {
     var rise = base.ankleBaseline - f[j].ankleY;
     if (!inFlight && rise > JUMP_THRESH) { inFlight = true; takeoff = j; }
-    else if (inFlight && rise < LAND_THRESH) { flights.push({ takeoff: takeoff, land: j }); inFlight = false; }
+    else if (inFlight && rise < LAND_THRESH) {
+      if (timeHistory[j] - timeHistory[takeoff] >= MIN_FLIGHT_SEC) flights.push({ takeoff: takeoff, land: j });
+      inFlight = false;
+    }
   }
   return { flights: flights, baseline: base.ankleBaseline };
 }
@@ -486,8 +499,12 @@ function avgRepSeconds(reps, times) {
   return n ? sum / n : 0;
 }
 
+// score: null means "not enough reps to assess a fatigue trend" — callers
+// must exclude this from the weighted readiness average instead of treating
+// it as a passing score, otherwise a 1-2 rep clip silently gets free credit
+// for a fatigue check that was never actually performed.
 function fatigueFactor(reps, f, times, depthKey, deeperIsSmaller) {
-  if (reps.length < 3) return { pct: 0, score: 100 };
+  if (reps.length < 3) return { pct: 0, score: null };
   var third = Math.max(1, Math.floor(reps.length / 3));
   function repDur(r) { var a = times[r.start], b = times[r.end]; return (a != null && b != null && b > a) ? b - a : 0; }
   function repDepth(r) { return f[r.bottom][depthKey]; }
@@ -558,8 +575,14 @@ function computeAssessment(history, times, counts) {
       rec: 'symmetry' };
     factors.push(symF); consider(symF, 1);
 
-    var depthScore = ramp(sq.minK, 95, 150);
-    var depthPctOfParallel = Math.round(clampN((180 - sq.minK) / (180 - 90) * 100, 0, 120));
+    // Average of each rep's OWN bottom, not the single deepest frame in the
+    // clip — otherwise one noisy or unrepresentative deep frame (tracking
+    // jitter, a one-off good rep) would score the whole set as great depth
+    // even if most reps stayed shallow.
+    var repBottomK = reps.map(function(r) { return f[r.bottom].kneeAngle; });
+    var avgBottomK = repBottomK.length ? repBottomK.reduce(function(a, b) { return a + b; }, 0) / repBottomK.length : sq.minK;
+    var depthScore = ramp(avgBottomK, 95, 150);
+    var depthPctOfParallel = Math.round(clampN((180 - avgBottomK) / (180 - 90) * 100, 0, 120));
     var depF = { id: 'depth', label: 'Squat Depth', value: depthPctOfParallel, unit: '%',
       score: depthScore, status: statusFromScore(depthScore),
       detail: depthScore >= 80 ? 'Reaches good depth.' : 'Limited depth — likely ankle/hip mobility.',
@@ -568,10 +591,12 @@ function computeAssessment(history, times, counts) {
 
     var fat = fatigueFactor(reps, f, times, 'kneeAngle', true);
     var fatF = { id: 'fatigue', label: 'Fatigue / Consistency', value: fat.pct, unit: '%',
-      score: fat.score, status: statusFromScore(fat.score),
-      detail: fat.score >= 80 ? 'Reps stay consistent.' : 'Later reps lose depth or slow down.',
+      score: fat.score == null ? 100 : fat.score,
+      status: fat.score == null ? 'green' : statusFromScore(fat.score),
+      detail: fat.score == null ? 'Not enough reps to assess a fatigue trend.' : (fat.score >= 80 ? 'Reps stay consistent.' : 'Later reps lose depth or slow down.'),
       rec: 'fatigue' };
-    factors.push(fatF); consider(fatF, 0.6);
+    factors.push(fatF);
+    if (fat.score != null) consider(fatF, 0.6);
 
     var sqPerDepth = reps.map(function(r) { return Math.round(f[r.bottom].kneeAngle); });
     var sqPerDur   = reps.map(function(r) {
@@ -685,10 +710,12 @@ function computeAssessment(history, times, counts) {
     // Fatigue: does the peak contraction (min elbow angle) get shallower in later reps?
     var pfat = fatigueFactor(preps, f, times, 'elbowAngle', true);
     var pfatF = { id: 'fatigue', label: 'Fatigue / Consistency', value: pfat.pct, unit: '%',
-      score: pfat.score, status: statusFromScore(pfat.score),
-      detail: pfat.score >= 80 ? 'Reps stay consistent throughout.' : 'Later reps become shallower or slower — grip / pulling endurance fading.',
+      score: pfat.score == null ? 100 : pfat.score,
+      status: pfat.score == null ? 'green' : statusFromScore(pfat.score),
+      detail: pfat.score == null ? 'Not enough reps to assess a fatigue trend.' : (pfat.score >= 80 ? 'Reps stay consistent throughout.' : 'Later reps become shallower or slower — grip / pulling endurance fading.'),
       rec: 'fatigue' };
-    factors4.push(pfatF); consider(pfatF, 0.6);
+    factors4.push(pfatF);
+    if (pfat.score != null) consider(pfatF, 0.6);
 
     var puPerDepth = preps.map(function(r) { return Math.round(f[r.bottom].elbowAngle); });
     var puPerDur   = preps.map(function(r) {

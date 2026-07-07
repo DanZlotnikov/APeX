@@ -116,7 +116,7 @@ export interface AthleteViewModel {
 export interface TeamStatsViewModel {
   totalAthletes: number;
   ready: number;
-  needsReview: number;
+  injuredCount: number;
   missingTests: number;
   readinessAverage: number;
   readinessTrend: number;

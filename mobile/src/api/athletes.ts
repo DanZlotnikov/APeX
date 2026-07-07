@@ -15,7 +15,7 @@ export async function getTeamAthletes(teamId: string): Promise<AthleteViewModel[
 
   const athleteIds = profiles.map((p) => p.id);
 
-  const [sessionsRes, teamExercises, assignments] = await Promise.all([
+  const [sessionsRes, teamExercises] = await Promise.all([
     supabase
       .from('sessions')
       .select('id, athlete_id, exercise_type, recorded_at, rep_count, readiness_score, session_metrics(metric_key, value)')
@@ -23,10 +23,14 @@ export async function getTeamAthletes(teamId: string): Promise<AthleteViewModel[
       .order('recorded_at', { ascending: false })
       .limit(200),
     getTeamExercises(teamId),
-    getEffectiveAssignments(teamId, athleteIds),
   ]);
 
   if (sessionsRes.error) throw sessionsRes.error;
+
+  // Pass teamExercises through so getEffectiveAssignments doesn't re-fetch
+  // the table it already has — resolveRequiredExercises (in api/exercises.ts)
+  // stays the one place that decides team default vs. per-athlete override.
+  const assignments = await getEffectiveAssignments(teamId, athleteIds, teamExercises);
 
   const sessionsByAthlete = new Map<string, any[]>();
   for (const s of sessionsRes.data ?? []) {
@@ -54,7 +58,7 @@ export async function getAthleteById(athleteId: string): Promise<AthleteViewMode
 
   if (!profile) return null;
 
-  const [sessionsRes, teamExercises, assignments] = await Promise.all([
+  const [sessionsRes, teamExercises] = await Promise.all([
     supabase
       .from('sessions')
       .select('id, exercise_type, recorded_at, rep_count, readiness_score, session_metrics(metric_key, value)')
@@ -62,8 +66,8 @@ export async function getAthleteById(athleteId: string): Promise<AthleteViewMode
       .order('recorded_at', { ascending: false })
       .limit(100),
     getTeamExercises(profile.team_id),
-    getEffectiveAssignments(profile.team_id, [athleteId]),
   ]);
+  const assignments = await getEffectiveAssignments(profile.team_id, [athleteId], teamExercises);
 
   const ap = profile.athlete_profiles as any;
   return buildViewModel(
@@ -135,8 +139,14 @@ function buildViewModel(
     if (!latestByExercise.has(key)) latestByExercise.set(key, s);
   }
 
+  // assignedKeys (from getEffectiveAssignments → resolveRequiredExercises in
+  // api/exercises.ts) is ALREADY the fully-resolved required-exercise set for
+  // this athlete — team default, overridden per-athlete where applicable.
+  // Do not re-intersect it with the team-wide `enabled` flag here: that would
+  // silently ignore a per-athlete override that turns an exercise ON while
+  // the team default is off, defeating the whole point of the override.
   const configByKey = new Map(teamExercises.map((c) => [c.exerciseKey, c]));
-  const activeExercises = EXERCISE_KEYS.filter((k) => configByKey.get(k)?.enabled && assignedKeys.has(k));
+  const activeExercises = EXERCISE_KEYS.filter((k) => assignedKeys.has(k));
 
   const perExerciseReadiness: ExerciseReadiness[] = activeExercises.map((key) => {
     const session = latestByExercise.get(key);
@@ -163,11 +173,15 @@ function buildViewModel(
     };
   });
 
-  const readinessValues = perExerciseReadiness
-    .map((e) => e.readiness)
-    .filter((v): v is number => v != null);
-  const readiness = readinessValues.length
-    ? Math.round(readinessValues.reduce((a, b) => a + b, 0) / readinessValues.length)
+  // Overall readiness is an average across every active (assigned + enabled)
+  // exercise, not just the ones actually tested — an exercise that's missing
+  // or wasn't tested today contributes 0 rather than being dropped from the
+  // average, so a single good test can't read as a perfect overall score
+  // while other required exercises are outstanding.
+  const readiness = activeExercises.length
+    ? Math.round(
+        perExerciseReadiness.reduce((sum, e) => sum + (e.testedToday ? e.readiness ?? 0 : 0), 0) / activeExercises.length,
+      )
     : 0;
 
   // Last test (most recent session across all exercises)

@@ -161,8 +161,11 @@ function AthleteCard({
         <Text style={styles.cardName} numberOfLines={1}>{a.name}</Text>
       </View>
 
+      <View style={styles.readinessRow}>
+        <MetaCell label="READINESS" value={`${a.readiness}%`} valueColor={cellColor(a.readiness, colorMode)} big />
+      </View>
+
       <View style={styles.cardMetaRow}>
-        <MetaCell label="READINESS" value={`${a.readiness}%`} valueColor={cellColor(a.readiness, colorMode)} />
         {exerciseColumns.map((c) => {
           const v = exerciseValue(a, c.key);
           return (
@@ -192,10 +195,12 @@ function AthleteCard({
   );
 }
 
-function MetaCell({ label, value, valueColor }: { label: string; value: string; valueColor: string }) {
+function MetaCell({
+  label, value, valueColor, big,
+}: { label: string; value: string; valueColor: string; big?: boolean }) {
   return (
-    <View style={styles.metaCell}>
-      <Text style={[styles.metaValue, { color: valueColor }]}>{value}</Text>
+    <View style={[styles.metaCell, big && styles.metaCellBig]}>
+      <Text style={[styles.metaValue, big && styles.metaValueBig, { color: valueColor }]}>{value}</Text>
       <Text style={styles.metaLabel}>{label}</Text>
     </View>
   );
@@ -301,6 +306,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   cardTrendRow: { paddingHorizontal: 4 },
+  readinessRow: { flexDirection: 'row' },
   metaCell: {
     flexGrow: 1,
     flexBasis: '30%',
@@ -311,10 +317,17 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     paddingVertical: 8,
   },
+  metaCellBig: {
+    paddingVertical: 14,
+  },
   metaValue: {
     fontSize: 16,
     fontWeight: '800',
     lineHeight: 18,
+  },
+  metaValueBig: {
+    fontSize: 28,
+    lineHeight: 32,
   },
   metaLabel: {
     color: colors.muted,

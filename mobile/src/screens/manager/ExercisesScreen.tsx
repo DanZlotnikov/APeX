@@ -39,7 +39,7 @@ export default function ExercisesScreen({ teamId }: Props) {
       const roster = await getTeamAthletes(teamId);
       const rows = roster.map((a) => ({ id: a.id, name: a.name }));
       setAthletes(rows);
-      const assign = await getEffectiveAssignments(teamId, rows.map((a) => a.id));
+      const assign = await getEffectiveAssignments(teamId, rows.map((a) => a.id), cfgs);
       setAssignments(assign);
     } catch (e) {
       console.warn('Failed to load exercise config', e);

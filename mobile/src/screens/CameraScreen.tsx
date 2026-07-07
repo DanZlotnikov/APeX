@@ -9,7 +9,7 @@ import { colors, spacing } from '../theme';
 import { normalizeVideoUri } from '../utils/video';
 
 const COUNTDOWN_SECONDS = 5;
-const RECORD_SECONDS = 10;
+const RECORD_SECONDS = 30;
 
 interface Props {
   pickOnMount: boolean;
