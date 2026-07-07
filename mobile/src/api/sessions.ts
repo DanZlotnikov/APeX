@@ -1,37 +1,28 @@
 import { Assessment } from '../utils/exerciseAnalyzer';
+import { mean } from '../utils/history';
 import { createNotification } from './notifications';
 import { supabase } from './supabase';
 
-function extractExerciseType(assessment: Assessment): 'squat' | 'deadlift' | 'jump' | 'pullup' {
-  const key = (assessment.perExercise[0]?.key ?? '').toLowerCase();
-  if (key.includes('jump') || key.includes('vertical')) return 'jump';
-  if (key.includes('dead'))                             return 'deadlift';
-  if (key.includes('pull'))                             return 'pullup';
-  return 'squat';
+function extractExerciseType(assessment: Assessment): 'squat' | 'jump' | 'pullup' {
+  return assessment.perExercise[0]?.key ?? 'squat';
 }
 
+// Persists every RiskFactor value the analyzer already computed, keyed
+// `${exerciseKey}_${factorId}` — this is exactly what the manager's per-exercise
+// metric thresholds (mobile/src/utils/exerciseMetrics.ts) look up against.
+// Jump's `flightTime` isn't a factor (no analyzer factor has that id), so it's
+// derived here from perRepDurationSec (flight duration per rep, see
+// exerciseAnalyzer.ts's segmentJumps/jPerDur).
 function extractMetrics(assessment: Assessment): Array<{ metric_key: string; value: number }> {
   const out: Array<{ metric_key: string; value: number }> = [];
 
   for (const ex of assessment.perExercise) {
-    const isJump  = ex.key.includes('jump') || ex.key.includes('vertical');
-    const exLabel = isJump ? 'jump' : 'squat';
-
-    if (ex.metrics.romDeg > 0) {
-      out.push({ metric_key: `${exLabel}_rom_deg`, value: ex.metrics.romDeg });
+    for (const f of ex.factors) {
+      out.push({ metric_key: `${ex.key}_${f.id}`, value: f.value });
     }
-    out.push({ metric_key: `${exLabel}_reps`, value: ex.reps });
-
-    const symmetry = ex.factors.find((f) => f.id === 'lr_symmetry' || f.rec === 'symmetry');
-    if (symmetry) {
-      out.push({ metric_key: 'lr_imbalance_pct', value: symmetry.value });
-    }
-
-    if (isJump) {
-      const flight = ex.factors.find((f) => f.id === 'flight_time');
-      if (flight) {
-        out.push({ metric_key: 'flight_time_s', value: flight.value });
-      }
+    if (ex.key === 'jump' && ex.metrics.perRepDurationSec.length > 0) {
+      const flightTime = mean(ex.metrics.perRepDurationSec);
+      if (flightTime != null) out.push({ metric_key: 'jump_flightTime', value: flightTime });
     }
   }
 
@@ -39,10 +30,9 @@ function extractMetrics(assessment: Assessment): Array<{ metric_key: string; val
 }
 
 const EXERCISE_LABEL: Record<string, string> = {
-  squat:    'Squat Test',
-  jump:     'Jump Test',
-  deadlift: 'Deadlift Test',
-  pullup:   'Pull-up Test',
+  squat:  'Squat Test',
+  jump:   'Jump Test',
+  pullup: 'Pull-up Test',
 };
 
 export async function createSession(

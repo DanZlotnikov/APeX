@@ -1,7 +1,7 @@
 import { DarkTheme, NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import React from 'react';
+import React, { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AppBar from './dashboard/AppBar';
@@ -25,7 +25,7 @@ function HistoryStack() {
 }
 
 // ︎ = variation selector-15: forces text rendering, prevents iOS emoji substitution
-const GLYPH: Record<string, string> = { Overview: '◉︎', History: '≡︎', Settings: '⚙︎' };
+const GLYPH: Record<string, string> = { Overview: '◉︎', History: '≡︎' };
 
 const navTheme = {
   ...DarkTheme,
@@ -41,13 +41,21 @@ interface Props {
 export default function DashboardScreen({ onRecord, onUpload, onLogout }: Props) {
   const { accentColor } = useSettings();
   const insets = useSafeAreaInsets();
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   // Floating, fully-rounded tab bar lifted off the bottom edge.
   const tabBarStyle = [styles.tabBar, { marginBottom: (insets.bottom || 0) + 12 }];
 
   return (
     <View style={styles.root}>
-      <AppBar onRecord={onRecord} onUpload={onUpload} onLogout={onLogout} />
+      <AppBar
+        onRecord={onRecord}
+        onUpload={onUpload}
+        onLogout={onLogout}
+        onSettings={() => setSettingsOpen(true)}
+        settingsOpen={settingsOpen}
+        onBack={() => setSettingsOpen(false)}
+      />
       <View style={styles.body}>
         <NavigationContainer theme={navTheme}>
           <Tab.Navigator
@@ -66,9 +74,16 @@ export default function DashboardScreen({ onRecord, onUpload, onLogout }: Props)
           >
             <Tab.Screen name="Overview" component={OverviewScreen} />
             <Tab.Screen name="History" component={HistoryStack} />
-            <Tab.Screen name="Settings" component={SettingsScreen} />
           </Tab.Navigator>
         </NavigationContainer>
+
+        {/* Settings covers the tab area as an overlay so the tab state
+            underneath survives opening/closing it. */}
+        {settingsOpen && (
+          <View style={styles.settingsOverlay}>
+            <SettingsScreen />
+          </View>
+        )}
       </View>
     </View>
   );
@@ -77,6 +92,7 @@ export default function DashboardScreen({ onRecord, onUpload, onLogout }: Props)
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
   body: { flex: 1 },
+  settingsOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: colors.bg },
   tabBar: {
     height: 62,
     marginHorizontal: 16,

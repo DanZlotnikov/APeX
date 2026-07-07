@@ -1,10 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { getTeamAthletes } from '../../api/athletes';
+import { getTeamExercises } from '../../api/exercises';
 import { supabase } from '../../api/supabase';
 import { AthleteViewModel, TeamStatsViewModel } from '../../api/types';
 import { colors, spacing } from '../../theme';
-import AthleteMonitoringTable from './components/AthleteMonitoringTable';
+import { EXERCISE_LABELS } from '../../utils/exerciseMetrics';
+import AthleteMonitoringTable, { ExerciseColumn } from './components/AthleteMonitoringTable';
 import ComplianceCard from './components/ComplianceCard';
 import TeamReadinessCard from './components/TeamReadinessCard';
 import TeamSummaryCards from './components/TeamSummaryCards';
@@ -22,8 +24,14 @@ function computeTeamStats(athletes: AthleteViewModel[]): TeamStatsViewModel {
   const avgReadiness = total > 0
     ? Math.round(athletes.reduce((s, a) => s + a.readiness, 0) / total)
     : 0;
-  const completedToday = athletes.filter((a) => a.missingTests === 0 && a.lastTestDate !== 'Never').length;
-  const compliancePct  = total > 0 ? Math.round((completedToday / total) * 100) : 0;
+  // Compliance = individual tests completed today / individual tests required today,
+  // summed across every athlete's assigned exercises (not athlete headcount).
+  const expectedTests = athletes.reduce((s, a) => s + a.perExerciseReadiness.length, 0);
+  const completedTests = athletes.reduce(
+    (s, a) => s + (a.perExerciseReadiness.length - a.missingTests),
+    0,
+  );
+  const compliancePct = expectedTests > 0 ? Math.round((completedTests / expectedTests) * 100) : 0;
 
   return {
     totalAthletes:   total,
@@ -33,20 +41,27 @@ function computeTeamStats(athletes: AthleteViewModel[]): TeamStatsViewModel {
     readinessAverage: avgReadiness,
     readinessTrend:  0,
     compliancePct,
-    completedTests:  completedToday,
-    expectedTests:   total,
+    completedTests,
+    expectedTests,
   };
 }
 
 export default function ManagerDashboard({ teamId, onAthleteSelect }: Props) {
-  const [athletes, setAthletes] = useState<AthleteViewModel[]>([]);
-  const [loading,  setLoading]  = useState(true);
+  const [athletes,        setAthletes]        = useState<AthleteViewModel[]>([]);
+  const [exerciseColumns, setExerciseColumns] = useState<ExerciseColumn[]>([]);
+  const [loading,         setLoading]         = useState(true);
   const teamRef = useRef(teamId);
 
   const loadAthletes = useCallback(async () => {
     try {
-      const data = await getTeamAthletes(teamRef.current);
+      const [data, configs] = await Promise.all([
+        getTeamAthletes(teamRef.current),
+        getTeamExercises(teamRef.current),
+      ]);
       setAthletes(data);
+      setExerciseColumns(
+        configs.filter((c) => c.enabled).map((c) => ({ key: c.exerciseKey, label: EXERCISE_LABELS[c.exerciseKey] })),
+      );
     } catch (e) {
       console.warn('Failed to load athletes', e);
     } finally {
@@ -71,7 +86,13 @@ export default function ManagerDashboard({ teamId, onAthleteSelect }: Props) {
     return () => { void supabase.removeChannel(channel); };
   }, [loadAthletes, teamId]);
 
-  const stats = computeTeamStats(athletes);
+  // Injured athletes get their own inspection-only table below (see
+  // AthleteMonitoringTable's colorMode='neutral') and drop out of team-wide
+  // ranking/compliance stats — they're on a separate recovery track, not
+  // being compared against the rest of the roster.
+  const healthyAthletes = athletes.filter((a) => !a.injured);
+  const injuredAthletes = athletes.filter((a) => a.injured);
+  const stats = computeTeamStats(healthyAthletes);
 
   if (loading) {
     return (
@@ -94,7 +115,21 @@ export default function ManagerDashboard({ teamId, onAthleteSelect }: Props) {
             <Text style={styles.emptyText}>No athletes on this team yet.</Text>
           </View>
         ) : (
-          <AthleteMonitoringTable athletes={athletes} onSelectAthlete={onAthleteSelect} />
+          <AthleteMonitoringTable
+            athletes={healthyAthletes}
+            exerciseColumns={exerciseColumns}
+            onSelectAthlete={onAthleteSelect}
+          />
+        )}
+
+        {injuredAthletes.length > 0 && (
+          <AthleteMonitoringTable
+            athletes={injuredAthletes}
+            exerciseColumns={exerciseColumns}
+            onSelectAthlete={onAthleteSelect}
+            title="INJURY MONITORING"
+            colorMode="neutral"
+          />
         )}
       </ScrollView>
     </View>

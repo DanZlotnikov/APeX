@@ -60,7 +60,6 @@ export default function AssessmentPanel({ assessment, comparison }: Props) {
 
 // Per-exercise chart labels and Y-axis orientation.
 // For squat/pullup: lower angle = better performance, so we invert for display.
-// For deadlift:     higher torso lean = better hinge.
 // For jump:         higher = bigger jump (already correct orientation).
 function chartConfig(key: ExerciseAssessment['key']): {
   depthLabel: string;
@@ -70,8 +69,6 @@ function chartConfig(key: ExerciseAssessment['key']): {
   switch (key) {
     case 'squat':
       return { depthLabel: 'DEPTH', depthUnit: '°', invertDepth: true };
-    case 'deadlift':
-      return { depthLabel: 'HINGE', depthUnit: '°', invertDepth: false };
     case 'jump':
       return { depthLabel: 'HEIGHT', depthUnit: '', invertDepth: false };
     case 'pullup':

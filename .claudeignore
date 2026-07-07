@@ -1,0 +1,12 @@
+# Ignore top-level tooling directories
+.claude/
+
+# Ignore mobile project specific node_modules and builds
+mobile/node_modules/
+mobile/.expo/
+
+# Ignore backend node_modules if they exist
+backend/node_modules/
+
+# Generic fallback to catch any nested packages
+**/node_modules/

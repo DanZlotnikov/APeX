@@ -5,6 +5,9 @@ export interface DbProfile {
   role: 'athlete' | 'manager';
   team_id: string;
   full_name: string;
+  injured: boolean;
+  injury_started_at: string | null;
+  stats_reset_at: string | null;
   created_at: string;
 }
 
@@ -19,7 +22,7 @@ export interface DbAthleteProfile {
 export interface DbSession {
   id: string;
   athlete_id: string;
-  exercise_type: 'squat' | 'deadlift' | 'jump' | 'pullup';
+  exercise_type: 'squat' | 'jump' | 'pullup';
   recorded_at: string;
   rep_count: number;
   readiness_score: number | null;
@@ -47,17 +50,23 @@ export interface DbNotification {
 export interface DbTeamSettings {
   team_id: string;
   readiness_threshold: number;
-  max_lr_imbalance: number;
-  required_tests_per_day: number;
   updated_at: string;
 }
 
-export interface DbRequiredTest {
+export interface DbTeamExercise {
   id: string;
   team_id: string;
-  label: string;
+  exercise_key: 'squat' | 'jump' | 'pullup';
   enabled: boolean;
+  min_reps: number;
+  thresholds: Record<string, number>;
   sort_order: number;
+}
+
+export interface DbAthleteExerciseAssignment {
+  athlete_id: string;
+  exercise_key: 'squat' | 'jump' | 'pullup';
+  assigned: boolean;
 }
 
 // ── View models (for UI consumption) ──────────────────────────────────────────
@@ -79,18 +88,29 @@ export interface NotificationViewModel {
   timestamp: string;
 }
 
+export interface ExerciseReadiness {
+  key: 'squat' | 'jump' | 'pullup';
+  label: string;
+  readiness: number | null; // null = no session yet for this exercise
+  testedToday: boolean;     // whether the latest session for this exercise was recorded today
+  passed: boolean | null;   // null = no session yet to judge; else meets min reps + all metric thresholds
+}
+
 export interface AthleteViewModel {
   id: string;
   name: string;
   status: AthleteStatus;
-  readiness: number;
-  lrImbalance: number;
+  readiness: number; // average of perExerciseReadiness (exercises with data only)
+  perExerciseReadiness: ExerciseReadiness[];
   lastTestDate: string;
   lastTestTime: string | null;
   missingTests: number;
   profile: AthleteProfileData;
   readinessHistory: number[];  // last 30 days, oldest → newest
   totalSessions: number;
+  injured: boolean;
+  injuryStartedAt: string | null;
+  statsResetAt: string | null; // cutoff for readiness trend / per-exercise readiness / compliance
 }
 
 export interface TeamStatsViewModel {
@@ -105,11 +125,3 @@ export interface TeamStatsViewModel {
   expectedTests: number;
 }
 
-export interface TeamSettingsViewModel {
-  teamId: string;
-  teamName: string;
-  readinessThreshold: number;
-  maxLRImbalance: number;
-  requiredTestsPerDay: number;
-  requiredTests: Array<{ id: string; label: string; enabled: boolean }>;
-}

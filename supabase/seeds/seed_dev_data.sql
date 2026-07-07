@@ -1,7 +1,9 @@
 -- APeX · Dev Seed Data
 -- ─────────────────────────────────────────────────────────────────────────────
 -- PREREQUISITES
---   1. Run 001_schema.sql first.
+--   1. Run 001_schema.sql, 002_invite_codes.sql, 003_exercise_config.sql,
+--      004_athlete_injury.sql, 005_remove_deadlift.sql, then
+--      006_athlete_recovery.sql.
 --   2. In Supabase Dashboard → Authentication → Providers → Email, disable
 --      "Confirm email" so dev accounts can sign in immediately after signup.
 --   3. Create the following users in Dashboard → Authentication → Users:
@@ -67,14 +69,13 @@ BEGIN
   VALUES ('Wingate U21', 'APEX01')
   RETURNING id INTO v_team_id;
 
-  INSERT INTO public.team_settings (team_id, readiness_threshold, max_lr_imbalance, required_tests_per_day)
-  VALUES (v_team_id, 75, 15, 3);
+  INSERT INTO public.team_settings (team_id, readiness_threshold)
+  VALUES (v_team_id, 75);
 
-  INSERT INTO public.required_tests (team_id, label, enabled, sort_order) VALUES
-    (v_team_id, 'Jump Test',       TRUE,  0),
-    (v_team_id, 'Squat Test',      TRUE,  1),
-    (v_team_id, 'Balance Test',    TRUE,  2),
-    (v_team_id, 'Single-Leg Hop',  FALSE, 3);
+  INSERT INTO public.team_exercises (team_id, exercise_key, enabled, min_reps, thresholds, sort_order) VALUES
+    (v_team_id, 'squat',  TRUE, 5, '{"depth":80,"symmetry":15,"fatigue":30}'::jsonb,        0),
+    (v_team_id, 'jump',   TRUE, 3, '{"landing":65,"symmetry":15,"flightTime":0.40}'::jsonb, 1),
+    (v_team_id, 'pullup', TRUE, 3, '{"depth":60,"symmetry":15,"fatigue":30}'::jsonb,        2);
 
   -- ── Profiles ─────────────────────────────────────────────────────────────────
   INSERT INTO public.profiles (id, role, team_id, full_name) VALUES

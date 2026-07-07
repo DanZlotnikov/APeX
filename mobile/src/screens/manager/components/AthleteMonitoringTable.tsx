@@ -1,116 +1,194 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
-import { AthleteViewModel as MockAthlete } from '../../../api/types';
+import LineTrend from '../../../components/charts/LineTrend';
+import { AthleteViewModel } from '../../../api/types';
 import { colors, spacing } from '../../../theme';
-import AthleteStatusBadge from './AthleteStatusBadge';
+import { ExerciseKey } from '../../../utils/exerciseMetrics';
+import { readinessColor } from '../../../utils/readiness';
 
-interface Props {
-  athletes: MockAthlete[];
-  onSelectAthlete: (athlete: MockAthlete) => void;
+export interface ExerciseColumn {
+  key: ExerciseKey;
+  label: string;
 }
 
-const IMBALANCE_THRESHOLD = 15;
+// 'ranked' colors readiness/trend by the shared green/amber/red bands (used
+// to judge and compare athletes). 'neutral' renders everything in one blue —
+// for the injury table, where the athletes aren't being ranked against
+// anything, just inspected.
+type ColorMode = 'ranked' | 'neutral';
+const NEUTRAL_BLUE = '#3B82F6';
 
-export default function AthleteMonitoringTable({ athletes, onSelectAthlete }: Props) {
+function cellColor(value: number | null, colorMode: ColorMode): string {
+  if (value == null) return colors.muted;
+  return colorMode === 'neutral' ? NEUTRAL_BLUE : readinessColor(value);
+}
+
+interface Props {
+  athletes: AthleteViewModel[];
+  exerciseColumns: ExerciseColumn[];
+  onSelectAthlete: (athlete: AthleteViewModel) => void;
+  title?: string;
+  colorMode?: ColorMode;
+}
+
+// Only surface a value if that exercise was actually tested today — no
+// falling back to an older session's score.
+function exerciseValue(athlete: AthleteViewModel, key: ExerciseKey): number | null {
+  const e = athlete.perExerciseReadiness.find((ex) => ex.key === key);
+  return e?.testedToday ? e.readiness : null;
+}
+
+export default function AthleteMonitoringTable({
+  athletes, exerciseColumns, onSelectAthlete, title = 'ATHLETE MONITORING', colorMode = 'ranked',
+}: Props) {
   const { width } = useWindowDimensions();
   const wide = width >= 600;
 
   return (
     <View style={styles.card}>
-      <Text style={styles.title}>ATHLETE MONITORING</Text>
+      <Text style={styles.title}>{title}</Text>
       {wide ? (
-        <TableLayout athletes={athletes} onSelectAthlete={onSelectAthlete} />
+        <TableLayout athletes={athletes} exerciseColumns={exerciseColumns} onSelectAthlete={onSelectAthlete} colorMode={colorMode} />
       ) : (
-        <CardLayout athletes={athletes} onSelectAthlete={onSelectAthlete} />
+        <CardLayout athletes={athletes} exerciseColumns={exerciseColumns} onSelectAthlete={onSelectAthlete} colorMode={colorMode} />
       )}
     </View>
   );
 }
 
-function TableLayout({ athletes, onSelectAthlete }: Props) {
+function TableLayout({ athletes, exerciseColumns, onSelectAthlete, colorMode = 'ranked' }: Props) {
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false}>
       <View>
         <View style={styles.tableHeader}>
-          {['ATHLETE', 'STATUS', 'READINESS', 'L/R', 'LAST TEST', 'MISSING', ''].map((h) => (
-            <Text key={h} style={[styles.th, h === 'ATHLETE' ? styles.thWide : undefined]}>{h}</Text>
+          <Text style={[styles.th, styles.thWide]}>ATHLETE</Text>
+          {exerciseColumns.map((c) => (
+            <Text key={c.key} style={styles.th}>{c.label.toUpperCase()}</Text>
           ))}
+          <Text style={styles.th}>READINESS</Text>
+          <Text style={styles.th}>TREND</Text>
+          <Text style={styles.timeHeader}>LAST TEST</Text>
+          <Text style={styles.th}> </Text>
         </View>
         {athletes.map((a) => (
-          <TableRow key={a.id} athlete={a} onPress={() => onSelectAthlete(a)} />
+          <TableRow key={a.id} athlete={a} exerciseColumns={exerciseColumns} onPress={() => onSelectAthlete(a)} colorMode={colorMode} />
         ))}
       </View>
     </ScrollView>
   );
 }
 
-function TableRow({ athlete: a, onPress }: { athlete: MockAthlete; onPress: () => void }) {
-  const lrHigh = a.lrImbalance >= IMBALANCE_THRESHOLD;
+function TableRow({
+  athlete: a,
+  exerciseColumns,
+  onPress,
+  colorMode,
+}: {
+  athlete: AthleteViewModel;
+  exerciseColumns: ExerciseColumn[];
+  onPress: () => void;
+  colorMode: ColorMode;
+}) {
   const actionLabel = a.status === 'green' ? 'View' : 'Review';
-  const actionColor = a.status === 'green' ? colors.muted : '#F5A623';
+  const actionColor = a.status === 'green' ? colors.muted : colors.primary;
+  const [hovered, setHovered] = useState(false);
 
   return (
-    <View style={styles.tableRow}>
+    <Pressable
+      onPress={onPress}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
+      style={({ pressed }) => [styles.tableRow, (hovered || pressed) && styles.tableRowActive]}
+    >
       <Text style={[styles.td, styles.thWide, styles.nameText]} numberOfLines={1}>{a.name}</Text>
-      <View style={[styles.cell, styles.cellCenter]}>
-        <AthleteStatusBadge status={a.status} />
+      {exerciseColumns.map((c) => {
+        const v = exerciseValue(a, c.key);
+        return (
+          <Text key={c.key} style={[styles.td, styles.tdCenter, { color: cellColor(v, colorMode) }]}>
+            {v == null ? '—' : `${v}%`}
+          </Text>
+        );
+      })}
+      <Text style={[styles.td, styles.tdCenter, styles.readinessText, { color: cellColor(a.readiness, colorMode) }]}>
+        {a.readiness}%
+      </Text>
+      <View style={styles.trendCell}>
+        <LineTrend data={a.readinessHistory} color={cellColor(a.readiness, colorMode)} min={50} max={100} height={28} />
       </View>
-      <Text style={[styles.td, styles.tdCenter, styles.readinessText]}>{a.readiness}%</Text>
-      <Text style={[styles.td, styles.tdCenter, { color: lrHigh ? '#F5A623' : colors.muted }]}>{a.lrImbalance}%</Text>
       <Text style={[styles.td, styles.timeText]} numberOfLines={1}>
         {a.lastTestTime ? `${a.lastTestDate} ${a.lastTestTime}` : a.lastTestDate}
       </Text>
-      <Text style={[styles.td, styles.tdCenter, { color: a.missingTests > 0 ? '#FF3B30' : colors.muted }]}>
-        {a.missingTests}
-      </Text>
-      <Pressable onPress={onPress} style={({ pressed }) => [styles.actionBtn, pressed && { opacity: 0.6 }]}>
+      <View style={styles.actionBtn}>
         <Text style={[styles.actionText, { color: actionColor }]}>{actionLabel}</Text>
-      </Pressable>
-    </View>
+      </View>
+    </Pressable>
   );
 }
 
-function CardLayout({ athletes, onSelectAthlete }: Props) {
+function CardLayout({ athletes, exerciseColumns, onSelectAthlete, colorMode = 'ranked' }: Props) {
   return (
     <View style={styles.cardList}>
       {athletes.map((a) => (
-        <AthleteCard key={a.id} athlete={a} onPress={() => onSelectAthlete(a)} />
+        <AthleteCard key={a.id} athlete={a} exerciseColumns={exerciseColumns} onPress={() => onSelectAthlete(a)} colorMode={colorMode} />
       ))}
     </View>
   );
 }
 
-function AthleteCard({ athlete: a, onPress }: { athlete: MockAthlete; onPress: () => void }) {
-  const lrHigh = a.lrImbalance >= IMBALANCE_THRESHOLD;
+function AthleteCard({
+  athlete: a,
+  exerciseColumns,
+  onPress,
+  colorMode,
+}: {
+  athlete: AthleteViewModel;
+  exerciseColumns: ExerciseColumn[];
+  onPress: () => void;
+  colorMode: ColorMode;
+}) {
   const actionLabel = a.status === 'green' ? 'View' : 'Review';
-  const actionColor = a.status === 'green' ? colors.muted : '#F5A623';
+  const actionColor = a.status === 'green' ? colors.muted : colors.primary;
+  const [hovered, setHovered] = useState(false);
 
   return (
-    <View style={styles.athleteCard}>
+    <Pressable
+      onPress={onPress}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
+      style={({ pressed }) => [styles.athleteCard, (hovered || pressed) && styles.athleteCardActive]}
+    >
       <View style={styles.cardTopRow}>
         <Text style={styles.cardName} numberOfLines={1}>{a.name}</Text>
-        <AthleteStatusBadge status={a.status} />
       </View>
 
       <View style={styles.cardMetaRow}>
-        <MetaCell label="READINESS" value={`${a.readiness}%`} valueColor={colors.text} />
-        <MetaCell label="L/R" value={`${a.lrImbalance}%`} valueColor={lrHigh ? '#F5A623' : colors.muted} />
-        <MetaCell
-          label="MISSING"
-          value={String(a.missingTests)}
-          valueColor={a.missingTests > 0 ? '#FF3B30' : colors.muted}
-        />
+        <MetaCell label="READINESS" value={`${a.readiness}%`} valueColor={cellColor(a.readiness, colorMode)} />
+        {exerciseColumns.map((c) => {
+          const v = exerciseValue(a, c.key);
+          return (
+            <MetaCell
+              key={c.key}
+              label={c.label.toUpperCase()}
+              value={v == null ? '—' : `${v}%`}
+              valueColor={cellColor(v, colorMode)}
+            />
+          );
+        })}
+      </View>
+
+      <View style={styles.cardTrendRow}>
+        <LineTrend data={a.readinessHistory} color={cellColor(a.readiness, colorMode)} min={50} max={100} height={32} />
       </View>
 
       <View style={styles.cardBottomRow}>
         <Text style={styles.lastTest}>
           {a.lastTestTime ? `${a.lastTestDate} · ${a.lastTestTime}` : a.lastTestDate}
         </Text>
-        <Pressable onPress={onPress} style={({ pressed }) => [styles.actionBtn, pressed && { opacity: 0.6 }]}>
+        <View style={styles.actionBtn}>
           <Text style={[styles.actionText, { color: actionColor }]}>{actionLabel}</Text>
-        </Pressable>
+        </View>
       </View>
-    </View>
+    </Pressable>
   );
 }
 
@@ -163,6 +241,10 @@ const styles = StyleSheet.create({
     borderBottomColor: 'rgba(28,46,64,0.5)',
     paddingVertical: 10,
   },
+  tableRowActive: {
+    backgroundColor: 'rgba(0,212,188,0.06)',
+    borderBottomColor: 'rgba(0,212,188,0.35)',
+  },
   td: {
     width: 80,
     color: colors.text,
@@ -171,10 +253,10 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   tdCenter: { textAlign: 'center' },
-  cell: { width: 80, alignItems: 'center' as const },
-  cellCenter: { justifyContent: 'center' as const },
   nameText: { color: colors.text, fontWeight: '700', fontSize: 13 },
-  readinessText: { color: colors.text, fontWeight: '800' },
+  readinessText: { fontWeight: '800' },
+  trendCell: { width: 90, height: 28, justifyContent: 'center' },
+  timeHeader: { width: 110, color: colors.muted, fontSize: 9, fontWeight: '700', letterSpacing: 1.2, textAlign: 'left' },
   timeText: { width: 110, color: colors.muted, fontSize: 11, textAlign: 'left' },
   actionBtn: {
     width: 68,
@@ -197,6 +279,10 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     gap: 10,
   },
+  athleteCardActive: {
+    backgroundColor: 'rgba(0,212,188,0.05)',
+    borderColor: 'rgba(0,212,188,0.45)',
+  },
   cardTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -211,10 +297,13 @@ const styles = StyleSheet.create({
   },
   cardMetaRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: spacing.sm,
   },
+  cardTrendRow: { paddingHorizontal: 4 },
   metaCell: {
-    flex: 1,
+    flexGrow: 1,
+    flexBasis: '30%',
     alignItems: 'center',
     backgroundColor: colors.surface,
     borderRadius: 8,

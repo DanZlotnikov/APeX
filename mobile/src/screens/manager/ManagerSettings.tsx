@@ -1,23 +1,35 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
-import { getTeamInviteCode, getTeamSettings, regenerateInviteCode, updateRequiredTest, updateTeamSettings } from '../../api/teams';
-import { TeamSettingsViewModel } from '../../api/types';
-import { colors, spacing } from '../../theme';
+import { ActivityIndicator, Animated, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { getTeamInviteCode, getTeamName, regenerateInviteCode } from '../../api/teams';
+import { useSettings } from '../../state/SettingsContext';
+import { ACCENTS, AccentKey, colors, FontScaleKey, spacing } from '../../theme';
+
+// Exercise-related team settings (which exercises are tested, min reps, metric
+// thresholds, per-athlete assignment) live on the "Exercises" manager tab
+// (ManagerHome.tsx / ExercisesScreen.tsx), backed by the team_exercises /
+// athlete_exercise_assignments tables — not this screen.
+
+const ACCENT_KEYS = Object.keys(ACCENTS) as AccentKey[];
+const FONT_OPTS: { key: FontScaleKey; label: string }[] = [
+  { key: 'S', label: 'Small' }, { key: 'M', label: 'Medium' }, { key: 'L', label: 'Large' },
+];
+const WINDOW_OPTS = [7, 14, 30, 90];
 
 interface Props {
   teamId: string;
 }
 
 export default function ManagerSettings({ teamId }: Props) {
-  const [settings,     setSettings]     = useState<TeamSettingsViewModel | null>(null);
+  const { settings, update, accentColor } = useSettings();
+
+  const [teamName,     setTeamName]     = useState<string | null>(null);
   const [inviteCode,   setInviteCode]   = useState('');
   const [regenerating, setRegenerating] = useState(false);
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    getTeamSettings(teamId)
-      .then(setSettings)
-      .catch((e) => console.warn('Failed to load team settings', e));
+    getTeamName(teamId)
+      .then(setTeamName)
+      .catch((e) => { console.warn('Failed to load team name', e); setTeamName(''); });
     getTeamInviteCode(teamId)
       .then(setInviteCode)
       .catch((e) => console.warn('Failed to load invite code', e));
@@ -35,23 +47,7 @@ export default function ManagerSettings({ teamId }: Props) {
     }
   }
 
-  function scheduleSave(patch: Partial<Pick<TeamSettingsViewModel, 'readinessThreshold' | 'maxLRImbalance' | 'requiredTestsPerDay'>>) {
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => {
-      void updateTeamSettings(teamId, patch);
-    }, 600);
-  }
-
-  async function toggleTest(id: string, enabled: boolean) {
-    if (!settings) return;
-    setSettings((s) => s && {
-      ...s,
-      requiredTests: s.requiredTests.map((t) => t.id === id ? { ...t, enabled } : t),
-    });
-    await updateRequiredTest(id, enabled);
-  }
-
-  if (!settings) {
+  if (teamName === null) {
     return (
       <View style={styles.center}>
         <ActivityIndicator color={colors.primary} />
@@ -69,8 +65,8 @@ export default function ManagerSettings({ teamId }: Props) {
             <Text style={styles.fieldLabel}>TEAM NAME</Text>
             <TextInput
               style={styles.input}
-              value={settings.teamName}
-              onChangeText={(v) => setSettings((s) => s && { ...s, teamName: v })}
+              value={teamName}
+              onChangeText={setTeamName}
               placeholderTextColor={colors.muted}
               selectionColor={colors.primary}
             />
@@ -104,75 +100,62 @@ export default function ManagerSettings({ teamId }: Props) {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>REQUIRED DAILY TESTS</Text>
+          <Text style={styles.sectionTitle}>APPEARANCE</Text>
           <View style={styles.card}>
-            {settings.requiredTests.map((test, i) => (
-              <View
-                key={test.id}
-                style={[styles.switchRow, i < settings.requiredTests.length - 1 && styles.switchRowBorder]}
-              >
-                <Text style={styles.switchLabel}>{test.label}</Text>
-                <Switch
-                  value={test.enabled}
-                  onValueChange={(v) => void toggleTest(test.id, v)}
-                  trackColor={{ false: colors.border, true: 'rgba(0,212,188,0.3)' }}
-                  thumbColor={test.enabled ? colors.primary : colors.muted}
-                />
-              </View>
-            ))}
+            <Text style={styles.rowLabel}>Accent color</Text>
+            <View style={styles.swatches}>
+              {ACCENT_KEYS.map((k) => {
+                const on = settings.accent === k;
+                return (
+                  <Pressable key={k} onPress={() => update({ accent: k })}
+                    style={[styles.swatch, { backgroundColor: ACCENTS[k].color }, on && styles.swatchOn]}>
+                    {on && <Text style={[styles.swatchCheck, { color: ACCENTS[k].on }]}>✓</Text>}
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            <View style={styles.divider} />
+            <Text style={styles.rowLabel}>Font size</Text>
+            <Segmented
+              options={FONT_OPTS.map((f) => ({ key: f.key, label: f.label }))}
+              value={settings.fontScale}
+              onChange={(k) => update({ fontScale: k as FontScaleKey })}
+              accent={accentColor}
+            />
           </View>
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>THRESHOLDS</Text>
+          <Text style={styles.sectionTitle}>PREFERENCES</Text>
           <View style={styles.card}>
-            <View style={styles.sliderRow}>
-              <View style={styles.sliderLabelRow}>
-                <Text style={styles.fieldLabel}>READINESS THRESHOLD</Text>
-                <Text style={styles.sliderValue}>{settings.readinessThreshold}%</Text>
-              </View>
-              <SliderBar
-                value={settings.readinessThreshold}
-                min={50} max={100}
-                color={colors.primary}
-                onChange={(v) => {
-                  setSettings((s) => s && { ...s, readinessThreshold: v });
-                  scheduleSave({ readinessThreshold: v });
-                }}
+            <View style={styles.switchRow}>
+              <Text style={styles.rowLabel}>Sound effects</Text>
+              <Switch
+                value={settings.sound}
+                onValueChange={(v) => update({ sound: v })}
+                trackColor={{ true: accentColor, false: colors.surfaceHigh }}
+                thumbColor="#fff"
               />
             </View>
 
-            <View style={[styles.sliderRow, styles.sliderRowBorder]}>
-              <View style={styles.sliderLabelRow}>
-                <Text style={styles.fieldLabel}>MAX L/R IMBALANCE</Text>
-                <Text style={styles.sliderValue}>{settings.maxLRImbalance}%</Text>
-              </View>
-              <SliderBar
-                value={settings.maxLRImbalance}
-                min={5} max={30}
-                color="#F5A623"
-                onChange={(v) => {
-                  setSettings((s) => s && { ...s, maxLRImbalance: v });
-                  scheduleSave({ maxLRImbalance: v });
-                }}
-              />
-            </View>
+            <View style={styles.divider} />
+            <Text style={styles.rowLabel}>Units</Text>
+            <Segmented
+              options={[{ key: 'metric', label: 'Metric' }, { key: 'imperial', label: 'Imperial' }]}
+              value={settings.units}
+              onChange={(k) => update({ units: k as any })}
+              accent={accentColor}
+            />
 
-            <View style={[styles.sliderRow, styles.sliderRowBorder]}>
-              <View style={styles.sliderLabelRow}>
-                <Text style={styles.fieldLabel}>REQUIRED TESTS PER DAY</Text>
-                <Text style={styles.sliderValue}>{settings.requiredTestsPerDay}</Text>
-              </View>
-              <SliderBar
-                value={settings.requiredTestsPerDay}
-                min={1} max={6}
-                color={colors.primary}
-                onChange={(v) => {
-                  setSettings((s) => s && { ...s, requiredTestsPerDay: v });
-                  scheduleSave({ requiredTestsPerDay: v });
-                }}
-              />
-            </View>
+            <View style={styles.divider} />
+            <Text style={styles.rowLabel}>Comparison window</Text>
+            <Segmented
+              options={WINDOW_OPTS.map((d) => ({ key: String(d), label: `${d}d` }))}
+              value={String(settings.windowDays)}
+              onChange={(k) => update({ windowDays: parseInt(k, 10) })}
+              accent={accentColor}
+            />
           </View>
         </View>
 
@@ -184,45 +167,57 @@ export default function ManagerSettings({ teamId }: Props) {
   );
 }
 
-function SliderBar({
-  value, min, max, color, onChange,
-}: {
-  value: number; min: number; max: number; color: string; onChange: (v: number) => void;
+function Segmented({ options, value, onChange, accent }: {
+  options: { key: string; label: string }[];
+  value: string;
+  onChange: (k: string) => void;
+  accent: string;
 }) {
-  const pct = (value - min) / (max - min);
+  const idx = Math.max(0, options.findIndex((o) => o.key === value));
+  const anim = useRef(new Animated.Value(idx)).current;
+  const [innerWidth, setInnerWidth] = useState(0);
+
+  useEffect(() => {
+    const newIdx = Math.max(0, options.findIndex((o) => o.key === value));
+    Animated.spring(anim, {
+      toValue: newIdx,
+      useNativeDriver: false,
+      tension: 130,
+      friction: 16,
+    }).start();
+  }, [value, options]);
+
+  const itemW = innerWidth > 0 ? innerWidth / options.length : 0;
+
+  // Sliding highlight positioned absolutely within the padded container.
+  // left = padding(3) + idx * itemWidth
+  const highlightLeft = anim.interpolate({
+    inputRange: options.map((_, i) => i),
+    outputRange: options.map((_, i) => i * itemW),
+  });
+
   return (
-    <View style={sliderStyles.row}>
-      <Pressable
-        onPress={() => onChange(Math.max(min, value - 1))}
-        style={({ pressed }) => [sliderStyles.stepBtn, pressed && { opacity: 0.6 }]}
-      >
-        <Text style={sliderStyles.stepText}>−</Text>
-      </Pressable>
-      <View style={sliderStyles.track}>
-        <View style={[sliderStyles.fill, { width: `${pct * 100}%` as any, backgroundColor: color }]} />
-      </View>
-      <Pressable
-        onPress={() => onChange(Math.min(max, value + 1))}
-        style={({ pressed }) => [sliderStyles.stepBtn, pressed && { opacity: 0.6 }]}
-      >
-        <Text style={sliderStyles.stepText}>+</Text>
-      </Pressable>
+    <View
+      style={styles.segment}
+      onLayout={(e) => setInnerWidth(e.nativeEvent.layout.width - 6)} // 6 = 2×padding(3)
+    >
+      {/* Sliding pill rendered first so text sits above it */}
+      {itemW > 0 && (
+        <Animated.View
+          style={[styles.segHighlight, { backgroundColor: accent, width: itemW, left: highlightLeft }]}
+        />
+      )}
+      {options.map((o) => {
+        const on = o.key === value;
+        return (
+          <Pressable key={o.key} onPress={() => onChange(o.key)} style={styles.segItem}>
+            <Text style={[styles.segText, on && styles.segTextOn]}>{o.label}</Text>
+          </Pressable>
+        );
+      })}
     </View>
   );
 }
-
-const sliderStyles = StyleSheet.create({
-  row: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.sm },
-  stepBtn: {
-    width: 30, height: 30, borderRadius: 8,
-    backgroundColor: colors.surfaceHigh,
-    borderWidth: 1, borderColor: colors.border,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  stepText: { color: colors.text, fontSize: 16, fontWeight: '700', lineHeight: 18 },
-  track: { flex: 1, height: 6, backgroundColor: colors.border, borderRadius: 3, overflow: 'hidden' },
-  fill:  { height: '100%', borderRadius: 3 },
-});
 
 const styles = StyleSheet.create({
   root:    { flex: 1, backgroundColor: colors.bg },
@@ -250,21 +245,42 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: colors.border,
     marginBottom: spacing.sm,
   },
-  switchRow:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: spacing.md },
-  switchRowBorder: { borderBottomWidth: 1, borderBottomColor: colors.border },
-  switchLabel:     { color: colors.text, fontSize: 14, fontWeight: '600' },
 
-  sliderRow:       { paddingVertical: spacing.md },
-  sliderRowBorder: { borderTopWidth: 1, borderTopColor: colors.border },
-  sliderLabelRow:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  sliderValue:     { color: colors.text, fontSize: 16, fontWeight: '800' },
+  rowLabel:  { color: colors.text, fontSize: 14, fontWeight: '600', paddingVertical: spacing.sm },
+  switchRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  divider:   { height: 1, backgroundColor: colors.border, marginVertical: spacing.xs },
+
+  swatches:    { flexDirection: 'row', gap: spacing.sm, paddingBottom: spacing.sm },
+  swatch:      { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'transparent' },
+  swatchOn:    { borderColor: colors.text },
+  swatchCheck: { fontSize: 16, fontWeight: '900' },
+
+  segment: {
+    flexDirection: 'row',
+    backgroundColor: colors.bg,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 3,
+    marginBottom: spacing.sm,
+    position: 'relative',
+  },
+  segHighlight: {
+    position: 'absolute',
+    top: 3,
+    bottom: 3,
+    borderRadius: 8,
+  },
+  segItem:   { flex: 1, alignItems: 'center', paddingVertical: 8, borderRadius: 8 },
+  segText:   { color: colors.muted, fontSize: 12, fontWeight: '700' },
+  segTextOn: { color: colors.bg },
 
   saveNote:     { alignItems: 'center', paddingVertical: spacing.sm },
   saveNoteText: { color: colors.muted, fontSize: 11, fontWeight: '500', fontStyle: 'italic' },
 
-  codeRow:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: spacing.sm, marginBottom: spacing.sm },
-  codeText:    { color: colors.primary, fontSize: 28, fontWeight: '900', letterSpacing: 6, fontVariant: ['tabular-nums'] },
-  codeNote:    { color: colors.muted, fontSize: 11, fontWeight: '500', lineHeight: 16, marginBottom: spacing.sm },
+  codeRow:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: spacing.sm, marginBottom: spacing.sm },
+  codeText: { color: colors.primary, fontSize: 28, fontWeight: '900', letterSpacing: 6, fontVariant: ['tabular-nums'] },
+  codeNote: { color: colors.muted, fontSize: 11, fontWeight: '500', lineHeight: 16, marginBottom: spacing.sm },
   regenBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     backgroundColor: colors.surfaceHigh,

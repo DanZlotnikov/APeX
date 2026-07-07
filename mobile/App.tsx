@@ -12,10 +12,11 @@ import DashboardScreen from './src/screens/DashboardScreen';
 import LoginScreen from './src/screens/LoginScreen';
 import SignUpScreen from './src/screens/SignUpScreen';
 import AthleteDetailPreview from './src/screens/manager/AthleteDetailPreview';
-import ManagerDashboard from './src/screens/manager/ManagerDashboard';
+import ManagerHome from './src/screens/manager/ManagerHome';
 import ManagerSettings from './src/screens/manager/ManagerSettings';
 import ManagerTopBar from './src/screens/manager/ManagerTopBar';
 import { SettingsProvider, useSettings } from './src/state/SettingsContext';
+import { ConfirmDialogHost } from './src/utils/confirm';
 import { configureSound } from './src/utils/sound';
 
 type Role = 'athlete' | 'manager';
@@ -239,13 +240,16 @@ function AppInner() {
         <View style={{ flex: 1 }}>
           {managerScreen === 'manager-dashboard' && (
             <FadeScreen>
-              <ManagerDashboard teamId={teamId} onAthleteSelect={handleAthleteSelect} />
+              <ManagerHome teamId={teamId} onAthleteSelect={handleAthleteSelect} />
             </FadeScreen>
           )}
 
           {managerScreen === 'manager-athlete' && selectedAthlete && (
             <FadeScreen>
-              <AthleteDetailPreview athlete={selectedAthlete} />
+              <AthleteDetailPreview
+                athlete={selectedAthlete}
+                onStatusChanged={() => setManagerScreen('manager-dashboard')}
+              />
             </FadeScreen>
           )}
 
@@ -265,6 +269,7 @@ export default function App() {
     <SafeAreaProvider>
       <SettingsProvider>
         <AppInner />
+        <ConfirmDialogHost />
       </SettingsProvider>
     </SafeAreaProvider>
   );

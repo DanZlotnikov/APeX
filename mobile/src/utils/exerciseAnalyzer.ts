@@ -1,24 +1,28 @@
 /**
  * Exercise Analysis Hub
  *
- * Detects squat, deadlift, vertical jump, and pull-up repetitions from a
- * MediaPipe Pose landmark sequence, then produces a readiness/injury assessment.
+ * Detects squat, vertical jump, and pull-up repetitions from a MediaPipe Pose
+ * landmark sequence, then produces a readiness/injury assessment.
+ *
+ * Deadlift detection was removed entirely (2026-07-08) — its torso-lean/hip-angle
+ * signature intersected too much with squat, producing frequent misclassification
+ * between the two. Do not reintroduce without a materially different signal.
  *
  * ── Biomechanical thresholds ────────────────────────────────────────────────
  *
  * SQUAT  (PMID 22801421; IJSPT 2021)
- *   Torso lean at bottom: < 40° from vertical   ← tightened from 65° to
+ *   Torso lean at bottom: < 40° from vertical
  *   Knee angle at depth:  adaptive to patient ROM (bottom 25 % of range)
- *   Distinguisher from deadlift: torso significantly more upright
- *
- * DEADLIFT — conventional  (NSCA; Powerliftingtechnique.com)
- *   Torso lean at bottom: > 55° from vertical   ← raised from 45° to
- *   Hip angle:            < 90° at bottom
- *   Gap 40°–55°: no-man's-land where neither exercise fires — eliminates
- *   the double-count that previously occurred at moderate torso lean angles.
  *
  * VERTICAL JUMP  (PMC 11208864; PMC 11368081)
- *   Flight phase: ankles rise > 6 % of normalised frame height
+ *   Flight phase: ankles rise > 10 % of the athlete's own standing
+ *   shoulder-to-ankle height (not a fixed frame-height fraction — that broke
+ *   whenever camera distance/zoom changed how much of the frame the athlete
+ *   filled, causing real jumps to go undetected)
+ *   Mutually exclusive with squat: an actual ankle-rise flight phase is
+ *   stronger, less ambiguous evidence than knee-angle geometry alone, so a
+ *   detected jump suppresses any squat count from the same clip (the jump's
+ *   countermovement dip can otherwise look like a shallow squat rep)
  *
  * PULL-UP
  *   Prerequisite: wrists must be above shoulders in ≥ 30 % of frames
@@ -29,13 +33,12 @@
 
 export interface ExerciseResults {
   squat: number;
-  deadlift: number;
   verticalJump: number;
   pullup: number;
 }
 
 export function hasAnyExercise(r: ExerciseResults): boolean {
-  return r.squat > 0 || r.deadlift > 0 || r.verticalJump > 0 || r.pullup > 0;
+  return r.squat > 0 || r.verticalJump > 0 || r.pullup > 0;
 }
 
 // ── readiness / injury assessment types ──────────────────────────────────────
@@ -72,7 +75,7 @@ export interface RiskFactor {
 }
 
 export interface ExerciseAssessment {
-  key: 'squat' | 'deadlift' | 'jump' | 'pullup';
+  key: 'squat' | 'jump' | 'pullup';
   label: string;
   reps: number;
   metrics: MovementMetrics;
@@ -135,7 +138,7 @@ function extractFeatures(lm) {
   var wristAbove = (shoulderY - wristY) > 0.05 ? 1 : 0;
 
   return { kneeAngle: kneeAngle, hipAngle: hipAngle, torsoLean: torsoLean,
-           ankleY: ankleY, elbowAngle: elbowAngle, wristAbove: wristAbove };
+           ankleY: ankleY, shoulderY: shoulderY, elbowAngle: elbowAngle, wristAbove: wristAbove };
 }
 
 function smoothFeatures(features) {
@@ -143,15 +146,16 @@ function smoothFeatures(features) {
   var result = [];
   for (var i = 0; i < features.length; i++) {
     var lo = Math.max(0, i - W), hi = Math.min(features.length - 1, i + W);
-    var kS=0, hS=0, lS=0, aS=0, eS=0, wS=0, n=0;
+    var kS=0, hS=0, lS=0, aS=0, sS=0, eS=0, wS=0, n=0;
     for (var j = lo; j <= hi; j++) {
       kS += features[j].kneeAngle; hS += features[j].hipAngle;
       lS += features[j].torsoLean; aS += features[j].ankleY;
+      sS += features[j].shoulderY;
       eS += features[j].elbowAngle; wS += features[j].wristAbove;
       n++;
     }
     result.push({ kneeAngle: kS/n, hipAngle: hS/n, torsoLean: lS/n,
-                  ankleY: aS/n, elbowAngle: eS/n, wristAbove: wS/n });
+                  ankleY: aS/n, shoulderY: sS/n, elbowAngle: eS/n, wristAbove: wS/n });
   }
   return result;
 }
@@ -159,11 +163,9 @@ function smoothFeatures(features) {
 // ── rep counters ──────────────────────────────────────────────────────────────
 
 // Squat: bilateral knee flexion with torso remaining upright (< 40°).
-// The 40° ceiling vs deadlift's 55° floor creates a 15° no-man's-land that
-// prevents the same rep from being classified as both exercises.
 function countSquats(f) {
   if (!f.length) return 0;
-  var LEAN_MAX = 40; // upright — if more forward, it's a hinge / deadlift territory
+  var LEAN_MAX = 40; // upright — if more forward, it's not a squat
 
   var minKnee = Infinity, maxKnee = -Infinity;
   for (var i = 0; i < f.length; i++) {
@@ -189,34 +191,31 @@ function countSquats(f) {
   return count;
 }
 
-// Deadlift: hip-hinge dominant. Torso must reach > 55° lean (vs squat max 40°)
-// and hip angle < 90°. The 15° gap above squats stops double-counting.
-function countDeadlifts(f) {
-  var STAND_LEAN = 20, STAND_HIP = 150, DEPTH_LEAN = 55, DEPTH_HIP = 90;
-  var count = 0, wasStanding = f[0].torsoLean < STAND_LEAN, atDepth = false;
-  for (var i = 0; i < f.length; i++) {
-    if (!atDepth && f[i].torsoLean < STAND_LEAN && f[i].hipAngle > STAND_HIP) wasStanding = true;
-    if (wasStanding && !atDepth && f[i].torsoLean > DEPTH_LEAN && f[i].hipAngle < DEPTH_HIP) {
-      atDepth = true; wasStanding = false;
-    }
-    if (atDepth && f[i].torsoLean < STAND_LEAN && f[i].hipAngle > STAND_HIP) {
-      count++; atDepth = false; wasStanding = true;
-    }
+// Standing shoulder-to-ankle distance over the baseline window — a per-video
+// scale reference so jump-height thresholds track how large the athlete
+// actually appears in frame, instead of a fixed fraction of frame height
+// (which misses real jumps when the camera is further back / more zoomed out).
+function jumpBaseline(f, baseN) {
+  var ankleSum = 0, scaleSum = 0;
+  for (var i = 0; i < baseN; i++) {
+    ankleSum += f[i].ankleY;
+    scaleSum += (f[i].ankleY - f[i].shoulderY);
   }
-  return count;
+  var ankleBaseline = ankleSum / baseN;
+  var bodyScale = Math.max(0.25, scaleSum / baseN); // floor guards against degenerate/missing landmarks
+  return { ankleBaseline: ankleBaseline, bodyScale: bodyScale };
 }
 
-// Vertical jump: ankles rise > 6 % of normalised frame height above standing baseline.
+// Vertical jump: ankles rise > 10 % of the athlete's own standing
+// shoulder-to-ankle height above baseline (see jumpBaseline above).
 function countJumps(f) {
   if (f.length < 10) return 0;
   var baseN = Math.max(5, Math.floor(f.length * 0.12));
-  var baseSum = 0;
-  for (var i = 0; i < baseN; i++) baseSum += f[i].ankleY;
-  var baseline = baseSum / baseN;
-  var JUMP_THRESH = 0.06, LAND_THRESH = 0.025;
+  var base = jumpBaseline(f, baseN);
+  var JUMP_THRESH = base.bodyScale * 0.10, LAND_THRESH = base.bodyScale * 0.04;
   var count = 0, inFlight = false;
   for (var j = 0; j < f.length; j++) {
-    var rise = baseline - f[j].ankleY;
+    var rise = base.ankleBaseline - f[j].ankleY;
     if (!inFlight && rise > JUMP_THRESH) inFlight = true;
     else if (inFlight && rise < LAND_THRESH) { count++; inFlight = false; }
   }
@@ -282,7 +281,6 @@ function initLiveCounters(history) {
   liveState = {
     sqThresh: kRange >= 15 ? { DEPTH: minKnee + kRange * 0.25, STAND: minKnee + kRange * 0.55 } : null,
     sqWasStanding: true, sqAtDepth: false, sqCount: 0,
-    dlWasStanding: false, dlAtDepth: false, dlCount: 0,
     jmpBaseline: aSum / baseN, jmpInFlight: false, jmpCount: 0,
     puWasExtended: true, puAtBent: false, puCount: 0,
     fbuf: []
@@ -292,7 +290,6 @@ function initLiveCounters(history) {
 function resetLiveCounts() {
   if (!liveState) return;
   liveState.sqWasStanding = true;  liveState.sqAtDepth  = false; liveState.sqCount  = 0;
-  liveState.dlWasStanding = false; liveState.dlAtDepth  = false; liveState.dlCount  = 0;
   liveState.jmpInFlight   = false; liveState.jmpCount   = 0;
   liveState.puWasExtended = true;  liveState.puAtBent   = false; liveState.puCount  = 0;
   liveState.fbuf = [];
@@ -321,11 +318,6 @@ function stepLiveCounters(lm) {
     if (ls.sqAtDepth && fa.kneeAngle > S)
       { ls.sqCount++; ls.sqAtDepth = false; ls.sqWasStanding = true; }
   }
-  if (!ls.dlAtDepth && fa.torsoLean < 20 && fa.hipAngle > 150) ls.dlWasStanding = true;
-  if (ls.dlWasStanding && !ls.dlAtDepth && fa.torsoLean > 55 && fa.hipAngle < 90)
-    { ls.dlAtDepth = true; ls.dlWasStanding = false; }
-  if (ls.dlAtDepth && fa.torsoLean < 20 && fa.hipAngle > 150)
-    { ls.dlCount++; ls.dlAtDepth = false; ls.dlWasStanding = true; }
   var rise = ls.jmpBaseline - fa.ankleY;
   if (!ls.jmpInFlight && rise > 0.06) ls.jmpInFlight = true;
   else if (ls.jmpInFlight && rise < 0.025) { ls.jmpCount++; ls.jmpInFlight = false; }
@@ -338,18 +330,18 @@ function analyzeExercises() {
   var raw      = landmarkHistory.map(extractFeatures);
   var features = smoothFeatures(raw);
   var sqCount  = countSquats(features);
-  var dlCount  = countDeadlifts(features);
   var jCount   = countJumps(features);
   var puCount  = countPullups(features);
 
-  // Mutual exclusion: squat and deadlift analyse the same frame sequence.
-  // If both fire (overlapping torso-lean ranges, noisy video), suppress the
-  // smaller count; ties go to squat (more visually distinct detection).
-  if (sqCount > 0 && dlCount > 0) {
-    if (dlCount > sqCount) sqCount = 0; else dlCount = 0;
+  // A detected jump is stronger evidence than a squat: it's measured from an
+  // actual ankle-rise flight phase, while squat is inferred from knee angle
+  // alone — the countermovement dip before takeoff can look like a shallow
+  // squat rep and get double-counted as one. If a jump was found, trust it.
+  if (jCount > 0 && sqCount > 0) {
+    sqCount = 0;
   }
 
-  return { squat: sqCount, deadlift: dlCount, verticalJump: jCount, pullup: puCount };
+  return { squat: sqCount, verticalJump: jCount, pullup: puCount };
 }
 
 // ── readiness / injury assessment ─────────────────────────────────────────────
@@ -389,7 +381,7 @@ function extractDetailed(lm) {
     lElbow: lElbow, rElbow: rElbow,
     kneeAngle: (lKnee + rKnee) / 2, hipAngle: (lHip + rHip) / 2,
     elbowAngle: (lElbow + rElbow) / 2,
-    torsoLean: torsoLean, ankleY: (lm[27].y + lm[28].y) / 2,
+    torsoLean: torsoLean, ankleY: (lm[27].y + lm[28].y) / 2, shoulderY: shoulderY,
     pelvicTilt: pelvicTilt, wristAbove: wristAbove
   };
 }
@@ -436,36 +428,21 @@ function segmentSquat(f) {
   return { reps: reps, minK: minK, maxK: maxK };
 }
 
-function segmentDeadlift(f) {
-  var STAND_LEAN = 20, STAND_HIP = 150, DEPTH_LEAN = 55, DEPTH_HIP = 90;
-  var reps = [], wasStanding = f[0].torsoLean < STAND_LEAN, atDepth = false,
-      start = 0, botIdx = 0, botLean = -Infinity;
-  for (var i = 0; i < f.length; i++) {
-    if (!atDepth && f[i].torsoLean < STAND_LEAN && f[i].hipAngle > STAND_HIP) { wasStanding = true; start = i; }
-    if (wasStanding && !atDepth && f[i].torsoLean > DEPTH_LEAN && f[i].hipAngle < DEPTH_HIP) {
-      atDepth = true; wasStanding = false; botLean = -Infinity; botIdx = i;
-    }
-    if (atDepth && f[i].torsoLean > botLean) { botLean = f[i].torsoLean; botIdx = i; }
-    if (atDepth && f[i].torsoLean < STAND_LEAN && f[i].hipAngle > STAND_HIP) {
-      reps.push({ start: start, bottom: botIdx, end: i });
-      atDepth = false; wasStanding = true; start = i;
-    }
-  }
-  return reps;
-}
-
+// Mirrors countJumps' body-scaled thresholds exactly — must stay in sync so
+// the rep count from analyzeExercises() and the flights segmented here (used
+// for factors + rep timing) never disagree.
 function segmentJumps(f) {
   if (f.length < 10) return { flights: [], baseline: 0 };
-  var baseN = Math.max(5, Math.floor(f.length * 0.12)), baseSum = 0;
-  for (var i = 0; i < baseN; i++) baseSum += f[i].ankleY;
-  var baseline = baseSum / baseN;
+  var baseN = Math.max(5, Math.floor(f.length * 0.12));
+  var base = jumpBaseline(f, baseN);
+  var JUMP_THRESH = base.bodyScale * 0.10, LAND_THRESH = base.bodyScale * 0.04;
   var flights = [], inFlight = false, takeoff = 0;
   for (var j = 0; j < f.length; j++) {
-    var rise = baseline - f[j].ankleY;
-    if (!inFlight && rise > 0.06) { inFlight = true; takeoff = j; }
-    else if (inFlight && rise < 0.025) { flights.push({ takeoff: takeoff, land: j }); inFlight = false; }
+    var rise = base.ankleBaseline - f[j].ankleY;
+    if (!inFlight && rise > JUMP_THRESH) { inFlight = true; takeoff = j; }
+    else if (inFlight && rise < LAND_THRESH) { flights.push({ takeoff: takeoff, land: j }); inFlight = false; }
   }
-  return { flights: flights, baseline: baseline };
+  return { flights: flights, baseline: base.ankleBaseline };
 }
 
 // Pull-up segmentation: 'bottom' is the index of peak contraction (most bent elbow =
@@ -535,7 +512,7 @@ function computeAssessment(history, times, counts) {
     var acc = {
       lKnee:0, rKnee:0, lHip:0, rHip:0, lElbow:0, rElbow:0,
       kneeAngle:0, hipAngle:0, elbowAngle:0,
-      torsoLean:0, ankleY:0, pelvicTilt:0, wristAbove:0
+      torsoLean:0, ankleY:0, shoulderY:0, pelvicTilt:0, wristAbove:0
     };
     for (var j = lo; j <= hi; j++) {
       acc.lKnee    += d[j].lKnee;    acc.rKnee    += d[j].rKnee;
@@ -544,6 +521,7 @@ function computeAssessment(history, times, counts) {
       acc.kneeAngle+= d[j].kneeAngle;acc.hipAngle += d[j].hipAngle;
       acc.elbowAngle+=d[j].elbowAngle;
       acc.torsoLean+= d[j].torsoLean;acc.ankleY   += d[j].ankleY;
+      acc.shoulderY+= d[j].shoulderY;
       acc.pelvicTilt+=d[j].pelvicTilt;acc.wristAbove+=d[j].wristAbove;
       n++;
     }
@@ -551,7 +529,7 @@ function computeAssessment(history, times, counts) {
       lKnee: acc.lKnee/n, rKnee: acc.rKnee/n, lHip: acc.lHip/n, rHip: acc.rHip/n,
       lElbow: acc.lElbow/n, rElbow: acc.rElbow/n,
       kneeAngle: acc.kneeAngle/n, hipAngle: acc.hipAngle/n, elbowAngle: acc.elbowAngle/n,
-      torsoLean: acc.torsoLean/n, ankleY: acc.ankleY/n,
+      torsoLean: acc.torsoLean/n, ankleY: acc.ankleY/n, shoulderY: acc.shoulderY/n,
       pelvicTilt: acc.pelvicTilt/n, wristAbove: acc.wristAbove/n
     });
   }
@@ -610,60 +588,6 @@ function computeAssessment(history, times, counts) {
         perRepDepth: sqPerDepth, perRepDurationSec: sqPerDur
       },
       factors: factors
-    });
-  }
-
-  // ── DEADLIFT ─────────────────────────────────────────────────────────────────
-  if (counts.deadlift > 0) {
-    var dreps = segmentDeadlift(f);
-    var factors2 = [];
-
-    var tiltSum = 0, nt = 0;
-    for (var i = 0; i < dreps.length; i++) { tiltSum += f[dreps[i].bottom].pelvicTilt; nt++; }
-    var pelvic = nt ? tiltSum / nt : 0;
-    var pelvicPct = Math.round(clampN(pelvic * 100, 0, 60));
-    var dSymScore = ramp(pelvicPct, 6, 30);
-    var dSymF = { id: 'symmetry', label: 'Left / Right Symmetry', value: pelvicPct, unit: '%',
-      score: dSymScore, status: statusFromScore(dSymScore),
-      detail: dSymScore >= 80 ? 'Hips stay level through the hinge.' : 'Hips shift to one side under load.',
-      rec: 'symmetry' };
-    factors2.push(dSymF); consider(dSymF, 1);
-
-    var leans = [];
-    for (var i = 0; i < dreps.length; i++) leans.push(f[dreps[i].bottom].torsoLean);
-    var mean = 0; for (var i = 0; i < leans.length; i++) mean += leans[i]; mean = leans.length ? mean/leans.length : 0;
-    var varc = 0; for (var i = 0; i < leans.length; i++) varc += (leans[i]-mean)*(leans[i]-mean); varc = leans.length ? Math.sqrt(varc/leans.length) : 0;
-    var cv = mean > 1 ? Math.round(varc / mean * 100) : 0;
-    var hingeScore = leans.length < 2 ? 90 : ramp(cv, 5, 30);
-    var hingeF = { id: 'hinge', label: 'Hinge Control', value: cv, unit: '%',
-      score: hingeScore, status: statusFromScore(hingeScore),
-      detail: hingeScore >= 80 ? 'Torso angle repeats consistently.' : 'Torso angle drifts between reps — bracing may be inconsistent.',
-      rec: 'hinge' };
-    factors2.push(hingeF); consider(hingeF, 1);
-
-    var dfat = fatigueFactor(dreps, f, times, 'torsoLean', false);
-    var dfatF = { id: 'fatigue', label: 'Fatigue / Consistency', value: dfat.pct, unit: '%',
-      score: dfat.score, status: statusFromScore(dfat.score),
-      detail: dfat.score >= 80 ? 'Reps stay consistent.' : 'Later reps slow down or change shape.',
-      rec: 'fatigue' };
-    factors2.push(dfatF); consider(dfatF, 0.6);
-
-    var kMin = Infinity, kMax = -Infinity;
-    for (var i = 0; i < f.length; i++) { if (f[i].kneeAngle < kMin) kMin = f[i].kneeAngle; if (f[i].kneeAngle > kMax) kMax = f[i].kneeAngle; }
-    var dlPerDepth = dreps.map(function(r) { return Math.round(f[r.bottom].torsoLean); });
-    var dlPerDur   = dreps.map(function(r) {
-      var ta = times[r.start], tb = times[r.end];
-      return (ta != null && tb != null && tb > ta) ? Math.round((tb - ta) * 10) / 10 : 0;
-    });
-    perExercise.push({
-      key: 'deadlift', label: 'DEADLIFT', reps: counts.deadlift,
-      metrics: {
-        maxKneeAngle: Math.round(kMax), minKneeAngle: Math.round(kMin), romDeg: Math.round(kMax - kMin),
-        avgRepSec: Math.round(avgRepSeconds(dreps, times) * 10) / 10,
-        totalSec: Math.round((times[times.length-1] - times[0]) * 10) / 10,
-        perRepDepth: dlPerDepth, perRepDurationSec: dlPerDur
-      },
-      factors: factors2
     });
   }
 
@@ -803,9 +727,10 @@ function computeAssessment(history, times, counts) {
 
 // Rep-completion timestamps per exercise.
 // Accepts the counts from analyzeExercises() so mutual exclusion is respected —
-// if deadlift was zeroed out, its segment times are not computed.
+// if squat was zeroed out (e.g. suppressed by a detected jump), its segment
+// times are not computed.
 function computeRepTimes(history, times, results) {
-  var empty = { squat: [], deadlift: [], jump: [], pullup: [] };
+  var empty = { squat: [], jump: [], pullup: [] };
   if (!history || history.length < 15 || !times || times.length !== history.length) return empty;
   var raw = history.map(extractFeatures);
   var f   = smoothFeatures(raw);
@@ -817,13 +742,12 @@ function computeRepTimes(history, times, results) {
   }
 
   var sqTimes = (results && results.squat      > 0) ? endTimes(segmentSquat(f).reps)  : [];
-  var dlTimes = (results && results.deadlift   > 0) ? endTimes(segmentDeadlift(f))    : [];
   var puTimes = (results && results.pullup     > 0) ? endTimes(segmentPullups(f).reps): [];
 
   var jm = (results && results.verticalJump > 0) ? segmentJumps(f) : { flights: [] };
   var jumps = [];
   for (var i = 0; i < jm.flights.length; i++) { var t = times[jm.flights[i].land]; if (t != null) jumps.push(t); }
 
-  return { squat: sqTimes, deadlift: dlTimes, jump: jumps, pullup: puTimes };
+  return { squat: sqTimes, jump: jumps, pullup: puTimes };
 }
 `;

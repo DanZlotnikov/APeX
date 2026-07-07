@@ -187,39 +187,40 @@ export default function AnalysisScreen({ videoUri, onHome, userId, teamId, athle
         <View style={styles.back} />
       </View>
 
-      {/* Always mounted (drives the analysis from the start) — style toggles
-          between hidden (1×1, while analyzing) and the visible video area
-          (once ready) so it's never remounted mid-analysis. */}
-      <View style={isReady ? styles.videoVisible : styles.hidden}>
-        <PoseView
-          videoUri={videoUri}
-          onAssessment={handleAssessment}
-          onProgress={handleProgress}
-        />
-      </View>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Always mounted (drives the analysis from the start) — style toggles
+            between hidden (1×1, while analyzing) and the visible video area
+            (once ready) so it's never remounted mid-analysis. Living inside
+            the ScrollView (rather than as a fixed sibling above it) means the
+            video scrolls away with the rest of the page instead of staying
+            pinned in place. */}
+        <View style={isReady ? styles.videoVisible : styles.hidden}>
+          <PoseView
+            videoUri={videoUri}
+            onAssessment={handleAssessment}
+            onProgress={handleProgress}
+          />
+        </View>
 
-      {isReady ? (
-        <>
-          <ScrollView
-            style={styles.scroll}
-            contentContainerStyle={styles.scrollContent}
-            showsVerticalScrollIndicator={false}
-          >
-            {assessment && <AssessmentPanel assessment={assessment} comparison={comparison ?? null} />}
-          </ScrollView>
+        {isReady
+          ? assessment && <AssessmentPanel assessment={assessment} comparison={comparison ?? null} />
+          : <BakeLoader label={loaderLabel} progress={progress} />}
+      </ScrollView>
 
-          <View style={styles.footer}>
-            <PrimaryButton
-              label={saved ? 'Saved ✓' : 'Save Analysis'}
-              onPress={handleSave}
-              disabled={saved}
-              loading={saving}
-            />
-            {saveError && <Text style={styles.saveError}>{saveError}</Text>}
-          </View>
-        </>
-      ) : (
-        <BakeLoader label={loaderLabel} progress={progress} />
+      {isReady && (
+        <View style={styles.footer}>
+          <PrimaryButton
+            label={saved ? 'Saved ✓' : 'Save Analysis'}
+            onPress={handleSave}
+            disabled={saved}
+            loading={saving}
+          />
+          {saveError && <Text style={styles.saveError}>{saveError}</Text>}
+        </View>
       )}
     </SafeAreaView>
   );

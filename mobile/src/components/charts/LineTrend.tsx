@@ -31,7 +31,13 @@ export default function LineTrend({
     );
   }
 
-  const pad = { l: 10, r: 10, t: 12, b: 18 };
+  // Axis-label captions need real space below the plot; without them (compact
+  // usage, e.g. a table-row sparkline) that space would otherwise just eat
+  // into the plot area — at small heights (~28px) the old fixed 12/18 padding
+  // left ~-2px of vertical range, flattening every point to the same y and
+  // making genuinely varied data render as a straight line.
+  const hasAxisLabels = !!(startLabel || endLabel);
+  const pad = { l: 10, r: 10, t: hasAxisLabels ? 12 : 6, b: hasAxisLabels ? 18 : 6 };
   const H = height, W = w || 0;
   const iw = Math.max(0, W - pad.l - pad.r);
   const ih = Math.max(0, H - pad.t - pad.b);

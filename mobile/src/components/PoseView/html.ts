@@ -131,7 +131,7 @@ let activeJoints = null;
 // pass (see computeRepTimes in exerciseAnalyzer.ts). The HUD count at any
 // moment is a pure function of these plus the current video time, so it's
 // always correct — including while the user scrubs/replays.
-let repTimes = { squat: [], deadlift: [], jump: [], pullup: [] };
+let repTimes = { squat: [], jump: [], pullup: [] };
 function countLE(arr, t) { let n = 0; for (let i = 0; i < arr.length; i++) if (arr[i] <= t) n++; return n; }
 
 const IC_PLAY   = '<svg viewBox="0 0 24 24" width="15" height="15" fill="white"><polygon points="6,3 20,12 6,21"/></svg>';
@@ -295,7 +295,7 @@ const JOINTS = {
 function computeActiveJoints(results) {
   if (!results) return null;
   const s = new Set();
-  if (results.squat > 0 || results.deadlift > 0) {
+  if (results.squat > 0) {
     // Shoulders + hips + knees + ankles cover the whole movement chain
     [...JOINTS.shoulders, ...JOINTS.hips, ...JOINTS.knees, ...JOINTS.ankles].forEach(i => s.add(i));
   }
@@ -317,7 +317,6 @@ function computeActiveJoints(results) {
 function drawCounter(t) {
   const rows = [];
   const sq = countLE(repTimes.squat,    t); if (sq  > 0) rows.push(['SQUAT',    sq]);
-  const dl = countLE(repTimes.deadlift, t); if (dl  > 0) rows.push(['DEADLIFT', dl]);
   const jm = countLE(repTimes.jump,     t); if (jm  > 0) rows.push(['JUMP',     jm]);
   const pu = countLE(repTimes.pullup,   t); if (pu  > 0) rows.push(['PULL-UP',  pu]);
   if (!rows.length) return;
@@ -596,7 +595,7 @@ function onMsg(e) {
       timeHistory.length = 0;
       resetSmoothing();
       activeJoints = null;
-      repTimes = { squat: [], deadlift: [], jump: [], pullup: [] };
+      repTimes = { squat: [], jump: [], pullup: [] };
       phase = 'preprocess';
       playingNotified = false;
       wrap.style.opacity = '0'; // hidden during silent analysis pass

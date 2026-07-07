@@ -1,17 +1,60 @@
-import React from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import LineTrend from '../../components/charts/LineTrend';
+import { markAthleteInjured, markAthleteRecovered } from '../../api/athletes';
 import { AthleteViewModel } from '../../api/types';
 import { colors, spacing } from '../../theme';
+import { confirmAsync } from '../../utils/confirm';
+import { readinessColor as colorForReadiness } from '../../utils/readiness';
 
 interface Props {
   athlete: AthleteViewModel;
+  onStatusChanged: () => void;
 }
 
-export default function AthleteDetailPreview({ athlete }: Props) {
-  const readinessColor =
-    athlete.readiness >= 80 ? '#00D4BC' :
-    athlete.readiness >= 65 ? '#F5A623' : '#FF3B30';
+export default function AthleteDetailPreview({ athlete, onStatusChanged }: Props) {
+  const readinessColor = colorForReadiness(athlete.readiness);
+  const [marking, setMarking] = useState(false);
+  const [markError, setMarkError] = useState<string | null>(null);
+
+  async function handleMarkInjured() {
+    const ok = await confirmAsync(
+      'Mark as injured?',
+      'Are you sure? Injury pipeline will reset all stats.',
+      { destructive: true },
+    );
+    if (!ok) return;
+
+    setMarking(true);
+    setMarkError(null);
+    try {
+      await markAthleteInjured(athlete.id);
+      onStatusChanged();
+    } catch (e) {
+      setMarkError(e instanceof Error ? e.message : 'Failed to mark athlete as injured.');
+    } finally {
+      setMarking(false);
+    }
+  }
+
+  async function handleMarkRecovered() {
+    const ok = await confirmAsync(
+      'End injury tracking?',
+      'Are you sure? This returns the player to the regular roster and resets stats, starting a new tracking period from now.',
+    );
+    if (!ok) return;
+
+    setMarking(true);
+    setMarkError(null);
+    try {
+      await markAthleteRecovered(athlete.id);
+      onStatusChanged();
+    } catch (e) {
+      setMarkError(e instanceof Error ? e.message : 'Failed to mark athlete as recovered.');
+    } finally {
+      setMarking(false);
+    }
+  }
 
   const history       = athlete.readinessHistory;
   const best          = history.length > 0 ? Math.max(...history) : 0;
@@ -98,6 +141,45 @@ export default function AthleteDetailPreview({ athlete }: Props) {
           )}
         </View>
 
+        {/* ── Injury status ── */}
+        {athlete.injured ? (
+          <>
+            <View style={styles.injuredBanner}>
+              <View style={styles.injuredIconWrap}>
+                <Text style={styles.injuredIcon}>+</Text>
+              </View>
+              <Text style={styles.injuredText}>
+                Marked injured on {athlete.injuryStartedAt ? new Date(athlete.injuryStartedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'} — stats reset from this point.
+              </Text>
+            </View>
+            <View style={styles.injuryAction}>
+              <Pressable
+                onPress={handleMarkRecovered}
+                disabled={marking}
+                style={({ pressed }) => [styles.recoverBtn, (pressed || marking) && styles.recoverBtnPressed]}
+              >
+                {marking
+                  ? <ActivityIndicator color={colors.primary} size="small" />
+                  : <Text style={styles.recoverBtnText}>MARK AS RECOVERED</Text>}
+              </Pressable>
+              {markError && <Text style={styles.injuryError}>{markError}</Text>}
+            </View>
+          </>
+        ) : (
+          <View style={styles.injuryAction}>
+            <Pressable
+              onPress={handleMarkInjured}
+              disabled={marking}
+              style={({ pressed }) => [styles.injuryBtn, (pressed || marking) && styles.injuryBtnPressed]}
+            >
+              {marking
+                ? <ActivityIndicator color="#FF3B30" size="small" />
+                : <Text style={styles.injuryBtnText}>MARK AS INJURED</Text>}
+            </Pressable>
+            {markError && <Text style={styles.injuryError}>{markError}</Text>}
+          </View>
+        )}
+
       </ScrollView>
     </View>
   );
@@ -174,4 +256,53 @@ const styles = StyleSheet.create({
   },
   missingIcon: { color: '#FF3B30', fontSize: 13, fontWeight: '900' },
   missingText: { color: colors.text, fontSize: 12, fontWeight: '500', flex: 1 },
+
+  injuryAction: { alignItems: 'center', marginTop: spacing.sm },
+  injuryBtn: {
+    borderWidth: 1.5,
+    borderColor: '#FF3B30',
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: spacing.xl,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 200,
+  },
+  injuryBtnPressed: { backgroundColor: 'rgba(255,59,48,0.1)' },
+  injuryBtnText: { color: '#FF3B30', fontSize: 12, fontWeight: '800', letterSpacing: 1.5 },
+  injuryError: { color: '#FF3B30', fontSize: 11, textAlign: 'center', marginTop: spacing.sm },
+
+  recoverBtn: {
+    borderWidth: 1.5,
+    borderColor: colors.primary,
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: spacing.xl,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 200,
+  },
+  recoverBtnPressed: { backgroundColor: 'rgba(0,212,188,0.1)' },
+  recoverBtnText: { color: colors.primary, fontSize: 12, fontWeight: '800', letterSpacing: 1.5 },
+
+  injuredBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(59,130,246,0.08)',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(59,130,246,0.3)',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  injuredIconWrap: {
+    width: 18, height: 18, borderRadius: 9,
+    borderWidth: 1, borderColor: '#3B82F6',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  injuredIcon: {
+    color: '#3B82F6', fontSize: 13, fontWeight: '900', lineHeight: 15,
+  },
+  injuredText: { color: colors.text, fontSize: 12, fontWeight: '500', flex: 1, lineHeight: 17 },
 });
