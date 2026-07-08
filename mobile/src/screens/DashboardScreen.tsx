@@ -9,6 +9,7 @@ import OverviewScreen from './dashboard/OverviewScreen';
 import HistoryScreen from './dashboard/HistoryScreen';
 import HistoryDetailScreen from './dashboard/HistoryDetailScreen';
 import SettingsScreen from './dashboard/SettingsScreen';
+import { TargetExercise } from '../api/types';
 import { useSettings } from '../state/SettingsContext';
 import { colors } from '../theme';
 
@@ -33,12 +34,15 @@ const navTheme = {
 };
 
 interface Props {
+  userId?: string;
+  teamId?: string;
   onRecord: () => void;
   onUpload: () => void;
+  onSelectTask: (target: TargetExercise) => void;
   onLogout: () => void;
 }
 
-export default function DashboardScreen({ onRecord, onUpload, onLogout }: Props) {
+export default function DashboardScreen({ userId, teamId, onRecord, onUpload, onSelectTask, onLogout }: Props) {
   const { accentColor } = useSettings();
   const insets = useSafeAreaInsets();
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -72,7 +76,9 @@ export default function DashboardScreen({ onRecord, onUpload, onLogout }: Props)
               ),
             })}
           >
-            <Tab.Screen name="Overview" component={OverviewScreen} />
+            <Tab.Screen name="Overview">
+              {() => <OverviewScreen userId={userId} teamId={teamId} onSelectTask={onSelectTask} />}
+            </Tab.Screen>
             <Tab.Screen name="History" component={HistoryStack} />
           </Tab.Navigator>
         </NavigationContainer>

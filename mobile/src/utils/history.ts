@@ -2,7 +2,7 @@
  * Session history + athlete profile persistence and aggregation.
  *
  * Every analysis is saved as a HistoryEntry (the full Assessment plus a copied
- * video). These functions load/append/delete entries and derive the time-series
+ * video). These functions load/save/delete entries and derive the time-series
  * and averages the dashboard and the historical-comparison engine consume.
  */
 import { Assessment } from './exerciseAnalyzer';
@@ -34,10 +34,21 @@ export async function loadHistory(): Promise<HistoryEntry[]> {
   return list.slice().sort((a, b) => a.dateISO.localeCompare(b.dateISO));
 }
 
-export async function appendEntry(entry: HistoryEntry): Promise<void> {
+// Same-day replace: an athlete can redo an exercise as many times as they
+// like, but only the latest attempt for a given exercise on a given day is
+// kept locally too (mirrors the DB-side replace in api/sessions.ts
+// createSession). "Today" is the UTC calendar day, matching dateISO's own
+// format (new Date().toISOString()) and the rest of the app's "today" checks.
+export async function saveTodayEntry(entry: HistoryEntry, exerciseKey: 'squat' | 'jump' | 'pullup'): Promise<void> {
   const list = await loadHistory();
-  list.push(entry);
-  await writeJSON(HISTORY_FILE, list);
+  const todayUtc = entry.dateISO.slice(0, 10);
+  const filtered = list.filter((e) => {
+    const sameDay = e.dateISO.slice(0, 10) === todayUtc;
+    const sameExercise = e.assessment.perExercise.some((x) => x.key === exerciseKey);
+    return !(sameDay && sameExercise);
+  });
+  filtered.push(entry);
+  await writeJSON(HISTORY_FILE, filtered);
 }
 
 export async function deleteEntry(id: string): Promise<void> {
@@ -64,11 +75,6 @@ export function makeId(): string {
 export interface Point {
   dateISO: string;
   value: number;
-}
-
-/** Overall readiness for each session, oldest → newest. */
-export function readinessSeries(history: HistoryEntry[]): Point[] {
-  return history.map((e) => ({ dateISO: e.dateISO, value: e.assessment.readiness }));
 }
 
 export type ExerciseKey = 'squat' | 'jump' | 'pullup';

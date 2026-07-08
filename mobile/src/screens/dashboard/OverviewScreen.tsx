@@ -1,32 +1,68 @@
 import { useFocusEffect } from '@react-navigation/native';
 import React, { useCallback, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { getAthleteById } from '../../api/athletes';
+import { getTeamExercises } from '../../api/exercises';
+import { AthleteViewModel, TargetExercise } from '../../api/types';
 import LineTrend from '../../components/charts/LineTrend';
 import DeltaChip from '../../components/DeltaChip';
 import { useSettings } from '../../state/SettingsContext';
-import { HistoryEntry, loadHistory, mean, readinessSeries } from '../../utils/history';
+import { HistoryEntry, loadHistory, mean } from '../../utils/history';
+import { ExerciseKey } from '../../utils/exerciseMetrics';
 import { StatDelta } from '../../utils/stats';
 import { formatHeight, formatWeight } from '../../utils/units';
 import { colors, spacing } from '../../theme';
 
-export default function OverviewScreen() {
-  const { profile, settings, accentColor } = useSettings();
-  const [history, setHistory] = useState<HistoryEntry[]>([]);
+interface Props {
+  userId?: string;
+  teamId?: string;
+  onSelectTask: (target: TargetExercise) => void;
+}
 
+export default function OverviewScreen({ userId, teamId, onSelectTask }: Props) {
+  const { profile, settings, accentColor } = useSettings();
+  const [history, setHistory]         = useState<HistoryEntry[]>([]);
+  const [athlete, setAthlete]         = useState<AthleteViewModel | null>(null);
+  const [minRepsByKey, setMinRepsByKey] = useState<Partial<Record<ExerciseKey, number>>>({});
+  const [loading, setLoading]         = useState(true);
+
+  // Refetch on every focus (not just mount) so completing a task and coming
+  // back from AnalysisScreen shows it as done immediately, alongside every
+  // other required exercise whether it's done yet or not.
   useFocusEffect(
     useCallback(() => {
       let active = true;
       loadHistory().then((h) => active && setHistory(h));
+
+      if (userId && teamId) {
+        Promise.all([getAthleteById(userId), getTeamExercises(teamId)])
+          .then(([a, exs]) => {
+            if (!active) return;
+            setAthlete(a);
+            const m: Partial<Record<ExerciseKey, number>> = {};
+            exs.forEach((e) => { m[e.exerciseKey] = e.minReps; });
+            setMinRepsByKey(m);
+          })
+          .catch((e) => console.warn('Failed to load athlete overview', e))
+          .finally(() => { if (active) setLoading(false); });
+      } else {
+        setLoading(false);
+      }
+
       return () => { active = false; };
-    }, []),
+    }, [userId, teamId]),
   );
 
-  const series = readinessSeries(history).map((p) => p.value);
-  const latest = series.length ? series[series.length - 1] : null;
-  const prior = series.slice(0, -1);
-  const avgPrior = mean(prior);
-  const best = series.length ? Math.max(...series) : null;
-  const avgAll = mean(series);
+  // Readiness here is the SAME manager-derived number the team dashboard
+  // shows: an average across every exercise the manager has required for
+  // this athlete today, with anything not yet done counting as 0 rather
+  // than being left out of the average (see api/athletes.ts buildViewModel).
+  const series    = athlete?.readinessHistory ?? [];
+  const latest    = series.length ? series[series.length - 1] : null;
+  const prior     = series.slice(0, -1);
+  const avgPrior  = mean(prior);
+  const best      = series.length ? Math.max(...series) : null;
+  const avgAll    = mean(series);
 
   // readiness delta vs prior average (informational overview chip)
   const delta: StatDelta | null =
@@ -39,12 +75,16 @@ export default function OverviewScreen() {
         }
       : null;
 
+  function handleTaskPress(key: ExerciseKey, label: string) {
+    onSelectTask({ key, label, requiredRepsByKey: minRepsByKey });
+  }
+
   return (
     <View style={styles.screen}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
 
         <Text style={styles.kicker}>OVERVIEW</Text>
-        <Text style={styles.name}>{profile.name?.trim() ? profile.name : 'Athlete'}</Text>
+        <Text style={styles.name}>{athlete?.name ?? (profile.name?.trim() ? profile.name : 'Athlete')}</Text>
 
         <View style={styles.profileRow}>
           <ProfileStat label="HEIGHT" value={formatHeight(profile.heightCm, settings.units)} />
@@ -52,13 +92,35 @@ export default function OverviewScreen() {
           <ProfileStat label="SESSIONS" value={String(history.length)} />
         </View>
 
+        {!!athlete?.perExerciseReadiness.length && (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>TODAY'S TASKS</Text>
+            {athlete.perExerciseReadiness.map((t) => (
+              <Pressable
+                key={t.key}
+                onPress={() => handleTaskPress(t.key, t.label)}
+                style={({ pressed }) => [styles.taskRow, pressed && styles.taskRowPressed]}
+              >
+                <View style={[styles.taskDot, t.testedToday && styles.taskDotDone]} />
+                <Text style={styles.taskLabel} numberOfLines={1}>{t.label}</Text>
+                <Text style={styles.taskStatus}>
+                  {t.testedToday ? `Completed · ${t.readiness}%` : 'Not completed yet'}
+                </Text>
+                <Text style={styles.chevron}>›</Text>
+              </Pressable>
+            ))}
+          </View>
+        )}
+
         <View style={styles.card}>
           <View style={styles.cardHead}>
             <Text style={styles.cardTitle}>READINESS TREND</Text>
             {delta && <DeltaChip delta={delta} />}
           </View>
 
-          {latest != null ? (
+          {loading ? (
+            <ActivityIndicator color={accentColor} style={styles.loading} />
+          ) : latest != null ? (
             <>
               <View style={styles.bigRow}>
                 <Text style={[styles.big, { color: accentColor }]}>{latest}</Text>
@@ -73,7 +135,7 @@ export default function OverviewScreen() {
               </View>
             </>
           ) : (
-            <Text style={styles.empty}>No sessions yet. Analyze a movement to start tracking your readiness over time.</Text>
+            <Text style={styles.empty}>No sessions yet. Complete a required exercise to start tracking your readiness.</Text>
           )}
         </View>
 
@@ -129,7 +191,25 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   cardHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  cardTitle: { color: colors.muted, fontSize: 11, fontWeight: '700', letterSpacing: 2 },
+  cardTitle: { color: colors.muted, fontSize: 11, fontWeight: '700', letterSpacing: 2, marginBottom: spacing.xs },
+
+  taskRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.sm + 2,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  taskRowPressed: { opacity: 0.6 },
+  taskDot: {
+    width: 9, height: 9, borderRadius: 5,
+    borderWidth: 1.5, borderColor: colors.muted,
+    marginRight: spacing.sm,
+  },
+  taskDotDone: { backgroundColor: colors.primary, borderColor: colors.primary },
+  taskLabel: { flex: 1, color: colors.text, fontSize: 14, fontWeight: '700' },
+  taskStatus: { color: colors.muted, fontSize: 12, fontWeight: '600', marginRight: spacing.xs },
+  chevron: { color: colors.muted, fontSize: 18, fontWeight: '400' },
 
   bigRow: { flexDirection: 'row', alignItems: 'flex-start', marginTop: spacing.sm },
   big: { fontSize: 52, fontWeight: '900', lineHeight: 56 },
@@ -141,4 +221,5 @@ const styles = StyleSheet.create({
   mStatLabel: { color: colors.muted, fontSize: 9, fontWeight: '700', letterSpacing: 1, marginTop: 3 },
 
   empty: { color: colors.muted, fontSize: 13, lineHeight: 19, marginTop: spacing.sm },
+  loading: { marginTop: spacing.md },
 });

@@ -583,3 +583,21 @@ BEGIN
   WHERE id = p_athlete_id;
 END;
 $$;
+
+-- APeX · One session per athlete/exercise/day
+-- ─────────────────────────────────────────────────────────────────────────────
+
+DELETE FROM public.sessions s
+WHERE s.id IN (
+  SELECT id FROM (
+    SELECT id, ROW_NUMBER() OVER (
+      PARTITION BY athlete_id, exercise_type, ((recorded_at AT TIME ZONE 'UTC')::date)
+      ORDER BY recorded_at DESC
+    ) AS rn
+    FROM public.sessions
+  ) ranked
+  WHERE ranked.rn > 1
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS sessions_athlete_exercise_day_uniq
+  ON public.sessions (athlete_id, exercise_type, ((recorded_at AT TIME ZONE 'UTC')::date));

@@ -17,9 +17,10 @@ interface Props {
   onVideoReady: (uri: string) => void;
   onBack: () => void;
   initialVideoUri?: string; // pre-picked upload — skip picker, go straight to review
+  targetLabel?: string; // set when recording for a specific required task (e.g. "Squat")
 }
 
-export default function CameraScreen({ pickOnMount, testMode, onVideoReady, onBack, initialVideoUri }: Props) {
+export default function CameraScreen({ pickOnMount, testMode, onVideoReady, onBack, initialVideoUri, targetLabel }: Props) {
   const liveCamRef = useRef<LiveCameraHandle>(null);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const recordTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -136,6 +137,7 @@ export default function CameraScreen({ pickOnMount, testMode, onVideoReady, onBa
       <SafeAreaView style={styles.reviewScreen}>
         <View style={styles.reviewHeader}>
           <Text style={styles.reviewTitle}>REVIEW CLIP</Text>
+          {targetLabel && <Text style={styles.reviewTarget}>{targetLabel.toUpperCase()}</Text>}
         </View>
 
         <View style={styles.reviewViewer}>
@@ -190,13 +192,17 @@ export default function CameraScreen({ pickOnMount, testMode, onVideoReady, onBa
             <Text style={styles.iconText}>←</Text>
           </Pressable>
 
-          {/* recording timer */}
-          {isRecording && recordingTime !== null && (
+          {/* recording timer, or which required task this is while not yet recording */}
+          {isRecording && recordingTime !== null ? (
             <View style={styles.timerPill}>
               <View style={styles.recDot} />
               <Text style={styles.timerText}>{fmt(RECORD_SECONDS - recordingTime)}</Text>
             </View>
-          )}
+          ) : targetLabel ? (
+            <View style={styles.targetPill}>
+              <Text style={styles.targetPillText}>{targetLabel.toUpperCase()}</Text>
+            </View>
+          ) : null}
 
           <Pressable onPress={() => liveCamRef.current?.flipCamera()} style={styles.iconBtn} disabled={isRecording || countdown !== null}>
             <Text style={styles.iconText}>⇄</Text>
@@ -241,6 +247,13 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     letterSpacing: 2.5,
+  },
+  reviewTarget: {
+    color: colors.primary,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1.5,
+    marginTop: 4,
   },
   reviewViewer: { flex: 1 },
   reviewFooter: {
@@ -302,6 +315,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#EF4444',
   },
   timerText: { color: '#fff', fontSize: 15, fontWeight: '600', fontVariant: ['tabular-nums'] },
+  targetPill: {
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+  },
+  targetPillText: { color: colors.primary, fontSize: 12, fontWeight: '700', letterSpacing: 1 },
 
   // error
   errorOverlay: {

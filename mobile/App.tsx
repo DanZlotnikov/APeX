@@ -5,7 +5,7 @@ import { ActivityIndicator, Animated, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { getProfile, getSession, logout, signIn } from './src/api/auth';
 import { getAthleteById } from './src/api/athletes';
-import { AthleteViewModel } from './src/api/types';
+import { AthleteViewModel, TargetExercise } from './src/api/types';
 import AnalysisScreen from './src/screens/AnalysisScreen';
 import CameraScreen from './src/screens/CameraScreen';
 import DashboardScreen from './src/screens/DashboardScreen';
@@ -45,6 +45,7 @@ function AppInner() {
   const [athleteScreen, setAthleteScreen] = useState<AthleteScreen>('dashboard');
   const [uploadedUri,   setUploadedUri]   = useState<string | null>(null);
   const [videoUri,      setVideoUri]      = useState<string | null>(null);
+  const [targetExercise, setTargetExercise] = useState<TargetExercise | null>(null);
   const [testMode] = useState(false);
 
   // Manager flow
@@ -91,8 +92,12 @@ function AppInner() {
   }
 
   // ── Athlete handlers ───────────────────────────────────────────────────────
+  // Generic "Record"/"Upload" (AppBar) are free-record: no specific required
+  // exercise attached, so AnalysisScreen shows its old unconditional Save
+  // Analysis behavior.
   function goToCamera() {
     setUploadedUri(null);
+    setTargetExercise(null);
     setAthleteScreen('camera');
   }
 
@@ -104,9 +109,27 @@ function AppInner() {
       });
       if (!res.canceled && res.assets?.[0]?.uri) {
         setUploadedUri(res.assets[0].uri);
+        setTargetExercise(null);
         setAthleteScreen('camera');
       }
     } catch {}
+  }
+
+  // Tapping a required task on the dashboard: same live-camera flow as
+  // goToCamera, but carrying which exercise this attempt is for so
+  // AnalysisScreen can compare what was actually performed against it.
+  function goToCameraForTask(target: TargetExercise) {
+    setUploadedUri(null);
+    setTargetExercise(target);
+    setAthleteScreen('camera');
+  }
+
+  // "Record Again" from AnalysisScreen (requirement not met yet) — back to
+  // the camera for another attempt at the same target exercise.
+  function handleRecordAgain() {
+    setVideoUri(null);
+    setUploadedUri(null);
+    setAthleteScreen('camera');
   }
 
   function handleVideoReady(uri: string) {
@@ -188,8 +211,11 @@ function AppInner() {
         {athleteScreen === 'dashboard' && (
           <FadeScreen>
             <DashboardScreen
+              userId={userId ?? undefined}
+              teamId={teamId ?? undefined}
               onRecord={goToCamera}
               onUpload={() => void handleUpload()}
+              onSelectTask={goToCameraForTask}
               onLogout={handleAthleteLogout}
             />
           </FadeScreen>
@@ -201,8 +227,9 @@ function AppInner() {
               pickOnMount={false}
               testMode={testMode}
               initialVideoUri={uploadedUri ?? undefined}
+              targetLabel={targetExercise?.label}
               onVideoReady={handleVideoReady}
-              onBack={() => { setUploadedUri(null); setAthleteScreen('dashboard'); }}
+              onBack={() => { setUploadedUri(null); setTargetExercise(null); setAthleteScreen('dashboard'); }}
             />
           </FadeScreen>
         )}
@@ -213,7 +240,9 @@ function AppInner() {
             userId={userId ?? undefined}
             teamId={teamId ?? undefined}
             athleteName={athleteName}
-            onHome={() => { setVideoUri(null); setAthleteScreen('dashboard'); }}
+            targetExercise={targetExercise}
+            onRecordAgain={handleRecordAgain}
+            onHome={() => { setVideoUri(null); setTargetExercise(null); setAthleteScreen('dashboard'); }}
           />
         )}
       </>

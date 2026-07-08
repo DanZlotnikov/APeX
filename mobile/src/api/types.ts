@@ -96,6 +96,18 @@ export interface ExerciseReadiness {
   passed: boolean | null;   // null = no session yet to judge; else meets min reps + all metric thresholds
 }
 
+// A required task the athlete tapped on the dashboard, carried through
+// Camera → Analysis so the analysis screen can compare what was actually
+// performed against what was asked for. requiredRepsByKey covers every
+// exercise the athlete has required today (not just the tapped one) so a
+// mismatch (e.g. jump instead of squat) can still be checked against ITS
+// own requirement — see AnalysisScreen's target-vs-actual resolution.
+export interface TargetExercise {
+  key: 'squat' | 'jump' | 'pullup';
+  label: string;
+  requiredRepsByKey: Partial<Record<'squat' | 'jump' | 'pullup', number>>;
+}
+
 export interface AthleteViewModel {
   id: string;
   name: string;
