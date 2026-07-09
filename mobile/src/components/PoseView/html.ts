@@ -153,6 +153,11 @@ let lastSmoothT = null;
 // it just keeps showing the last good pose until the next one arrives.
 let lastLandmarks = null;
 
+// Which face landmark the head circle is anchored to — sticky across
+// frames (see drawSkeleton) so a visibility score hovering near the
+// threshold doesn't flicker the head between anchor points.
+let headSourceMode = 'none'; // 'nose' | 'ears' | 'none'
+
 // 'preprocess': silent 8× pass to collect landmarks before user sees video
 // 'show':       normal 1× playback for the user
 let phase = 'idle';
@@ -164,6 +169,17 @@ let playingNotified = false; // send 'playing' only once per video load
 // always correct — including while the user scrubs/replays.
 let repTimes = { squat: [], jump: [], pullup: [] };
 function countLE(arr, t) { let n = 0; for (let i = 0; i < arr.length; i++) if (arr[i] <= t) n++; return n; }
+
+// Shown clip window (video-time seconds) — first-rep-start to last-rep-end
+// padded by RW_PAD_SEC on each side (see computeRepWindow in
+// exerciseAnalyzer.ts), computed once after preprocess. Playback, the scrub
+// bar, and the timer are all relative to THIS window, not the raw clip —
+// see layoutShowWindow / the timeupdate + scrub handlers below. Falls back
+// to the full clip (0..duration) if no reps were detected.
+const RW_PAD_SEC = 1;
+let clipStart = 0;
+let clipEnd = 0;
+let showFinished = false; // true once playback has reached clipEnd (or native end)
 
 const IC_PLAY   = '<svg viewBox="0 0 24 24" width="15" height="15" fill="white"><polygon points="6,3 20,12 6,21"/></svg>';
 const IC_PAUSE  = '<svg viewBox="0 0 24 24" width="15" height="15" fill="white"><rect x="4" y="3" width="5" height="18" rx="1.5"/><rect x="15" y="3" width="5" height="18" rx="1.5"/></svg>';
@@ -376,6 +392,16 @@ function resetSmoothing() {
   lastSmoothT = null;
 }
 
+// Below this confidence, MediaPipe is usually guessing/extrapolating an
+// occluded or off-frame joint rather than reporting a real observation —
+// those guesses can land almost anywhere in the frame from one tick to the
+// next, which is what reads as joints "switching places"/"spinning" on
+// screen. Holding the joint at its last trusted position through a dip in
+// confidence (instead of filtering the outlier in, which still drags the
+// smoothed position toward it) keeps it visually stable until tracking
+// recovers, at the cost of a frozen limb during a genuine long occlusion.
+const VIS_HOLD_MIN = 0.35;
+
 // z/visibility aren't drawn and don't need velocity-adaptive treatment — a
 // light fixed blend is enough to keep the confidence number from flickering.
 function smoothLandmarks(raw, t) {
@@ -391,8 +417,22 @@ function smoothLandmarks(raw, t) {
   for (let i = 0; i < L; i++) {
     const lm = raw[i];
     const f  = landmarkFilters[i];
+    const vis = lm.visibility ?? 1;
+    f.v = f.v * 0.7 + vis * 0.3;
+
+    // Gate on the SMOOTHED confidence (f.v), not this single frame's raw
+    // value — a joint whose raw confidence bounces above/below the
+    // threshold frame to frame (fast motion + brief occlusion, e.g. a wrist
+    // passing behind the head near the top of a pull-up) would otherwise
+    // flip between "hold" and "resume filtering with a sudden raw jump"
+    // every frame or two, which reads as the joint snapping/swerving rather
+    // than the smooth hold this is meant to produce.
+    if (f.v < VIS_HOLD_MIN && f.x.prev != null) {
+      out[i] = { x: f.x.prev, y: f.y.prev, z: f.z, visibility: f.v };
+      continue;
+    }
+
     f.z = f.z * 0.7 + (lm.z ?? 0) * 0.3;
-    f.v = f.v * 0.7 + (lm.visibility ?? 1) * 0.3;
     out[i] = {
       x: oneEuroStep(f.x, lm.x, dt),
       y: oneEuroStep(f.y, lm.y, dt),
@@ -516,8 +556,24 @@ function drawSkeleton(landmarks) {
   const shoulderWidth = Math.hypot(shoulderL.x - shoulderR.x, shoulderL.y - shoulderR.y);
 
   const nose = landmarks[0], earL = landmarks[7], earR = landmarks[8];
-  const noseVisible = nose && (nose.visibility ?? 1) > 0.3;
-  const earsVisible = earL && earR && (earL.visibility ?? 1) > 0.3 && (earR.visibility ?? 1) > 0.3;
+  const noseVis = nose ? (nose.visibility ?? 1) : 0;
+  const earsVis = (earL && earR) ? Math.min(earL.visibility ?? 1, earR.visibility ?? 1) : 0;
+
+  // Hysteresis: easier to KEEP the current anchor than to SWITCH to a new
+  // one, so a visibility score hovering right around the threshold doesn't
+  // make the head flicker/whirl between nose- and ear-anchored positions.
+  if (headSourceMode === 'nose') {
+    if (noseVis < 0.15) headSourceMode = earsVis > 0.3 ? 'ears' : 'none';
+  } else if (headSourceMode === 'ears') {
+    if (earsVis < 0.15) headSourceMode = noseVis > 0.3 ? 'nose' : 'none';
+  } else if (noseVis > 0.3) {
+    headSourceMode = 'nose';
+  } else if (earsVis > 0.3) {
+    headSourceMode = 'ears';
+  }
+
+  const noseVisible = headSourceMode === 'nose';
+  const earsVisible = headSourceMode === 'ears';
 
   // Nose/ear X position swings a lot with head turn/tilt (e.g. looking down
   // during a squat) — using it verbatim made the head, and the neck line
@@ -719,6 +775,17 @@ function renderFrame() {
   if (!landmarker || vid.paused || vid.ended || vid.readyState < 2) {
     rafId = null; return;
   }
+
+  // Clip is trimmed to clipStart..clipEnd — <video> has no native trim, so
+  // this is what actually stops playback at the end of the shown window
+  // instead of letting it run to the true end of the raw recording.
+  if (phase === 'show' && vid.currentTime >= clipEnd) {
+    vid.pause();
+    vid.currentTime = clipEnd;
+    finishShowPlayback();
+    return;
+  }
+
   const result = landmarker.detectForVideo(vid, performance.now());
 
   if (phase === 'preprocess') {
@@ -785,11 +852,12 @@ ctrl.addEventListener('click', (e) => {
 pbtn.addEventListener('click', (e) => {
   e.stopPropagation();
   if (vid.paused || vid.ended) {
-    if (vid.ended) {
-      // Seek to start first; play from the 'seeked' callback so we never call
-      // vid.play() before the seek completes. No canvas clear here — the last
-      // frame stays visible on both panels during the seek to avoid a blank flash.
-      vid.currentTime = 0;
+    if (phase === 'show' && showFinished) {
+      // Seek to the start of the shown window first; play from the 'seeked'
+      // callback so we never call vid.play() before the seek completes. No
+      // canvas clear here — the last frame stays visible on both panels
+      // during the seek to avoid a blank flash.
+      vid.currentTime = clipStart;
       vid.addEventListener('seeked', () => void vid.play(), { once: true });
     } else {
       void vid.play();
@@ -804,18 +872,20 @@ sk.addEventListener('mousedown', e => e.stopPropagation());
 sk.addEventListener('touchstart', e => e.stopPropagation(), { passive: true });
 sk.addEventListener('input', (e) => {
   e.stopPropagation();
-  if (vid.duration) vid.currentTime = vid.duration * sk.value / 1000;
+  if (vid.duration) vid.currentTime = clipStart + (clipEnd - clipStart) * sk.value / 1000;
   showCtrl();
 });
 
+// Scrub bar + timer are relative to the shown window (clipStart..clipEnd),
+// not the raw clip — 0:00 is the start of the trimmed video, not frame 0.
 vid.addEventListener('timeupdate', () => {
   if (!vid.duration) return;
-  sk.value = Math.round(vid.currentTime / vid.duration * 1000);
-  tm.textContent = fmt(vid.currentTime);
+  const span = Math.max(0.001, clipEnd - clipStart);
+  sk.value = Math.round(clampN((vid.currentTime - clipStart) / span, 0, 1) * 1000);
+  tm.textContent = fmt(Math.max(0, vid.currentTime - clipStart));
 });
 
-vid.addEventListener('play',  () => { pbtn.innerHTML = IC_PAUSE; });
-vid.addEventListener('pause', () => { pbtn.innerHTML = IC_PLAY; });
+vid.addEventListener('play', () => { pbtn.innerHTML = IC_PAUSE; });
 vid.addEventListener('ended', () => {
   if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
 
@@ -833,12 +903,29 @@ vid.addEventListener('ended', () => {
 
     repTimes = computeRepTimes(landmarkHistory, timeHistory, results); // must come before history is cleared
 
+    // Trim the shown clip to first-rep-start .. last-rep-end (±RW_PAD_SEC),
+    // instead of the whole raw recording — falls back to the full clip if no
+    // reps were detected. Must happen before history is cleared below.
+    const repWindow = computeRepWindow(landmarkHistory, timeHistory, results);
+    const dur = vid.duration || 0;
+    clipStart = Math.max(0, (repWindow.start ?? 0) - RW_PAD_SEC);
+    clipEnd   = Math.min(dur || Infinity, (repWindow.end ?? dur) + RW_PAD_SEC);
+    if (!(clipEnd > clipStart)) { clipStart = 0; clipEnd = dur; }
+
+    // Frame both panels from only the landmarks within the shown window —
+    // setup/walk-off time outside it shouldn't widen the crop.
+    const framingHistory = [];
+    for (let i = 0; i < timeHistory.length; i++) {
+      if (timeHistory[i] >= clipStart && timeHistory[i] <= clipEnd) framingHistory.push(landmarkHistory[i]);
+    }
+    const framingSource = framingHistory.length ? framingHistory : landmarkHistory;
+
     // Static crop window for both panels, from the full range of motion
     // just collected — must happen before history is cleared below. Resize
     // the panel boxes themselves to this aspect now that it's known.
-    cropRect = computeCropRect(landmarkHistory);
+    cropRect = computeCropRect(framingSource);
     cropAspect = ((cropRect.x1 - cropRect.x0) * vid.videoWidth) / ((cropRect.y1 - cropRect.y0) * vid.videoHeight);
-    canonicalShoulderWidth = computeCanonicalShoulderWidth(landmarkHistory);
+    canonicalShoulderWidth = computeCanonicalShoulderWidth(framingSource);
     layoutStage();
 
     // Reset state and replay at 1× for the user
@@ -847,19 +934,31 @@ vid.addEventListener('ended', () => {
     resetSmoothing();
     lastLandmarks = null;
     phase = 'show';
+    showFinished = false;
     skelCtx.clearRect(0, 0, skelCvs.width, skelCvs.height);
     vid.playbackRate = 1;
     stage.classList.add('on');
-    vid.currentTime = 0;
+    vid.currentTime = clipStart;
     vid.addEventListener('seeked', () => void vid.play(), { once: true });
     return;
   }
 
-  // Display phase ended — show replay button (results already sent)
+  // Display phase ended (native duration reached) — fallback for when
+  // clipEnd lands within rounding of the true duration; the normal case is
+  // caught in renderFrame reaching clipEnd first (see finishShowPlayback).
+  finishShowPlayback();
+});
+
+// Shared "the shown clip is done" state — reachable either by hitting
+// clipEnd during renderFrame (the normal case) or by the video's native
+// 'ended' event (fallback, see above).
+function finishShowPlayback() {
+  if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+  showFinished = true;
   pbtn.innerHTML = IC_REPLAY;
   setMsg('');
   showCtrl(true);
-});
+}
 
 // ── video lifecycle ──────────────────────────────────────────────────────────
 
@@ -868,12 +967,13 @@ vid.addEventListener('seeked', () => {
   resetSmoothing();
   lastLandmarks = null;
   if (vid.paused) {
-    // Scrubbing back off the end (or anywhere else) while paused: this is no
-    // longer the "ended" state, so the button must go back to plain play,
-    // not stay stuck on the replay icon. Also redraw both panels for the
+    // Scrubbing to/past clipEnd while paused shows the replay icon, same as
+    // reaching it during playback; scrubbing back off it goes back to plain
+    // play, not staying stuck on replay. Also redraw both panels for the
     // frame just scrubbed to instead of leaving the old one on screen until
     // playback resumes.
-    if (!vid.ended) pbtn.innerHTML = IC_PLAY;
+    showFinished = vid.currentTime >= clipEnd;
+    pbtn.innerHTML = showFinished ? IC_REPLAY : IC_PLAY;
     renderPausedFrame();
   }
 });
@@ -897,6 +997,14 @@ vid.addEventListener('playing', () => {
 
 vid.addEventListener('pause', () => {
   if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+  // Only the single source of truth for the icon: 'pause' fires for BOTH a
+  // normal user pause and the pause finishShowPlayback() triggers when
+  // clipEnd is reached, and the two can race (pause is queued async, so it
+  // can land either before or after finishShowPlayback's own icon update
+  // depending on which path triggered it). Deferring to showFinished here
+  // means whichever actually reflects "are we done" wins, instead of this
+  // unconditionally stomping the replay icon back to plain play.
+  if (!showFinished) pbtn.innerHTML = IC_PLAY;
 });
 
 vid.addEventListener('error', () => {
@@ -924,6 +1032,10 @@ function onMsg(e) {
       cropRect = { x0: 0, y0: 0, x1: 1, y1: 1 };
       cropAspect = 1;
       canonicalShoulderWidth = 0.2;
+      clipStart = 0;
+      clipEnd = 0;
+      showFinished = false;
+      headSourceMode = 'none';
       phase = 'preprocess';
       playingNotified = false;
       stage.classList.remove('on'); // hidden during silent analysis pass

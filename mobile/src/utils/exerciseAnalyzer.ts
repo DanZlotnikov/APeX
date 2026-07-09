@@ -131,11 +131,16 @@ function extractFeatures(lm) {
   // Elbow angles for pull-up detection
   var elbowAngle = (angle2D(lm[11], lm[13], lm[15]) + angle2D(lm[12], lm[14], lm[16])) / 2;
 
-  // wristAbove: 1 if wrists are above shoulders in frame (y-down coords; lower y = higher)
-  // Threshold 0.5: wrists must be meaningfully above shoulders, not just at the same level.
+  // wristAbove: 1 if wrists are above shoulders in frame (y-down coords; lower y = higher).
+  // Scaled to torso length (shoulder-to-hip, dy above), not a fixed frame-height
+  // fraction — same fix already applied to jump's flight-phase threshold, for the
+  // same reason: a fixed fraction breaks whenever camera distance/zoom changes how
+  // much of the frame the athlete fills, undercounting or missing real pull-ups
+  // whenever more of the scene (e.g. the whole bar) is in shot.
   var wristY    = (lm[15].y + lm[16].y) / 2;
   var shoulderY = (lm[11].y + lm[12].y) / 2;
-  var wristAbove = (shoulderY - wristY) > 0.05 ? 1 : 0;
+  var torsoScale = Math.max(dy, 0.05);
+  var wristAbove = (shoulderY - wristY) > torsoScale * 0.22 ? 1 : 0;
 
   return { kneeAngle: kneeAngle, hipAngle: hipAngle, torsoLean: torsoLean,
            ankleY: ankleY, shoulderY: shoulderY, elbowAngle: elbowAngle, wristAbove: wristAbove };
@@ -343,6 +348,26 @@ function analyzeExercises() {
   var jCount   = countJumps(features);
   var puCount  = countPullups(features);
 
+  // Sustained overhead grip alone — regardless of whether a full pull-up
+  // rep goes on to qualify (countPullups also needs a clean 30°+ elbow ROM
+  // cycle, which noisy tracking can fail even on a real pull-up) — is
+  // enough on its own to rule out a jump: a standing vertical jump doesn't
+  // keep the wrists overhead for a large fraction of the whole clip, only
+  // briefly during the arm swing, while hanging from a bar keeps them there
+  // throughout. This also covers the mechanism that creates the false
+  // positive in the first place: pulling the whole body upward while
+  // hanging raises ankle height right along with the rest of the body,
+  // which reads to countJumps as an ordinary flight phase even though the
+  // athlete never left the ground. Mirrors countPullups' own first gate.
+  // Must run before the squat-vs-jump check below so a jump count zeroed
+  // here doesn't wrongly take a real squat count down with it.
+  var overheadFrames = 0;
+  for (var oi = 0; oi < features.length; oi++) if (features[oi].wristAbove > 0.5) overheadFrames++;
+  var sustainedOverhead = overheadFrames >= features.length * 0.3;
+  if (sustainedOverhead && jCount > 0) {
+    jCount = 0;
+  }
+
   // A detected jump is stronger evidence than a squat: it's measured from an
   // actual ankle-rise flight phase, while squat is inferred from knee angle
   // alone — the countermovement dip before takeoff can look like a shallow
@@ -382,9 +407,11 @@ function extractDetailed(lm) {
   if (hipW < 0.02) hipW = 0.02;
   var pelvicTilt = Math.abs(lm[23].y - lm[24].y) / hipW;
 
+  // Same torso-scaled threshold as extractFeatures — must stay in sync.
   var wristY    = (lm[15].y + lm[16].y) / 2;
   var shoulderY = (lm[11].y + lm[12].y) / 2;
-  var wristAbove = (shoulderY - wristY) > 0.05 ? 1 : 0;
+  var torsoScale = Math.max(dy, 0.05);
+  var wristAbove = (shoulderY - wristY) > torsoScale * 0.22 ? 1 : 0;
 
   return {
     lKnee: lKnee, rKnee: rKnee, lHip: lHip, rHip: rHip,
@@ -776,5 +803,40 @@ function computeRepTimes(history, times, results) {
   for (var i = 0; i < jm.flights.length; i++) { var t = times[jm.flights[i].land]; if (t != null) jumps.push(t); }
 
   return { squat: sqTimes, jump: jumps, pullup: puTimes };
+}
+
+// First-rep-start → last-rep-end video-time window for whichever exercise
+// was actually detected — same priority as the mutual-exclusion logic in
+// analyzeExercises (squat vs. jump; pullup is independent of both). Used to
+// trim the clip shown to the athlete down to just the exercise itself,
+// instead of whatever setup/walk-off time surrounds it in the raw recording.
+function computeRepWindow(history, times, results) {
+  var empty = { start: null, end: null };
+  if (!history || history.length < 15 || !times || times.length !== history.length || !results) return empty;
+  var raw = history.map(extractFeatures);
+  var f   = smoothFeatures(raw);
+
+  function windowFromReps(reps) {
+    if (!reps.length) return null;
+    var a = times[reps[0].start], b = times[reps[reps.length - 1].end];
+    return (a != null && b != null) ? { start: a, end: b } : null;
+  }
+
+  if (results.squat > 0) {
+    var sw = windowFromReps(segmentSquat(f).reps);
+    if (sw) return sw;
+  }
+  if (results.verticalJump > 0) {
+    var js = segmentJumps(f);
+    if (js.flights.length) {
+      var ta = times[js.flights[0].takeoff], tb = times[js.flights[js.flights.length - 1].land];
+      if (ta != null && tb != null) return { start: ta, end: tb };
+    }
+  }
+  if (results.pullup > 0) {
+    var pw = windowFromReps(segmentPullups(f).reps);
+    if (pw) return pw;
+  }
+  return empty;
 }
 `;
