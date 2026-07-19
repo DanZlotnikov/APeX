@@ -220,7 +220,7 @@ async function init() {
       baseOptions: {
         modelAssetPath:
           'https://storage.googleapis.com/mediapipe-models/pose_landmarker/' +
-          'pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
+          'pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task',
         delegate: 'GPU',
       },
       runningMode: 'VIDEO',
@@ -402,6 +402,21 @@ function resetSmoothing() {
 // recovers, at the cost of a frozen limb during a genuine long occlusion.
 const VIS_HOLD_MIN = 0.35;
 
+// Bilateral landmark pairs MediaPipe can mislabel wholesale in an ambiguous
+// view (filmed from behind, limbs together/symmetric) — it re-decides
+// left-vs-right independently every frame with no identity tracking across
+// frames, so a view it finds ambiguous can flip which physical limb it
+// calls "left" for one frame and flip back the next. That reads as the
+// joint teleporting/swapping even though the limb itself moved smoothly.
+// Verified directly on a real pull-up clip filmed from behind: multiple
+// pairs (knees, hips, ankles) flipped in the exact same frame, then flipped
+// back a few frames later — a whole-body relabel, not independent noise.
+const BILATERAL_PAIRS = [[7, 8], [11, 12], [13, 14], [15, 16], [23, 24], [25, 26], [27, 28]];
+// A swap must fit the recent trajectory MUCH better than trusting the
+// labels as-is (not just marginally better) to correct it — otherwise
+// ordinary jitter near a crossover point would flip-flop the labels itself.
+const SWAP_MARGIN = 0.7;
+
 // z/visibility aren't drawn and don't need velocity-adaptive treatment — a
 // light fixed blend is enough to keep the confidence number from flickering.
 function smoothLandmarks(raw, t) {
@@ -413,9 +428,26 @@ function smoothLandmarks(raw, t) {
   const dt = (lastSmoothT == null) ? (1 / 30) : Math.max(1e-3, t - lastSmoothT);
   lastSmoothT = t;
 
+  // Correct suspected left/right relabeling BEFORE filtering — comparing
+  // raw this-frame positions against last frame's SMOOTHED (not raw)
+  // positions, since that's the more stable reference to judge continuity
+  // against.
+  const corrected = raw.slice();
+  for (const [iL, iR] of BILATERAL_PAIRS) {
+    const fL = landmarkFilters[iL], fR = landmarkFilters[iR];
+    if (fL.x.prev == null || fR.x.prev == null) continue; // no prior frame yet to compare against
+    const rawL = raw[iL], rawR = raw[iR];
+    const noSwapCost = Math.hypot(rawL.x - fL.x.prev, rawL.y - fL.y.prev) + Math.hypot(rawR.x - fR.x.prev, rawR.y - fR.y.prev);
+    const swapCost    = Math.hypot(rawR.x - fL.x.prev, rawR.y - fL.y.prev) + Math.hypot(rawL.x - fR.x.prev, rawL.y - fR.y.prev);
+    if (swapCost < noSwapCost * SWAP_MARGIN) {
+      corrected[iL] = rawR;
+      corrected[iR] = rawL;
+    }
+  }
+
   const out = new Array(L);
   for (let i = 0; i < L; i++) {
-    const lm = raw[i];
+    const lm = corrected[i];
     const f  = landmarkFilters[i];
     const vis = lm.visibility ?? 1;
     f.v = f.v * 0.7 + vis * 0.3;

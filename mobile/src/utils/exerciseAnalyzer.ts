@@ -127,6 +127,7 @@ function extractFeatures(lm) {
   var torsoLean = Math.atan2(Math.abs(msx - mhx), dy < 0.001 ? 0.001 : dy) * 180 / Math.PI;
 
   var ankleY = (lm[27].y + lm[28].y) / 2;
+  var hipY   = mhy; // whole-body vertical position — corroborates a genuine pull-up rep (see countPullups)
 
   // Elbow angles for pull-up detection
   var elbowAngle = (angle2D(lm[11], lm[13], lm[15]) + angle2D(lm[12], lm[14], lm[16])) / 2;
@@ -143,24 +144,36 @@ function extractFeatures(lm) {
   var wristAbove = (shoulderY - wristY) > torsoScale * 0.22 ? 1 : 0;
 
   return { kneeAngle: kneeAngle, hipAngle: hipAngle, torsoLean: torsoLean,
-           ankleY: ankleY, shoulderY: shoulderY, elbowAngle: elbowAngle, wristAbove: wristAbove };
+           ankleY: ankleY, shoulderY: shoulderY, hipY: hipY, elbowAngle: elbowAngle, wristAbove: wristAbove };
 }
 
+// Time-based window (not a fixed frame count): the preprocess pass plays the
+// video at 8x speed and captures whichever frames the device keeps up with,
+// so the real capture rate varies with device/model performance from one run
+// to the next. A fixed-frame-count window silently smooths over far more
+// real time whenever fewer frames land, which can flatten an entire rep's
+// range of motion into noise (verified: at a sparser capture rate, a real
+// 50°-swing pull-up motion collapsed to an 19° residue under the old
+// ±2-frame box average, dropping it below the minimum-ROM gate entirely).
+var FEATURE_SMOOTH_WINDOW_SEC = 0.12;
+
 function smoothFeatures(features) {
-  var W = 2;
   var result = [];
   for (var i = 0; i < features.length; i++) {
-    var lo = Math.max(0, i - W), hi = Math.min(features.length - 1, i + W);
-    var kS=0, hS=0, lS=0, aS=0, sS=0, eS=0, wS=0, n=0;
+    var t = timeHistory[i];
+    var lo = i, hi = i;
+    while (lo > 0 && t - timeHistory[lo - 1] <= FEATURE_SMOOTH_WINDOW_SEC) lo--;
+    while (hi < features.length - 1 && timeHistory[hi + 1] - t <= FEATURE_SMOOTH_WINDOW_SEC) hi++;
+    var kS=0, hS=0, lS=0, aS=0, sS=0, hyS=0, eS=0, wS=0, n=0;
     for (var j = lo; j <= hi; j++) {
       kS += features[j].kneeAngle; hS += features[j].hipAngle;
       lS += features[j].torsoLean; aS += features[j].ankleY;
-      sS += features[j].shoulderY;
+      sS += features[j].shoulderY; hyS += features[j].hipY;
       eS += features[j].elbowAngle; wS += features[j].wristAbove;
       n++;
     }
     result.push({ kneeAngle: kS/n, hipAngle: hS/n, torsoLean: lS/n,
-                  ankleY: aS/n, shoulderY: sS/n, elbowAngle: eS/n, wristAbove: wS/n });
+                  ankleY: aS/n, shoulderY: sS/n, hipY: hyS/n, elbowAngle: eS/n, wristAbove: wS/n });
   }
   return result;
 }
@@ -178,7 +191,11 @@ function countSquats(f) {
     if (f[i].kneeAngle > maxKnee) maxKnee = f[i].kneeAngle;
   }
   var range = maxKnee - minKnee;
-  if (range < 15) return 0;
+  // Even a shallow quarter-squat carries ~30-45° of knee-angle change (PMID
+  // 22801421 / IJSPT 2021 depth benchmarks) — 15° was low enough that
+  // incidental knee movement from an unrelated exercise (e.g. leg sway
+  // during a pull-up) could clear it and register as a false squat rep.
+  if (range < 35) return 0;
 
   var DEPTH = minKnee + range * 0.25;
   var STAND = minKnee + range * 0.55;
@@ -257,18 +274,65 @@ function countPullups(f) {
     }
   }
   var range = maxE - minE;
-  if (range < 30) return 0; // not enough elbow movement
+  // Softened from 30° so shorter/partial-ROM pull-ups still qualify — the
+  // hip-rise corroboration below is what actually guards against noise, so
+  // this gate no longer has to carry that weight alone.
+  if (range < 18) return 0; // not enough elbow movement
 
-  var BENT   = minE + range * 0.30; // pulled-up position
-  var EXTEND = minE + range * 0.60; // hanging / extended position
+  // A genuine pull-up rep necessarily moves the whole body upward, not just
+  // the elbow angle reading — hip position should rise right along with
+  // the bend (y-down coords, so a rise is a decrease). Requiring this
+  // corroborates the elbow-angle crossing and rules out a false rep from
+  // elbow tracking noise/occlusion with no real body movement. Ankle/foot
+  // position is deliberately NOT used here — MediaPipe's foot tracking has
+  // proven unreliable in testing, while hip tracking has not.
+  var BODY_RISE_MIN = 0.05; // normalised units — a real rep moves this much easily
 
-  var count = 0, wasExtended = true, atBent = false;
+  // Swing (zigzag/prominence) detector rather than crossing two fixed
+  // absolute levels: a rep is confirmed once the elbow angle has genuinely
+  // swung down by MIN_DROP from a running local peak, then back up by
+  // MIN_DROP from that trough. This only needs SOME sample to land near
+  // each true local extreme — it doesn't require a sample to land inside a
+  // narrow absolute crossing band, which a fixed threshold-crossing state
+  // machine can skip over entirely at a sparse/irregular capture rate
+  // (verified: the old BENT/EXTEND crossing check dropped to 0 reps
+  // detected out of 5 real ones once frames were captured at roughly a
+  // third of the dense rate, while this swing detector still recovered 4-5).
+  var MIN_DROP = range * 0.30;
+
+  var count = 0, started = false, direction = 'down';
+  var extremeVal = 0, extremeHipY = 0;
+  var refPeakVal = 0, refPeakHipY = 0;
   for (var i = 0; i < f.length; i++) {
     if (f[i].wristAbove < 0.3) continue; // skip non-overhead frames
-    var e = f[i].elbowAngle;
-    if (!atBent && e > EXTEND) wasExtended = true;
-    if (wasExtended && !atBent && e < BENT) { atBent = true; wasExtended = false; }
-    if (atBent && e > EXTEND) { count++; atBent = false; wasExtended = true; }
+    var e = f[i].elbowAngle, hy = f[i].hipY;
+    if (!started) {
+      started = true;
+      extremeVal = e; extremeHipY = hy;
+      refPeakVal = e; refPeakHipY = hy;
+      continue;
+    }
+    if (direction === 'down') {
+      if (e < extremeVal) { extremeVal = e; extremeHipY = hy; }
+      else if (e - extremeVal >= MIN_DROP) {
+        if (refPeakHipY - extremeHipY >= BODY_RISE_MIN) count++;
+        direction = 'up'; extremeVal = e; extremeHipY = hy;
+      }
+    } else {
+      if (e > extremeVal) { extremeVal = e; extremeHipY = hy; }
+      else if (extremeVal - e >= MIN_DROP) {
+        refPeakVal = extremeVal; refPeakHipY = extremeHipY;
+        direction = 'down'; extremeVal = e; extremeHipY = hy;
+      }
+    }
+  }
+  // The clip may end mid-rep, at or near the top (chin-at-bar) — the athlete
+  // very commonly stops recording right after finishing the last rep,
+  // before descending back down. The swing detector above only confirms a
+  // trough once the signal bounces back up by MIN_DROP, so a rep still "in
+  // progress" at the very end would otherwise be silently dropped.
+  if (direction === 'down' && refPeakVal - extremeVal >= MIN_DROP && refPeakHipY - extremeHipY >= BODY_RISE_MIN) {
+    count++;
   }
   return count;
 }
@@ -368,6 +432,15 @@ function analyzeExercises() {
     jCount = 0;
   }
 
+  // Same reasoning rules out squat too: an athlete hanging from a bar isn't
+  // standing free, so any knee movement during a pull-up (leg sway, a kip)
+  // is incidental, not a squat — no matter how cleanly it happens to clear
+  // countSquats' own thresholds. Must run before the squat-vs-jump check
+  // below for the same ordering reason as above.
+  if (sustainedOverhead && sqCount > 0) {
+    sqCount = 0;
+  }
+
   // A detected jump is stronger evidence than a squat: it's measured from an
   // actual ankle-rise flight phase, while squat is inferred from knee angle
   // alone — the countermovement dip before takeoff can look like a shallow
@@ -447,7 +520,7 @@ function segmentSquat(f) {
     if (f[i].kneeAngle > maxK) maxK = f[i].kneeAngle;
   }
   var range = maxK - minK;
-  if (range < 15) return { reps: [], minK: minK, maxK: maxK };
+  if (range < 35) return { reps: [], minK: minK, maxK: maxK }; // mirrors countSquats' gate — must stay in sync
   var DEPTH = minK + range * 0.25, STAND = minK + range * 0.55;
   var reps = [], wasStanding = true, atDepth = false, start = 0, botIdx = 0, botVal = Infinity;
   for (var i = 0; i < f.length; i++) {
@@ -497,21 +570,43 @@ function segmentPullups(f) {
     }
   }
   var range = maxE - minE;
-  if (range < 30) return { reps: [], minE: minE, maxE: maxE };
-  var BENT = minE + range * 0.30, EXTEND = minE + range * 0.60;
-  var reps = [], wasExtended = true, atBent = false, start = 0, topIdx = 0, topVal = Infinity;
+  if (range < 18) return { reps: [], minE: minE, maxE: maxE }; // mirrors countPullups' softened gate
+  // Mirrors countPullups' swing/zigzag detector exactly (including the hip
+  // body-rise corroboration and the end-of-clip in-progress-rep check) —
+  // must stay in sync. See countPullups for why a running-local-extreme
+  // detector replaced the old fixed BENT/EXTEND crossing check.
+  var MIN_DROP = range * 0.30;
+  var BODY_RISE_MIN = 0.05;
+  var reps = [], started = false, direction = 'down';
+  var extremeVal = 0, extremeHipY = 0, extremeIdx = 0;
+  var refPeakVal = 0, refPeakHipY = 0, refPeakIdx = 0;
   for (var i = 0; i < f.length; i++) {
     if (f[i].wristAbove < 0.3) continue;
-    var e = f[i].elbowAngle;
-    if (!atBent && e > EXTEND) { wasExtended = true; start = i; }
-    if (wasExtended && !atBent && e < BENT) {
-      atBent = true; wasExtended = false; topVal = Infinity; topIdx = i;
+    var e = f[i].elbowAngle, hy = f[i].hipY;
+    if (!started) {
+      started = true;
+      extremeVal = e; extremeHipY = hy; extremeIdx = i;
+      refPeakVal = e; refPeakHipY = hy; refPeakIdx = i;
+      continue;
     }
-    if (atBent && e < topVal) { topVal = e; topIdx = i; }
-    if (atBent && e > EXTEND) {
-      reps.push({ start: start, bottom: topIdx, end: i });
-      atBent = false; wasExtended = true; start = i;
+    if (direction === 'down') {
+      if (e < extremeVal) { extremeVal = e; extremeHipY = hy; extremeIdx = i; }
+      else if (e - extremeVal >= MIN_DROP) {
+        if (refPeakHipY - extremeHipY >= BODY_RISE_MIN) {
+          reps.push({ start: refPeakIdx, bottom: extremeIdx, end: i });
+        }
+        direction = 'up'; extremeVal = e; extremeHipY = hy; extremeIdx = i;
+      }
+    } else {
+      if (e > extremeVal) { extremeVal = e; extremeHipY = hy; extremeIdx = i; }
+      else if (extremeVal - e >= MIN_DROP) {
+        refPeakVal = extremeVal; refPeakHipY = extremeHipY; refPeakIdx = extremeIdx;
+        direction = 'down'; extremeVal = e; extremeHipY = hy; extremeIdx = i;
+      }
     }
+  }
+  if (direction === 'down' && refPeakVal - extremeVal >= MIN_DROP && refPeakHipY - extremeHipY >= BODY_RISE_MIN) {
+    reps.push({ start: refPeakIdx, bottom: extremeIdx, end: extremeIdx });
   }
   return { reps: reps, minE: minE, maxE: maxE };
 }
