@@ -1,8 +1,0 @@
-# Verified working on Python 3.10 / 3.11 / 3.12 (Windows).
-# NOTE: mediapipe pulls in compatible numpy + opencv-contrib-python itself, so we
-# deliberately do NOT pin those separately (pinning opencv-python would conflict
-# with the opencv-contrib-python that mediapipe installs).
-fastapi==0.111.0
-uvicorn[standard]==0.30.1
-python-multipart==0.0.9
-mediapipe==0.10.14
