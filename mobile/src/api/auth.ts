@@ -34,24 +34,34 @@ export async function signUpManager(
   return data.user;
 }
 
+// inviteCode is optional: leave it blank to sign up as an individual athlete
+// with no manager/team (create_individual_athlete) — everything team/manager
+// -scoped (exercise assignment, compliance, injury tracking, manager
+// notifications) is keyed off profiles.team_id being non-null, so it simply
+// doesn't apply to these athletes. A non-blank code must still resolve to a
+// real team (join_team_as_athlete throws otherwise) — a typo'd code should
+// never silently fall through to an individual signup.
 export async function signUpAthlete(
   email: string,
   password: string,
   fullName: string,
-  inviteCode: string,
+  inviteCode?: string,
 ) {
-  // Validate invite code before creating account
-  const { data: teams } = await supabase.rpc('get_team_by_invite_code', { p_code: inviteCode });
-  if (!teams?.length) throw new Error('Invalid invite code. Ask your manager for the correct code.');
+  const code = inviteCode?.trim();
+
+  // Validate invite code before creating account (only when one was given)
+  if (code) {
+    const { data: teams } = await supabase.rpc('get_team_by_invite_code', { p_code: code });
+    if (!teams?.length) throw new Error('Invalid invite code. Ask your manager for the correct code.');
+  }
 
   const { data, error } = await supabase.auth.signUp({ email, password });
   if (error) throw error;
   if (!data.user) throw new Error('Sign-up returned no user');
 
-  const { error: joinErr } = await supabase.rpc('join_team_as_athlete', {
-    p_invite_code: inviteCode,
-    p_full_name:   fullName,
-  });
+  const { error: joinErr } = code
+    ? await supabase.rpc('join_team_as_athlete', { p_invite_code: code, p_full_name: fullName })
+    : await supabase.rpc('create_individual_athlete', { p_full_name: fullName });
   if (joinErr) throw joinErr;
 
   return data.user;

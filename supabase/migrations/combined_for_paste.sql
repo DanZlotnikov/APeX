@@ -601,3 +601,35 @@ WHERE s.id IN (
 
 CREATE UNIQUE INDEX IF NOT EXISTS sessions_athlete_exercise_day_uniq
   ON public.sessions (athlete_id, exercise_type, ((recorded_at AT TIME ZONE 'UTC')::date));
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- APeX · Individual (teamless) Athletes
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Lets an athlete sign up without an invite code, as an individual (pro or
+-- amateur) with no manager/team — profiles.team_id simply stays NULL. Every
+-- team/manager-scoped feature is already keyed off team_id being non-null, so
+-- it naturally doesn't apply to these athletes — no new "is individual"
+-- column, derived as `team_id IS NULL` wherever the app needs to know.
+--
+-- Requires one RLS fix: the only existing SELECT policy on `profiles` is
+-- team-scoped ("team_id = my_team_id()"), never true when team_id IS NULL
+-- (SQL NULL = NULL is not TRUE) — without a standalone "read your own row"
+-- policy a teamless athlete's own profile would be invisible to their own
+-- client via RLS and they could never get past login.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+CREATE POLICY "read own profile" ON public.profiles
+  FOR SELECT USING (id = auth.uid());
+
+-- Mirrors join_team_as_athlete, minus the invite-code/team lookup.
+CREATE OR REPLACE FUNCTION public.create_individual_athlete(p_full_name TEXT)
+RETURNS VOID LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN
+  IF auth.uid() IS NULL THEN RAISE EXCEPTION 'Not authenticated'; END IF;
+
+  INSERT INTO public.profiles (id, role, team_id, full_name)
+  VALUES (auth.uid(), 'athlete', NULL, p_full_name);
+
+  INSERT INTO public.athlete_profiles (id) VALUES (auth.uid());
+END;
+$$;

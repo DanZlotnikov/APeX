@@ -37,9 +37,13 @@ const EXERCISE_LABEL: Record<string, string> = {
 // session for this exercise recorded today is deleted before the new one is
 // inserted (cascades to its session_metrics), so history/readiness/manager
 // view all only ever see the latest attempt for that day.
+//
+// teamId is optional: an individual athlete (no manager/team) still gets a
+// full cloud-synced session + history, just with no manager to notify — the
+// notification step below is simply skipped when there's no team.
 export async function createSession(
   assessment:  Assessment,
-  teamId:      string,
+  teamId:      string | undefined,
   athleteName: string,
   exerciseKey: ExerciseKey,
 ): Promise<string> {
@@ -81,9 +85,11 @@ export async function createSession(
     if (metricsErr) throw metricsErr;
   }
 
-  // Notify manager for every completed test
-  const label = EXERCISE_LABEL[exerciseKey] ?? exerciseKey;
-  await createNotification(teamId, athleteId, `${athleteName} completed a ${label}`, 'info', session.id);
+  // Notify manager for every completed test — nothing to notify without a team
+  if (teamId) {
+    const label = EXERCISE_LABEL[exerciseKey] ?? exerciseKey;
+    await createNotification(teamId, athleteId, `${athleteName} completed a ${label}`, 'info', session.id);
+  }
 
   return session.id;
 }

@@ -34,8 +34,11 @@ export default function OverviewScreen({ userId, teamId, onSelectTask }: Props) 
       let active = true;
       loadHistory().then((h) => active && setHistory(h));
 
-      if (userId && teamId) {
-        Promise.all([getAthleteById(userId), getTeamExercises(teamId)])
+      // getAthleteById works with no team (an individual athlete just has no
+      // required exercises — see buildViewModel) — only the team-exercise
+      // min-reps lookup (used for the task-detail requirement) needs a team.
+      if (userId) {
+        Promise.all([getAthleteById(userId), teamId ? getTeamExercises(teamId) : Promise.resolve([])])
           .then(([a, exs]) => {
             if (!active) return;
             setAthlete(a);

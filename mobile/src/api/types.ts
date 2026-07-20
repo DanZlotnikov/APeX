@@ -3,7 +3,7 @@
 export interface DbProfile {
   id: string;
   role: 'athlete' | 'manager';
-  team_id: string;
+  team_id: string | null; // null = individual athlete, no manager/team
   full_name: string;
   injured: boolean;
   injury_started_at: string | null;

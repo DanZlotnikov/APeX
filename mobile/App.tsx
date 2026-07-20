@@ -83,7 +83,7 @@ function AppInner() {
     setRole(profile.role as Role);
   }
 
-  function handleSignUpComplete(newUserId: string, newTeamId: string, newRole: Role, name: string) {
+  function handleSignUpComplete(newUserId: string, newTeamId: string | null, newRole: Role, name: string) {
     setUserId(newUserId);
     setTeamId(newTeamId);
     setAthleteName(name);

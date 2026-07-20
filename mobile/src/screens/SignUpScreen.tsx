@@ -17,7 +17,7 @@ import { getProfile } from '../api/auth';
 import { colors, spacing } from '../theme';
 
 interface Props {
-  onSuccess: (userId: string, teamId: string, role: 'athlete' | 'manager', name: string) => void;
+  onSuccess: (userId: string, teamId: string | null, role: 'athlete' | 'manager', name: string) => void;
   onBack: () => void;
 }
 
@@ -72,8 +72,11 @@ export default function SignUpScreen({ onSuccess, onBack }: Props) {
         if (!teamName.trim()) { setError('Enter a team name.'); setLoading(false); return; }
         user = await signUpManager(email.trim(), password, name.trim(), teamName.trim());
       } else {
-        if (!inviteCode.trim()) { setError('Enter your invite code.'); setLoading(false); return; }
-        user = await signUpAthlete(email.trim(), password, name.trim(), inviteCode.trim());
+        // Invite code is optional — blank means "sign up as an individual
+        // athlete, no team." A code that IS entered still has to be valid
+        // (checked inside signUpAthlete); a typo shouldn't silently fall
+        // through to an individual signup.
+        user = await signUpAthlete(email.trim(), password, name.trim(), inviteCode.trim() || undefined);
       }
 
       const profile = await getProfile(user.id);
@@ -156,12 +159,12 @@ export default function SignUpScreen({ onSuccess, onBack }: Props) {
 
               {role === 'athlete' && (
                 <View style={styles.field}>
-                  <Text style={styles.fieldLabel}>INVITE CODE</Text>
+                  <Text style={styles.fieldLabel}>INVITE CODE (OPTIONAL)</Text>
                   <TextInput
                     style={[styles.input, codePreview === '' && styles.inputError]}
                     value={inviteCode}
                     onChangeText={handleCodeChange}
-                    placeholder="6-character code from your manager"
+                    placeholder="From your manager — leave blank to train solo"
                     placeholderTextColor={colors.muted}
                     autoCapitalize="characters"
                     autoCorrect={false}
@@ -177,7 +180,11 @@ export default function SignUpScreen({ onSuccess, onBack }: Props) {
                   {codePreview === '' && inviteCode.length >= 4 && (
                     <Text style={styles.codeInvalid}>Code not found</Text>
                   )}
-                  <Text style={styles.codeNote}>Ask your manager or coach for this code.</Text>
+                  <Text style={styles.codeNote}>
+                    {inviteCode.trim()
+                      ? 'Ask your manager or coach for this code.'
+                      : 'No code? No problem — you can train as an individual, no team required.'}
+                  </Text>
                 </View>
               )}
 
@@ -199,7 +206,7 @@ export default function SignUpScreen({ onSuccess, onBack }: Props) {
                 {loading
                   ? <ActivityIndicator color={colors.bg} size="small" />
                   : <Text style={styles.submitBtnText}>
-                      {role === 'manager' ? 'CREATE TEAM' : 'JOIN TEAM'}
+                      {role === 'manager' ? 'CREATE TEAM' : inviteCode.trim() ? 'JOIN TEAM' : 'CREATE ACCOUNT'}
                     </Text>}
               </Pressable>
             </View>

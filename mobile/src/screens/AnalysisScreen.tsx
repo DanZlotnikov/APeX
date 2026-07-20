@@ -180,11 +180,10 @@ export default function AnalysisScreen({
       // Replaces any earlier session for this exercise recorded today.
       await saveTodayEntry({ id, dateISO: new Date().toISOString(), videoFile: null, assessment }, keyToSave);
 
-      // DB sync (when authenticated and on a team) — also replaces today's
-      // earlier session for this exercise, if any.
-      if (teamId) {
-        await createSession(assessment, teamId, athleteName ?? 'Athlete', keyToSave);
-      }
+      // DB sync — every signed-in athlete gets this, team or not (an
+      // individual athlete just has no manager to notify; see createSession).
+      // Also replaces today's earlier session for this exercise, if any.
+      await createSession(assessment, teamId, athleteName ?? 'Athlete', keyToSave);
 
       setSaved(true);
     } catch (e: any) {

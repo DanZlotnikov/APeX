@@ -9,7 +9,11 @@ export interface TeamExerciseConfig {
   sortOrder: number;
 }
 
-export async function getTeamExercises(teamId: string): Promise<TeamExerciseConfig[]> {
+// teamId is null for an individual athlete (no manager/team) — there's no
+// team to have exercise config, so this is just an empty list, no query.
+export async function getTeamExercises(teamId: string | null): Promise<TeamExerciseConfig[]> {
+  if (!teamId) return [];
+
   const { data, error } = await supabase
     .from('team_exercises')
     .select('*')
@@ -91,7 +95,7 @@ export function resolveRequiredExercises(
 // `teamExercises` if the caller already fetched it (e.g. alongside other
 // team-scoped queries) to avoid re-fetching the same table.
 export async function getEffectiveAssignments(
-  teamId: string,
+  teamId: string | null,
   athleteIds: string[],
   teamExercises?: TeamExerciseConfig[],
 ): Promise<Map<string, Set<ExerciseKey>>> {
