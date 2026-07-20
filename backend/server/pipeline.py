@@ -28,7 +28,7 @@ import cv2  # noqa: E402
 import numpy as np  # noqa: E402
 
 import worker  # noqa: E402
-from exercise_analysis import stabilize_grip_point  # noqa: E402
+from exercises import stabilize_grip_point  # noqa: E402
 from skeleton_renderer import render_skeleton_frames  # noqa: E402
 
 PANEL_HEIGHT = 720
@@ -115,7 +115,7 @@ def process_video_two_panel(models: "worker.Models", video_path: str, output_dir
     # pull-ups so the body visibly rises to fixed hands instead of the hands
     # appearing to move — see stabilize_grip_point's docstring for why.
     render_joints = r["joints_np"]
-    if r["timeline"]["key"] == "pullup":
+    if r["timeline"]["key"] == "pull_up":
         render_joints = stabilize_grip_point(r["joints_np"])
     right_panel = render_skeleton_frames(
         render_joints, r["timeline"]["key"], r["timeline"]["cumulative"],

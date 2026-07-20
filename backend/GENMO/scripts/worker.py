@@ -50,7 +50,7 @@ from demo_utils import (  # noqa: E402
     load_model,
     run_inference,
 )
-from exercise_analysis import analyze_exercises, compute_rep_timeline, stabilize_grip_point  # noqa: E402
+from exercises import analyze_exercises, compute_rep_timeline, stabilize_grip_point  # noqa: E402
 from skeleton_renderer import render_skeleton_frames  # noqa: E402
 from smoothing import smooth_keypoints_zero_phase  # noqa: E402
 
@@ -136,6 +136,33 @@ def get_normalized_global_joints(body_model, bp_global):
     return joints
 
 
+def get_incam_joints(body_model, bp_incam):
+    """SMPL forward pass on in-camera (not world-grounded) params ->
+    (L, 22, 3) joints, no floor/rotation normalization applied (unlike
+    get_normalized_global_joints above) since these aren't used for
+    rendering — only as an alternate signal source for exercises where the
+    world-grounded reconstruction proves unreliable. See
+    exercises/signals.py's flight_height_signals() for why vertical_jump
+    specifically needs this: GEM's world-grounding leans on foot-ground
+    contact to correct drift in its absolute translation estimate, and a
+    jump has much less continuous contact for it to anchor to than a
+    grounded exercise — confirmed on real footage where the world-grounded
+    ankle height never returned near its own baseline even between the
+    first and second rep, while the in-camera reconstruction (which never
+    attempts world-frame translation at all) returned reliably to baseline
+    after every single rep. This is only safe to substitute because the
+    pipeline already assumes a static camera (static_cam=True) throughout.
+    """
+    with torch.no_grad():
+        out = body_model(
+            body_pose=bp_incam["body_pose"].cuda(),
+            global_orient=bp_incam["global_orient"].cuda(),
+            transl=bp_incam["transl"].cuda(),
+            betas=bp_incam.get("betas", torch.zeros(bp_incam["body_pose"].shape[0], 10)).cuda(),
+        )
+    return out.joints.cpu()[:, :22]
+
+
 def run_core_pipeline(models: Models, video_path: Path, preprocess_dir: Path, log_prefix: str = "[pipeline]") -> dict:
     """Stages 1-3 (preprocess, assemble, GEM inference) + exercise analysis.
     Shared by every consumer (this file's queue worker, the HTTP server) —
@@ -187,8 +214,9 @@ def run_core_pipeline(models: Models, video_path: Path, preprocess_dir: Path, lo
     t_ex0 = time.time()
     joints = get_normalized_global_joints(models.body_model, pred["body_params_global"])
     joints_np = joints.numpy()
-    counts = analyze_exercises(joints_np, fps=30.0)
-    timeline = compute_rep_timeline(joints_np, counts, fps=30.0)
+    incam_joints_np = get_incam_joints(models.body_model, pred["body_params_incam"]).numpy()
+    counts = analyze_exercises(joints_np, fps=30.0, incam_joints=incam_joints_np)
+    timeline = compute_rep_timeline(joints_np, counts, fps=30.0, incam_joints=incam_joints_np)
     t_exercise = time.time() - t_ex0
     print(f"{log_prefix} {video_path.name}: exercise counts = {counts}")
 
@@ -223,7 +251,7 @@ def process_video(models: Models, video_path: Path) -> None:
     # a rendering choice — counts were already computed on the unmodified
     # joints and are unaffected either way.
     render_joints = r["joints_np"]
-    if r["timeline"]["key"] == "pullup":
+    if r["timeline"]["key"] == "pull_up":
         render_joints = stabilize_grip_point(r["joints_np"])
 
     skeleton_frames = render_skeleton_frames(render_joints, r["timeline"]["key"], r["timeline"]["cumulative"])

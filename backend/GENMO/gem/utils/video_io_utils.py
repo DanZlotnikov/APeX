@@ -14,6 +14,15 @@ from tqdm import tqdm
 
 def get_video_lwh(video_path):
     L, H, W, _ = iio.improps(video_path, plugin="pyav").shape
+    if L == 0:
+        # Some containers don't declare an exact frame count in their stream
+        # metadata (improps then reports 0) even though the video decodes
+        # fine — confirmed on a real clip where this silently propagated a
+        # wrong L=0 downstream while every other stage kept working off the
+        # real (343) decoded frame count, causing a shape-mismatch crash
+        # much later in model inference with no clue at that point what
+        # actually went wrong. Recover the true count by actually decoding.
+        L = len(iio.imread(video_path, plugin="pyav"))
     return L, W, H
 
 

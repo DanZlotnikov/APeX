@@ -15,7 +15,7 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
-from exercise_analysis import SMPL_PARENTS
+from exercises.signals import SMPL_PARENTS
 
 # APeX's own design language (see mobile/src/theme.ts): dark navy background,
 # teal accent — keeps this renderer visually consistent with the app.
@@ -25,7 +25,11 @@ JOINT_COLOR = (255, 255, 255)
 GRID_COLOR = (70, 55, 40)
 TEXT_COLOR = (188, 212, 0)
 
-LABELS = {"squat": "SQUATS", "jump": "JUMPS", "pullup": "PULL-UPS", None: "REPS"}
+LABELS = {
+    "squat": "SQUATS", "deadlift": "DEADLIFTS", "vertical_jump": "JUMPS",
+    "pull_up": "PULL-UPS", "push_up": "PUSH-UPS", "ab_crunch": "CRUNCHES",
+    None: "REPS",
+}
 
 
 def _look_at(eye: np.ndarray, target: np.ndarray, up: np.ndarray) -> np.ndarray:
