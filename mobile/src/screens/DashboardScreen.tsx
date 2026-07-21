@@ -1,32 +1,22 @@
-import { DarkTheme, NavigationContainer } from '@react-navigation/native';
+import { DarkTheme, NavigationContainer, useNavigationContainerRef } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AppBar from './dashboard/AppBar';
 import OverviewScreen from './dashboard/OverviewScreen';
-import HistoryScreen from './dashboard/HistoryScreen';
-import HistoryDetailScreen from './dashboard/HistoryDetailScreen';
+import PerformanceScreen, { PerformanceSub } from './dashboard/PerformanceScreen';
 import SettingsScreen from './dashboard/SettingsScreen';
 import { TargetExercise } from '../api/types';
+import ProcessingBanner from '../components/ProcessingBanner';
+import { useVideoJobs } from '../hooks/useVideoJobs';
 import { useSettings } from '../state/SettingsContext';
 import { colors } from '../theme';
 
 const Tab = createBottomTabNavigator();
-const Stack = createNativeStackNavigator();
-
-function HistoryStack() {
-  return (
-    <Stack.Navigator screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
-      <Stack.Screen name="HistoryList" component={HistoryScreen} />
-      <Stack.Screen name="HistoryDetail" component={HistoryDetailScreen} />
-    </Stack.Navigator>
-  );
-}
 
 // ︎ = variation selector-15: forces text rendering, prevents iOS emoji substitution
-const GLYPH: Record<string, string> = { Overview: '◉︎', History: '≡︎' };
+const GLYPH: Record<string, string> = { Overview: '◉︎', Performance: '≡︎' };
 
 const navTheme = {
   ...DarkTheme,
@@ -40,15 +30,33 @@ interface Props {
   onUpload: () => void;
   onSelectTask: (target: TargetExercise) => void;
   onLogout: () => void;
+  /** Bumped by App.tsx when a "video ready" notification is tapped — jumps to Performance > Processing. */
+  jumpToProcessingSignal?: number;
 }
 
-export default function DashboardScreen({ userId, teamId, onRecord, onUpload, onSelectTask, onLogout }: Props) {
+export default function DashboardScreen({ userId, teamId, onRecord, onUpload, onSelectTask, onLogout, jumpToProcessingSignal }: Props) {
   const { accentColor } = useSettings();
   const insets = useSafeAreaInsets();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [performanceSub, setPerformanceSub] = useState<PerformanceSub>('history');
+  const navRef = useNavigationContainerRef();
+  const { processingCount } = useVideoJobs(userId);
 
   // Floating, fully-rounded tab bar lifted off the bottom edge.
   const tabBarStyle = [styles.tabBar, { marginBottom: (insets.bottom || 0) + 12 }];
+
+  function goToProcessing() {
+    setPerformanceSub('processing');
+    navRef.current?.navigate('Performance' as never);
+  }
+
+  // Skip the initial mount (signal starts at 0/undefined) — only react to it
+  // actually changing, i.e. a real notification tap.
+  const isFirstSignal = React.useRef(true);
+  useEffect(() => {
+    if (isFirstSignal.current) { isFirstSignal.current = false; return; }
+    goToProcessing();
+  }, [jumpToProcessingSignal]);
 
   return (
     <View style={styles.root}>
@@ -60,8 +68,9 @@ export default function DashboardScreen({ userId, teamId, onRecord, onUpload, on
         settingsOpen={settingsOpen}
         onBack={() => setSettingsOpen(false)}
       />
+      <ProcessingBanner count={processingCount} onPress={goToProcessing} />
       <View style={styles.body}>
-        <NavigationContainer theme={navTheme}>
+        <NavigationContainer ref={navRef} theme={navTheme}>
           <Tab.Navigator
             screenOptions={({ route }) => ({
               headerShown: false,
@@ -79,7 +88,9 @@ export default function DashboardScreen({ userId, teamId, onRecord, onUpload, on
             <Tab.Screen name="Overview">
               {() => <OverviewScreen userId={userId} teamId={teamId} onSelectTask={onSelectTask} />}
             </Tab.Screen>
-            <Tab.Screen name="History" component={HistoryStack} />
+            <Tab.Screen name="Performance">
+              {() => <PerformanceScreen userId={userId} sub={performanceSub} onSubChange={setPerformanceSub} />}
+            </Tab.Screen>
           </Tab.Navigator>
         </NavigationContainer>
 

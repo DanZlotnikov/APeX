@@ -1,0 +1,70 @@
+# SPDX-License-Identifier: LicenseRef-NVIDIA-OneWay-Noncommercial
+"""
+Top-level entrypoint for biomechanical analysis — the only file the rest of
+the pipeline (worker.py, backend/server/pipeline.py) imports from this
+package, same relationship exercises/analyze.py has to the exercises
+package. Completes the pipeline's natural flow:
+
+    video -> pose estimation -> exercise detection -> biomechanic analysis
+          -> reporting -> video creation
+
+run_biomechanical_analysis() is the "biomechanic analysis" + "reporting"
+steps: it's called once exercise detection has already produced a joints
+array, an active exercise key, and (via exercises.get_exercise_reps) the
+rep windows for that exercise; it returns the JSON-serializable report.
+
+── Adding a new analysis method (fatigue, range-of-motion, ...) ──────────
+1. Add its thresholds to thresholds.py (or a sibling thresholds module,
+   if the new method's tunables don't fit JointBalanceCheck's shape).
+2. Write a new module (e.g. fatigue.py) with a function
+   `analyze_x(joints_np, exercise_key, reps, fps) -> dict | None`.
+3. Add one line to _ANALYZERS below.
+No other file in this package or the rest of the pipeline needs to change —
+this function's signature and the report's top-level shape stay fixed.
+
+`legacy_metrics` (see legacy_metrics.py) is a second analyzer of this kind,
+not a "future" one — it's the compatibility bridge to the retired on-device
+analyzer's readiness score / session_metrics vocabulary that the manager
+module depends on. It's a normal citizen of _ANALYZERS like `balance`, just
+aimed at a different consumer (see its module docstring).
+"""
+from __future__ import annotations
+
+import numpy as np
+
+from exercises import get_exercise_reps
+
+from . import balance, legacy_metrics
+
+_ANALYZERS = {
+    "balance": balance.analyze_balance,
+    "legacy_metrics": legacy_metrics.analyze_legacy_metrics,
+}
+
+
+def run_biomechanical_analysis(
+    joints_np: np.ndarray,
+    exercise_key: str | None,
+    fps: float = 30.0,
+    incam_joints: np.ndarray | None = None,
+) -> dict:
+    """joints_np: (L, 22, 3) world-space SMPL joints for the clip.
+    exercise_key: the winning exercise from analyze_exercises() (timeline["key"]),
+        or None if no exercise was confidently detected.
+
+    Returns a stable-shape report:
+        {"exercise": <key or None>, "rep_count": int, "analyses": {<method>: {...}, ...}}
+    `analyses` only contains methods that actually produced a result for this
+    clip (e.g. no balance profile registered for an exercise, or 0 reps) —
+    a method being absent means "not applicable here", not "failed".
+    """
+    if exercise_key is None:
+        return {"exercise": None, "rep_count": 0, "analyses": {}}
+
+    reps = get_exercise_reps(joints_np, exercise_key, fps=fps, incam_joints=incam_joints)
+    report = {"exercise": exercise_key, "rep_count": len(reps), "analyses": {}}
+    for name, analyzer in _ANALYZERS.items():
+        result = analyzer(joints_np, exercise_key, reps, fps)
+        if result is not None:
+            report["analyses"][name] = result
+    return report

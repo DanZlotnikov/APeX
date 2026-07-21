@@ -1,10 +1,10 @@
 import * as ImagePicker from 'expo-image-picker';
 import React, { useEffect, useRef, useState } from 'react';
-import { Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
-import PrimaryButton from '../components/PrimaryButton';
+import { ActivityIndicator, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
 import StatusBanner from '../components/StatusBanner';
 import LiveCamera, { LiveCameraHandle } from '../components/LiveCamera';
 import VideoPlayer from '../components/VideoPlayer';
+import { useSettings } from '../state/SettingsContext';
 import { colors, spacing } from '../theme';
 import { normalizeVideoUri } from '../utils/video';
 
@@ -14,13 +14,18 @@ const RECORD_SECONDS = 30;
 interface Props {
   pickOnMount: boolean;
   testMode: boolean;
-  onVideoReady: (uri: string) => void;
+  // Async pipeline: this uploads the clip and queues a video_jobs row (see
+  // api/videoJobs.ts) rather than running any on-device analysis — the
+  // promise resolves once the upload + row insert succeed, not once the
+  // exercise has actually been analyzed (that happens server-side, later).
+  onVideoConfirmed: (uri: string, durationSec: number) => Promise<void>;
   onBack: () => void;
   initialVideoUri?: string; // pre-picked upload — skip picker, go straight to review
   targetLabel?: string; // set when recording for a specific required task (e.g. "Squat")
 }
 
-export default function CameraScreen({ pickOnMount, testMode, onVideoReady, onBack, initialVideoUri, targetLabel }: Props) {
+export default function CameraScreen({ pickOnMount, testMode, onVideoConfirmed, onBack, initialVideoUri, targetLabel }: Props) {
+  const { accentColor, accentOn } = useSettings();
   const liveCamRef = useRef<LiveCameraHandle>(null);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const recordTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -29,8 +34,9 @@ export default function CameraScreen({ pickOnMount, testMode, onVideoReady, onBa
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState<number | null>(null);
   const [videoUri, setVideoUri] = useState<string | null>(initialVideoUri ?? null);
+  const [videoDurationSec, setVideoDurationSec] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [preparing, setPreparing] = useState(false);
+  const [uploading, setUploading] = useState(false);
   // True while the image picker is open — suppresses camera view to avoid a
   // brief camera flash before the system picker appears.
   const [isPicking, setIsPicking] = useState(pickOnMount);
@@ -90,6 +96,7 @@ export default function CameraScreen({ pickOnMount, testMode, onVideoReady, onBa
     await liveCamRef.current?.startRecording(RECORD_SECONDS);
 
     if (recordTimerRef.current) { clearInterval(recordTimerRef.current); recordTimerRef.current = null; }
+    setVideoDurationSec(elapsed);
     setRecordingTime(null);
     setIsRecording(false);
   }
@@ -111,6 +118,9 @@ export default function CameraScreen({ pickOnMount, testMode, onVideoReady, onBa
       });
       if (!res.canceled && res.assets?.[0]?.uri) {
         setVideoUri(res.assets[0].uri);
+        // duration comes back in ms for a picked video asset; undefined for
+        // some platforms/formats — falls back to 0 (unknown) at upload time.
+        setVideoDurationSec(res.assets[0].duration != null ? res.assets[0].duration / 1000 : null);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not open library.');
@@ -119,44 +129,67 @@ export default function CameraScreen({ pickOnMount, testMode, onVideoReady, onBa
     }
   }
 
-  async function handleAnalyze() {
+  async function handleConfirm() {
     if (!videoUri) return;
-    setPreparing(true);
+    setUploading(true);
+    setError(null);
     try {
       const uri = await normalizeVideoUri(videoUri);
-      onVideoReady(uri);
+      await onVideoConfirmed(uri, videoDurationSec ?? 0);
     } catch (e) {
-      setError('Could not prepare video: ' + (e instanceof Error ? e.message : String(e)));
-      setPreparing(false);
+      setError('Could not upload video: ' + (e instanceof Error ? e.message : String(e)));
+      setUploading(false);
     }
   }
 
   // ── clip preview ──────────────────────────────────────────────────────────
+  // Full-bleed video with floating chrome, matching the live camera screen's
+  // own top-overlay pattern (back/flip icon buttons + a target pill) rather
+  // than a separate title bar + a stacked column of full-width buttons below
+  // the video. Only two actions: confirm (✓) or back (✕) — no "Retry", since
+  // Back already covers "I don't want this take" (re-record/re-pick from
+  // scratch). Both icons anchor top-left specifically so they never sit near
+  // VideoPlayer's own bottom scrub-bar overlay.
   if (videoUri) {
     return (
-      <SafeAreaView style={styles.reviewScreen}>
-        <View style={styles.reviewHeader}>
-          <Text style={styles.reviewTitle}>REVIEW CLIP</Text>
-          {targetLabel && <Text style={styles.reviewTarget}>{targetLabel.toUpperCase()}</Text>}
-        </View>
-
+      <View style={styles.reviewScreen}>
         <View style={styles.reviewViewer}>
-          <VideoPlayer videoUri={videoUri} />
+          <VideoPlayer videoUri={videoUri} avoidHomeIndicator />
         </View>
 
-        <View style={styles.reviewFooter}>
-          {error && <StatusBanner message={error} tone="error" />}
-          <PrimaryButton label="Analyze Movement" onPress={handleAnalyze} loading={preparing} disabled={preparing} />
-          <PrimaryButton
-            label="Retry"
-            variant="secondary"
-            onPress={() => pickOnMount ? void pickVideo() : setVideoUri(null)}
-            disabled={preparing}
-            style={{ marginTop: spacing.sm }}
-          />
-          <PrimaryButton label="Back" variant="secondary" onPress={onBack} disabled={preparing} style={{ marginTop: spacing.sm }} />
-        </View>
-      </SafeAreaView>
+        <SafeAreaView style={styles.topOverlay} pointerEvents="box-none">
+          <View style={[styles.topBar, styles.reviewTopBar]}>
+            <View style={styles.reviewActions}>
+              <Pressable
+                onPress={onBack}
+                disabled={uploading}
+                style={({ pressed }) => [styles.iconBtn, styles.reviewIconBtnSecondary, pressed && styles.pressed]}
+              >
+                <Text style={[styles.iconText, styles.reviewIconTextSecondary]}>✕</Text>
+              </Pressable>
+              <Pressable
+                onPress={handleConfirm}
+                disabled={uploading}
+                style={({ pressed }) => [styles.iconBtn, styles.reviewIconBtnPrimary, { backgroundColor: accentColor }, pressed && styles.pressed]}
+              >
+                {uploading ? <ActivityIndicator size="small" color={accentOn} /> : <Text style={[styles.iconText, styles.reviewIconTextPrimary, { color: accentOn }]}>✓</Text>}
+              </Pressable>
+            </View>
+
+            {targetLabel && (
+              <View style={styles.targetPill}>
+                <Text style={styles.targetPillText}>{targetLabel.toUpperCase()}</Text>
+              </View>
+            )}
+          </View>
+
+          {error && (
+            <View style={styles.reviewErrorWrap}>
+              <StatusBanner message={error} tone="error" />
+            </View>
+          )}
+        </SafeAreaView>
+      </View>
     );
   }
 
@@ -236,34 +269,25 @@ const styles = StyleSheet.create({
 
   // ── review clip ────────────────────────────────────────────────────────────
   reviewScreen: { flex: 1, backgroundColor: colors.bg },
-  reviewHeader: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  reviewTitle: {
-    color: colors.text,
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 2.5,
-  },
-  reviewTarget: {
-    color: colors.primary,
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 1.5,
-    marginTop: 4,
-  },
   reviewViewer: { flex: 1 },
-  reviewFooter: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.sm,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    gap: spacing.sm,
-  },
+  // 16pt gap: standard 8pt-grid spacing between two adjacent tap targets.
+  reviewActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  // Lower and closer to the left edge than the live camera screen's back/flip
+  // icons — this screen has no recording timer competing for the same top
+  // strip, so the buttons can sit in a more relaxed, easier-to-reach spot
+  // instead of hugging the very top corner. paddingLeft: spacing.md (16pt) is
+  // the standard iOS/Material screen-edge content margin, not an arbitrary number.
+  reviewTopBar: { paddingTop: spacing.xl, paddingLeft: spacing.md },
+  // ✕ (back, secondary) at 44pt: Apple HIG's minimum recommended tap target.
+  // ✓ (confirm, primary) at 56dp: Material Design's standard FAB size — a
+  // deliberately larger primary action, the same size-hierarchy convention
+  // FABs use everywhere.
+  reviewIconBtnSecondary: { width: 44, height: 44, borderRadius: 22 },
+  reviewIconBtnPrimary:   { width: 56, height: 56, borderRadius: 28 },
+  reviewIconTextSecondary: { fontSize: 18 },
+  reviewIconTextPrimary:   { fontSize: 24 },
+  reviewErrorWrap: { paddingHorizontal: spacing.lg, marginTop: spacing.sm },
+  pressed: { opacity: 0.6 },
 
   // countdown
   countdownOverlay: {

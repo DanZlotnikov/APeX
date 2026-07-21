@@ -192,6 +192,24 @@ def analyze_exercises(joints: np.ndarray, fps: float = 30.0, incam_joints: np.nd
     return counts
 
 
+def get_exercise_reps(joints: np.ndarray, exercise_key: str, fps: float = 30.0, incam_joints: np.ndarray | None = None) -> list[dict]:
+    """Raw {"start", "bottom", "end"} frame-index windows for every rep of
+    the given exercise key, exactly as its counting engine produced them —
+    the same reps analyze_exercises()/compute_rep_timeline() already derive
+    internally, exposed here so downstream consumers (biomechanics analysis)
+    can sample joints at each rep's meaningful frames (e.g. squat's deepest
+    point, a jump's takeoff/landing) without re-running counting themselves.
+    """
+    L = joints.shape[0]
+    if L < MIN_FRAMES or exercise_key not in EXERCISE_REGISTRY:
+        return []
+    times = np.arange(L) / fps
+    raw = compute_signals(joints)
+    signals = smooth_signals(raw, times)
+    flight_signals = _flight_signals(incam_joints, times)
+    return _run_exercise(EXERCISE_REGISTRY[exercise_key], signals, times, flight_signals)
+
+
 def compute_rep_timeline(joints: np.ndarray, counts: dict[str, int], fps: float = 30.0, incam_joints: np.ndarray | None = None) -> dict:
     """Per-frame cumulative rep count for whichever exercise won
     analyze_exercises(), plus which exercise key is active (for the HUD

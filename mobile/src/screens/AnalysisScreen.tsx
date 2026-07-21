@@ -142,14 +142,14 @@ export default function AnalysisScreen({
       assessmentLocked.current = true;
       setAssessment(a);
       try {
-        const prior = await loadHistory();
+        const prior = userId ? await loadHistory(userId) : [];
         setComparison(compareToHistory(a, prior, settings.windowDays));
       } catch {
         setComparison(null);
       }
       void playChime();
     },
-    [settings.windowDays],
+    [settings.windowDays, userId],
   );
 
   // What the athlete actually did is the source of truth for what gets
@@ -174,11 +174,15 @@ export default function AnalysisScreen({
       const id = makeId();
       const keyToSave: ExerciseKey = effectiveKey ?? 'squat';
 
-      // Local save (always — offline capable). No video file is persisted —
-      // the skeleton is drawn live over the original clip, never baked to a
-      // separate file, and replaying past sessions is a separate future task.
-      // Replaces any earlier session for this exercise recorded today.
-      await saveTodayEntry({ id, dateISO: new Date().toISOString(), videoFile: null, assessment }, keyToSave);
+      // Local save (always — offline capable), scoped to this user so it
+      // never leaks into whoever's signed in next on the same device. No
+      // video file is persisted — the skeleton is drawn live over the
+      // original clip, never baked to a separate file, and replaying past
+      // sessions is a separate future task. Replaces any earlier session for
+      // this exercise recorded today.
+      if (userId) {
+        await saveTodayEntry({ id, dateISO: new Date().toISOString(), videoFile: null, assessment }, keyToSave, userId);
+      }
 
       // DB sync — every signed-in athlete gets this, team or not (an
       // individual athlete just has no manager to notify; see createSession).
@@ -193,7 +197,7 @@ export default function AnalysisScreen({
     } finally {
       setSaving(false);
     }
-  }, [assessment, saved, saving, teamId, athleteName, showRequirement, meetsRequirement, effectiveKey]);
+  }, [assessment, saved, saving, teamId, userId, athleteName, showRequirement, meetsRequirement, effectiveKey]);
 
   const isReady = comparison !== undefined;
 

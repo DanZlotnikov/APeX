@@ -4,9 +4,10 @@ APeX pose-processing server.
 For now, accepts a *local* filesystem path to a video (the `video_path`
 field is deliberately named generically — it will later accept a cloud
 storage URL too, once videos are actually uploaded from the app instead of
-being dropped in a local folder). Runs the full GEM pose pipeline plus
-exercise counting, and writes a two-panel video (original | skeleton with
-rep counter) to backend/server/outputs/<video_stem>/two_panel.mp4.
+being dropped in a local folder). Runs the full GEM pose pipeline plus exercise counting and biomechanical
+analysis, writes a two-panel video (original | skeleton with rep counter)
+to backend/server/outputs/<video_stem>/two_panel.mp4, and returns its path
+alongside the biomechanical analysis report as JSON.
 
 Usage:
     cd backend/server && source ../GENMO/.venv/bin/activate
@@ -44,8 +45,10 @@ class ProcessRequest(BaseModel):
 
 class ProcessResponse(BaseModel):
     output_path: str
+    analysis_path: str  # same report as `analysis` below, persisted to disk next to the video
     counts: dict
     active_exercise: str | None
+    analysis: dict  # biomechanical analysis report — see biomechanics.run_biomechanical_analysis
     frames: int
     timing_s: dict
 

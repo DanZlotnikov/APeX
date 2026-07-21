@@ -3,6 +3,7 @@ import { ExerciseKey } from '../utils/exerciseMetrics';
 import { mean } from '../utils/history';
 import { createNotification } from './notifications';
 import { supabase } from './supabase';
+import { VideoJobAnalysis } from './videoJobs';
 
 // Persists every RiskFactor value the analyzer already computed for ONE
 // exercise, keyed `${exerciseKey}_${factorId}` — this is exactly what the
@@ -92,4 +93,70 @@ export async function createSession(
   }
 
   return session.id;
+}
+
+// ── new-pipeline session history ─────────────────────────────────────────────
+// The Performance > History tab is a clean break from the retired on-device
+// flow above: it only ever shows sessions produced by the new server-side
+// pipeline (sessions.biomechanics_json IS NOT NULL — see migration 010 and
+// HANDOFF_video_pipeline.md section 3.4). Sessions saved by the old flow
+// (analysis_json only, biomechanics_json null) are left untouched in the DB
+// but deliberately never surfaced here — no backward-compat rendering for
+// that shape in this screen.
+
+export interface SessionHistoryEntry {
+  id: string;
+  exerciseType: string | null;
+  repCount: number;
+  readinessScore: number | null;
+  recordedAt: string;
+  resultVideoPath: string | null;
+  biomechanics: VideoJobAnalysis | null;
+}
+
+const HISTORY_COLUMNS =
+  'id, exercise_type, rep_count, readiness_score, recorded_at, result_video_path, biomechanics_json';
+
+function fromHistoryRow(r: any): SessionHistoryEntry {
+  return {
+    id: r.id,
+    exerciseType: r.exercise_type,
+    repCount: r.rep_count,
+    readinessScore: r.readiness_score,
+    recordedAt: r.recorded_at,
+    resultVideoPath: r.result_video_path,
+    biomechanics: r.biomechanics_json,
+  };
+}
+
+export async function getSessionHistory(athleteId: string): Promise<SessionHistoryEntry[]> {
+  const { data, error } = await supabase
+    .from('sessions')
+    .select(HISTORY_COLUMNS)
+    .eq('athlete_id', athleteId)
+    .not('biomechanics_json', 'is', null)
+    .order('recorded_at', { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map(fromHistoryRow);
+}
+
+export async function getSessionById(sessionId: string): Promise<SessionHistoryEntry | null> {
+  const { data, error } = await supabase
+    .from('sessions')
+    .select(HISTORY_COLUMNS)
+    .eq('id', sessionId)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? fromHistoryRow(data) : null;
+}
+
+// Also removes the two-panel video from Storage (RLS from migration 009
+// permits the athlete to delete their own processed/ objects directly).
+export async function deleteSession(session: Pick<SessionHistoryEntry, 'id' | 'resultVideoPath'>): Promise<void> {
+  const { error } = await supabase.from('sessions').delete().eq('id', session.id);
+  if (error) throw error;
+  if (session.resultVideoPath) {
+    const { error: storageErr } = await supabase.storage.from('exercise-videos').remove([session.resultVideoPath]);
+    if (storageErr) console.warn('[APeX] Failed to delete session video:', storageErr.message);
+  }
 }

@@ -21,15 +21,21 @@ export interface Profile {
   weightKg: number | null;
 }
 
-const HISTORY_FILE = 'history.json';
-const PROFILE_FILE = 'profile.json';
-
 export const EMPTY_PROFILE: Profile = { name: '', heightCm: null, weightKg: null };
+
+// History and profile are stored per-user (userId = the Supabase auth user
+// id) — a shared device-global filename would leak one account's session
+// history/profile into whichever account is signed in next on the same
+// device, which is exactly the bug this scoping fixes. `settings.json`
+// (theme/units/sound — device UI prefs, not personal data) intentionally
+// stays global; see SettingsContext.tsx.
+function historyFile(userId: string): string { return `history_${userId}.json`; }
+function profileFile(userId: string): string { return `profile_${userId}.json`; }
 
 // ── IO ────────────────────────────────────────────────────────────────────────
 
-export async function loadHistory(): Promise<HistoryEntry[]> {
-  const list = await readJSON<HistoryEntry[]>(HISTORY_FILE, []);
+export async function loadHistory(userId: string): Promise<HistoryEntry[]> {
+  const list = await readJSON<HistoryEntry[]>(historyFile(userId), []);
   // stored chronologically; ensure ascending by date
   return list.slice().sort((a, b) => a.dateISO.localeCompare(b.dateISO));
 }
@@ -39,8 +45,12 @@ export async function loadHistory(): Promise<HistoryEntry[]> {
 // kept locally too (mirrors the DB-side replace in api/sessions.ts
 // createSession). "Today" is the UTC calendar day, matching dateISO's own
 // format (new Date().toISOString()) and the rest of the app's "today" checks.
-export async function saveTodayEntry(entry: HistoryEntry, exerciseKey: 'squat' | 'jump' | 'pullup'): Promise<void> {
-  const list = await loadHistory();
+export async function saveTodayEntry(
+  entry: HistoryEntry,
+  exerciseKey: 'squat' | 'jump' | 'pullup',
+  userId: string,
+): Promise<void> {
+  const list = await loadHistory(userId);
   const todayUtc = entry.dateISO.slice(0, 10);
   const filtered = list.filter((e) => {
     const sameDay = e.dateISO.slice(0, 10) === todayUtc;
@@ -48,22 +58,29 @@ export async function saveTodayEntry(entry: HistoryEntry, exerciseKey: 'squat' |
     return !(sameDay && sameExercise);
   });
   filtered.push(entry);
-  await writeJSON(HISTORY_FILE, filtered);
+  await writeJSON(historyFile(userId), filtered);
 }
 
-export async function deleteEntry(id: string): Promise<void> {
-  const list = await loadHistory();
+// Bulk overwrite — used on fresh sign-in/sign-up to make the local cache
+// match the DB truth (see api/sync.ts). Not for normal saves (saveTodayEntry
+// above handles those); this replaces the whole file wholesale.
+export async function replaceHistory(entries: HistoryEntry[], userId: string): Promise<void> {
+  await writeJSON(historyFile(userId), entries);
+}
+
+export async function deleteEntry(id: string, userId: string): Promise<void> {
+  const list = await loadHistory(userId);
   const found = list.find((e) => e.id === id);
   if (found) await deleteVideo(found.videoFile);
-  await writeJSON(HISTORY_FILE, list.filter((e) => e.id !== id));
+  await writeJSON(historyFile(userId), list.filter((e) => e.id !== id));
 }
 
-export async function loadProfile(): Promise<Profile> {
-  return readJSON<Profile>(PROFILE_FILE, EMPTY_PROFILE);
+export async function loadProfile(userId: string): Promise<Profile> {
+  return readJSON<Profile>(profileFile(userId), EMPTY_PROFILE);
 }
 
-export async function saveProfile(p: Profile): Promise<void> {
-  await writeJSON(PROFILE_FILE, p);
+export async function saveProfile(p: Profile, userId: string): Promise<void> {
+  await writeJSON(profileFile(userId), p);
 }
 
 export function makeId(): string {

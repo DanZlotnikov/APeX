@@ -7,7 +7,8 @@
  * Scope (per plan): consumed by the dashboard and primary accent touchpoints
  * (PrimaryButton, Home wordmark). Other screens keep the static theme for now.
  */
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { supabase } from '../api/supabase';
 import { AccentKey, ACCENTS, FONT_SCALES, FontScaleKey } from '../theme';
 import { EMPTY_PROFILE, loadProfile, Profile, saveProfile } from '../utils/history';
 import { readJSON, writeJSON } from '../utils/storage';
@@ -41,6 +42,7 @@ interface Ctx {
   fontScale: number;
   update: (patch: Partial<Settings>) => void;
   updateProfile: (patch: Partial<Profile>) => void;
+  refreshProfile: () => Promise<void>;
 }
 
 const SettingsContext = createContext<Ctx | null>(null);
@@ -49,17 +51,42 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
   const [settings, setSettings] = useState<Settings>(DEFAULTS);
   const [profile, setProfile] = useState<Profile>(EMPTY_PROFILE);
+  // Profile is stored per-user (see utils/history.ts) — this tracks whoever's
+  // currently signed in so updateProfile saves under the right file. A ref,
+  // not state: it only needs to be read inside callbacks, never rendered.
+  const userIdRef = useRef<string | null>(null);
 
   useEffect(() => {
+    let active = true;
+
+    async function loadProfileFor(userId: string | null) {
+      const p = userId ? await loadProfile(userId) : EMPTY_PROFILE;
+      if (active) setProfile(p);
+    }
+
     (async () => {
-      const [s, p] = await Promise.all([
+      const [s, { data }] = await Promise.all([
         readJSON<Settings>(SETTINGS_FILE, DEFAULTS),
-        loadProfile(),
+        supabase.auth.getSession(),
       ]);
+      if (!active) return;
       setSettings({ ...DEFAULTS, ...s });
-      setProfile(p);
-      setReady(true);
+      userIdRef.current = data.session?.user.id ?? null;
+      await loadProfileFor(userIdRef.current);
+      if (active) setReady(true);
     })();
+
+    // Re-scope the profile whenever the signed-in user changes (login,
+    // logout, or switching accounts on the same device) — without this, a
+    // newly signed-in user would keep seeing whoever was signed in before.
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      const uid = session?.user.id ?? null;
+      if (uid === userIdRef.current) return;
+      userIdRef.current = uid;
+      void loadProfileFor(uid);
+    });
+
+    return () => { active = false; sub.subscription.unsubscribe(); };
   }, []);
 
   const update = useCallback((patch: Partial<Settings>) => {
@@ -71,11 +98,23 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const updateProfile = useCallback((patch: Partial<Profile>) => {
+    const userId = userIdRef.current;
+    if (!userId) return; // not signed in — nothing to scope the save to
     setProfile((prev) => {
       const next = { ...prev, ...patch };
-      void saveProfile(next);
+      void saveProfile(next, userId);
       return next;
     });
+  }, []);
+
+  // Re-reads the current user's local profile file. Needed after
+  // api/sync.ts's syncLocalDataFromServer overwrites it on a fresh
+  // login/signup — that write happens outside this context, so without an
+  // explicit refresh the in-memory `profile` here would keep showing
+  // whatever was loaded before the sync (stale, possibly empty).
+  const refreshProfile = useCallback(async () => {
+    const userId = userIdRef.current;
+    setProfile(userId ? await loadProfile(userId) : EMPTY_PROFILE);
   }, []);
 
   const value = useMemo<Ctx>(() => {
@@ -89,8 +128,9 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       fontScale: FONT_SCALES[settings.fontScale] ?? 1,
       update,
       updateProfile,
+      refreshProfile,
     };
-  }, [ready, settings, profile, update, updateProfile]);
+  }, [ready, settings, profile, update, updateProfile, refreshProfile]);
 
   return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>;
 }

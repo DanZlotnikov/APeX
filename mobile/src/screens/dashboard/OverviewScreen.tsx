@@ -3,15 +3,56 @@ import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { getAthleteById } from '../../api/athletes';
 import { getTeamExercises } from '../../api/exercises';
-import { AthleteViewModel, TargetExercise } from '../../api/types';
+import { getSessionHistory } from '../../api/sessions';
+import { AthleteViewModel, ExerciseReadiness, TargetExercise } from '../../api/types';
+import { VideoJob } from '../../api/videoJobs';
 import LineTrend from '../../components/charts/LineTrend';
 import DeltaChip from '../../components/DeltaChip';
+import { useVideoJobs } from '../../hooks/useVideoJobs';
 import { useSettings } from '../../state/SettingsContext';
-import { HistoryEntry, loadHistory, mean } from '../../utils/history';
+import { mean } from '../../utils/history';
 import { ExerciseKey } from '../../utils/exerciseMetrics';
+import { exerciseLabel } from '../../utils/pipelineExercise';
 import { StatDelta } from '../../utils/stats';
 import { formatHeight, formatWeight } from '../../utils/units';
 import { colors, spacing } from '../../theme';
+
+// Today's Tasks redesign for the async pipeline (HANDOFF_video_pipeline.md
+// section 4 item 8): a task can no longer just be "done"/"not done" from
+// sessions alone, since a save now happens well after recording. Layering
+// today's live video_jobs (matched by target_exercise_key) on top of the
+// DB-driven ExerciseReadiness gives the in-between states — pending while
+// the pipeline runs, resolved to met/mismatched the moment the job
+// completes (per the handoff, this resolves on job completion, not on the
+// athlete tapping Save in the Processing tab).
+type TaskStatus =
+  | { kind: 'done'; readinessPct: number | null }
+  | { kind: 'pending' }
+  | { kind: 'mismatch'; actualLabel: string }
+  | { kind: 'failed' }
+  | { kind: 'not_done' };
+
+function resolveTaskStatus(key: ExerciseKey, dbState: ExerciseReadiness, todaysJobs: VideoJob[]): TaskStatus {
+  const job = todaysJobs.find((j) => j.targetExerciseKey === key);
+  if (job) {
+    if (job.status === 'queued' || job.status === 'processing') return { kind: 'pending' };
+    if (job.status === 'failed') return { kind: 'failed' };
+    if (job.status === 'completed') {
+      const legacy = job.analysis?.analyses?.legacy_metrics;
+      const balancePct = job.analysis?.analyses?.balance?.overall_balance_pct;
+      const actualKey = legacy?.legacy_exercise_key ?? job.exerciseType;
+      // "Readiness" is the balance score, not the legacy formula's score —
+      // see migration 011 / BiomechanicsReport's readinessLabelFor.
+      if (actualKey === key) return { kind: 'done', readinessPct: balancePct != null ? Math.round(balancePct) : null };
+      return { kind: 'mismatch', actualLabel: exerciseLabel(actualKey) };
+    }
+  }
+  // dbState.readiness reads sessions.readiness_score, which save_video_job
+  // (migration 011) now populates from balance too, so this is consistent
+  // with the 'completed'-but-unsaved branch above.
+  if (dbState.testedToday) return { kind: 'done', readinessPct: dbState.readiness };
+  return { kind: 'not_done' };
+}
 
 interface Props {
   userId?: string;
@@ -21,10 +62,14 @@ interface Props {
 
 export default function OverviewScreen({ userId, teamId, onSelectTask }: Props) {
   const { profile, settings, accentColor } = useSettings();
-  const [history, setHistory]         = useState<HistoryEntry[]>([]);
+  const [sessionCount, setSessionCount] = useState(0);
   const [athlete, setAthlete]         = useState<AthleteViewModel | null>(null);
   const [minRepsByKey, setMinRepsByKey] = useState<Partial<Record<ExerciseKey, number>>>({});
   const [loading, setLoading]         = useState(true);
+  const { jobs } = useVideoJobs(userId);
+
+  const todayUtc = new Date().toISOString().slice(0, 10);
+  const todaysJobs = jobs.filter((j) => !!j.targetExerciseKey && j.recordedAt.startsWith(todayUtc));
 
   // Refetch on every focus (not just mount) so completing a task and coming
   // back from AnalysisScreen shows it as done immediately, alongside every
@@ -32,7 +77,13 @@ export default function OverviewScreen({ userId, teamId, onSelectTask }: Props) 
   useFocusEffect(
     useCallback(() => {
       let active = true;
-      loadHistory().then((h) => active && setHistory(h));
+      if (userId) {
+        getSessionHistory(userId)
+          .then((s) => active && setSessionCount(s.length))
+          .catch((e) => console.warn('[APeX] Failed to load session count:', e));
+      } else {
+        setSessionCount(0);
+      }
 
       // getAthleteById works with no team (an individual athlete just has no
       // required exercises — see buildViewModel) — only the team-exercise
@@ -92,26 +143,38 @@ export default function OverviewScreen({ userId, teamId, onSelectTask }: Props) 
         <View style={styles.profileRow}>
           <ProfileStat label="HEIGHT" value={formatHeight(profile.heightCm, settings.units)} />
           <ProfileStat label="WEIGHT" value={formatWeight(profile.weightKg, settings.units)} />
-          <ProfileStat label="SESSIONS" value={String(history.length)} />
+          <ProfileStat label="SESSIONS" value={String(sessionCount)} />
         </View>
 
         {!!athlete?.perExerciseReadiness.length && (
           <View style={styles.card}>
             <Text style={styles.cardTitle}>TODAY'S TASKS</Text>
-            {athlete.perExerciseReadiness.map((t) => (
-              <Pressable
-                key={t.key}
-                onPress={() => handleTaskPress(t.key, t.label)}
-                style={({ pressed }) => [styles.taskRow, pressed && styles.taskRowPressed]}
-              >
-                <View style={[styles.taskDot, t.testedToday && styles.taskDotDone]} />
-                <Text style={styles.taskLabel} numberOfLines={1}>{t.label}</Text>
-                <Text style={styles.taskStatus}>
-                  {t.testedToday ? `Completed · ${t.readiness}%` : 'Not completed yet'}
-                </Text>
-                <Text style={styles.chevron}>›</Text>
-              </Pressable>
-            ))}
+            {athlete.perExerciseReadiness.map((t) => {
+              const status = resolveTaskStatus(t.key, t, todaysJobs);
+              return (
+                <Pressable
+                  key={t.key}
+                  onPress={() => handleTaskPress(t.key, t.label)}
+                  style={({ pressed }) => [styles.taskRow, pressed && styles.taskRowPressed]}
+                >
+                  <View style={[
+                    styles.taskDot,
+                    status.kind === 'done' && styles.taskDotDone,
+                    status.kind === 'pending' && styles.taskDotPending,
+                    (status.kind === 'mismatch' || status.kind === 'failed') && styles.taskDotAlert,
+                  ]} />
+                  <Text style={styles.taskLabel} numberOfLines={1}>{t.label}</Text>
+                  <Text style={styles.taskStatus} numberOfLines={1}>
+                    {status.kind === 'done' && (status.readinessPct != null ? `Completed · ${status.readinessPct}%` : 'Completed')}
+                    {status.kind === 'pending' && 'Pending…'}
+                    {status.kind === 'mismatch' && `Recorded ${status.actualLabel} instead`}
+                    {status.kind === 'failed' && 'Processing failed'}
+                    {status.kind === 'not_done' && 'Not completed yet'}
+                  </Text>
+                  <Text style={styles.chevron}>›</Text>
+                </Pressable>
+              );
+            })}
           </View>
         )}
 
@@ -210,6 +273,8 @@ const styles = StyleSheet.create({
     marginRight: spacing.sm,
   },
   taskDotDone: { backgroundColor: colors.primary, borderColor: colors.primary },
+  taskDotPending: { backgroundColor: colors.warning, borderColor: colors.warning },
+  taskDotAlert: { backgroundColor: colors.danger, borderColor: colors.danger },
   taskLabel: { flex: 1, color: colors.text, fontSize: 14, fontWeight: '700' },
   taskStatus: { color: colors.muted, fontSize: 12, fontWeight: '600', marginRight: spacing.xs },
   chevron: { color: colors.muted, fontSize: 18, fontWeight: '400' },

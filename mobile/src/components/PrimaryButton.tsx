@@ -53,8 +53,12 @@ const styles = StyleSheet.create({
     minHeight: 56,
   },
   primary: { backgroundColor: colors.primary },
+  // A literally transparent fill reads as a broken/ghost element against the
+  // app's solid dark background (just a floating outline) — surface + a
+  // subtle border reads as an actual button, matching AppBar's outline
+  // button (e.g. "UPLOAD").
   secondary: {
-    backgroundColor: 'transparent',
+    backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
   },

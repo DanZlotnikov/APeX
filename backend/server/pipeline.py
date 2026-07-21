@@ -2,11 +2,11 @@
 Two-panel video processing pipeline for the APeX pose server.
 
 Reuses GENMO's existing pipeline building blocks (model loading,
-preprocessing, GEM inference, exercise counting, skeleton rendering) via
-backend/GENMO/scripts/worker.py — this file only adds the server-specific
-final rendering step: a side-by-side video with the original clip (cropped
-to the athlete's full range of motion, no overlay) on the left, and the
-skeleton+counter render on the right.
+preprocessing, GEM inference, exercise counting, biomechanical analysis,
+skeleton rendering) via backend/GENMO/scripts/worker.py — this file only
+adds the server-specific final rendering step: a side-by-side video with
+the original clip (cropped to the athlete's full range of motion, no
+overlay) on the left, and the skeleton+counter render on the right.
 
 Importing `worker` (below) has a side effect worth knowing about: it chdir's
 the process into backend/GENMO/ and adds backend/GENMO/scripts/demo/ to
@@ -77,10 +77,10 @@ def crop_and_resize_original(frames: np.ndarray, box: tuple[int, int, int, int],
 
 
 def combine_two_panel(left: np.ndarray, right: np.ndarray) -> np.ndarray:
-    """Horizontal side-by-side composite. Both panels must already share the
-    same height (both are built at PANEL_HEIGHT above) — only widths differ,
-    since the left panel's crop aspect ratio varies per clip while the right
-    (skeleton) panel is always rendered at a fixed canvas size.
+    """Horizontal side-by-side composite. Both panels are built at the same
+    height (PANEL_HEIGHT) and, since process_video_two_panel sizes the
+    skeleton panel's canvas to match the real-video panel's own width, the
+    same width too — this just asserts that rather than assuming it.
     """
     assert left.shape[1] == right.shape[1], f"panel height mismatch: {left.shape[1]} vs {right.shape[1]}"
     L = min(left.shape[0], right.shape[0])
@@ -91,10 +91,23 @@ def combine_two_panel(left: np.ndarray, right: np.ndarray) -> np.ndarray:
     return out
 
 
-def process_video_two_panel(models: "worker.Models", video_path: str, output_dir: Path) -> dict:
+def process_video_two_panel(
+    models: "worker.Models", video_path: str, output_dir: Path,
+    cancel_check: "worker.Callable[[], bool] | None" = None,
+) -> dict:
     """Runs the full pipeline on a local video path and writes a two-panel
-    (original-cropped | skeleton+counter) video to output_dir/two_panel.mp4.
+    (original-cropped | skeleton+counter) video to output_dir/two_panel.mp4,
+    plus the biomechanical analysis report to output_dir/analysis.json —
+    the JSON is also returned inline in the response dict below, but is
+    persisted to disk too so it's discoverable the same way the video is
+    (e.g. for later inspection without re-running the pipeline).
+
+    cancel_check: passed straight through to worker.run_core_pipeline — see
+    its docstring. May raise worker.PipelineCancelled; not caught here,
+    it's the caller's decision how to handle an aborted run.
     """
+    import json
+
     from gem.utils.video_io_utils import read_video_np, save_video
 
     video_path = Path(video_path)
@@ -102,7 +115,7 @@ def process_video_two_panel(models: "worker.Models", video_path: str, output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
     preprocess_dir = output_dir / "preprocess"
 
-    r = worker.run_core_pipeline(models, video_path, preprocess_dir, log_prefix="[server]")
+    r = worker.run_core_pipeline(models, video_path, preprocess_dir, log_prefix="[server]", cancel_check=cancel_check)
 
     # Left panel: original frames, no overlay, cropped to the athlete's full
     # range of motion across the whole clip (see compute_union_crop_box).
@@ -111,25 +124,37 @@ def process_video_two_panel(models: "worker.Models", video_path: str, output_dir
     left_panel = crop_and_resize_original(orig_frames, box, target_h=PANEL_HEIGHT)
     del orig_frames
 
-    # Right panel: joints + bones + 3D grid + rep-counter HUD. Grip-stabilize
-    # pull-ups so the body visibly rises to fixed hands instead of the hands
-    # appearing to move — see stabilize_grip_point's docstring for why.
+    # Right panel: joints + bones + 3D grid + rep-counter HUD. Sized to match
+    # the left panel's own width exactly (derived from the athlete's actual
+    # crop-box aspect ratio, not a fixed value) — a hardcoded canvas_w here
+    # previously produced mismatched panel sizes for any video whose crop
+    # aspect wasn't coincidentally close to 960:720 (confirmed on a portrait
+    # mobile clip: the real crop came out much narrower than 960, so the two
+    # panels never matched). Grip-stabilize pull-ups so the body visibly
+    # rises to fixed hands instead of the hands appearing to move — see
+    # stabilize_grip_point's docstring for why.
+    panel_w = left_panel.shape[2]
     render_joints = r["joints_np"]
     if r["timeline"]["key"] == "pull_up":
         render_joints = stabilize_grip_point(r["joints_np"])
     right_panel = render_skeleton_frames(
         render_joints, r["timeline"]["key"], r["timeline"]["cumulative"],
-        canvas_w=960, canvas_h=PANEL_HEIGHT,
+        canvas_w=panel_w, canvas_h=PANEL_HEIGHT,
     )
 
     combined = combine_two_panel(left_panel, right_panel)
     output_path = output_dir / "two_panel.mp4"
     save_video(combined, str(output_path), fps=30)
 
+    analysis_path = output_dir / "analysis.json"
+    analysis_path.write_text(json.dumps(r["analysis"], indent=2))
+
     return {
         "output_path": str(output_path),
+        "analysis_path": str(analysis_path),
         "counts": r["counts"],
         "active_exercise": r["timeline"]["key"],
+        "analysis": r["analysis"],
         "frames": r["L"],
         "timing_s": {
             "preproc": round(r["t_preproc"], 1),

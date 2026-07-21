@@ -38,6 +38,12 @@
         {
           "photosPermission": "Allow APeX to select a test video from your library."
         }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#00D4BC"
+        }
       ]
     ]
   }

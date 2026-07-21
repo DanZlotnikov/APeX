@@ -34,6 +34,7 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts" / "demo"))
@@ -50,6 +51,7 @@ from demo_utils import (  # noqa: E402
     load_model,
     run_inference,
 )
+from biomechanics import run_biomechanical_analysis  # noqa: E402
 from exercises import analyze_exercises, compute_rep_timeline, stabilize_grip_point  # noqa: E402
 from skeleton_renderer import render_skeleton_frames  # noqa: E402
 from smoothing import smooth_keypoints_zero_phase  # noqa: E402
@@ -60,6 +62,17 @@ OUTPUT_ROOT = REPO_ROOT / "outputs" / "demo_smpl"
 HMR2_CKPT = str(REPO_ROOT / "inputs" / "checkpoints" / "hmr2" / "epoch=10-step=25000.ckpt")
 VIDEO_EXTS = {".mp4", ".mov", ".avi", ".m4v"}
 POLL_SECONDS = 2.0
+
+
+class PipelineCancelled(Exception):
+    """Raised by run_core_pipeline when the caller-supplied `cancel_check`
+    callback returns True partway through — lets a caller (e.g.
+    supabase_worker.py) distinguish "asked to stop" from a real processing
+    failure, without this file needing to know anything about what
+    "cancelled" means to whoever's calling it (this module is shared by
+    both the Supabase-backed worker and the local-queue/HTTP-server paths,
+    neither of which this file should be coupled to).
+    """
 
 
 @dataclass
@@ -163,13 +176,33 @@ def get_incam_joints(body_model, bp_incam):
     return out.joints.cpu()[:, :22]
 
 
-def run_core_pipeline(models: Models, video_path: Path, preprocess_dir: Path, log_prefix: str = "[pipeline]") -> dict:
-    """Stages 1-3 (preprocess, assemble, GEM inference) + exercise analysis.
+def run_core_pipeline(
+    models: Models, video_path: Path, preprocess_dir: Path,
+    log_prefix: str = "[pipeline]",
+    cancel_check: Callable[[], bool] | None = None,
+) -> dict:
+    """Stages 1-3 (preprocess, assemble, GEM inference) + exercise detection
+    + biomechanical analysis — the full video -> pose -> exercise ->
+    biomechanics -> reporting flow, minus the final video-creation step.
     Shared by every consumer (this file's queue worker, the HTTP server) —
     only the final rendering step differs between them.
 
+    cancel_check: optional, called once right after preprocessing finishes
+        (the natural boundary between the cheap stages — YOLO detection,
+        HMR2 features — and the expensive one, GEM inference). If it
+        returns True, raises PipelineCancelled instead of proceeding, so a
+        caller that wants to abort mid-pipeline actually skips the costly
+        part rather than paying for it and discarding the result anyway.
+        This module has no idea what "cancelled" means to whoever's
+        calling it (a Supabase row's cancel_requested flag, or anything
+        else) — that's entirely the callback's business.
+
     Returns a dict: kp2d, bbx_xys, pred, joints_np, counts, timeline,
-    L, W, H, and timing breakdown (t_preproc, t_inference, t_exercise).
+    analysis (see biomechanics.run_biomechanical_analysis), L, W, H, and
+    timing breakdown (t_preproc, t_inference, t_exercise).
+
+    Raises PipelineCancelled (see cancel_check above) if the pipeline was
+    aborted after preprocessing but before inference.
     """
     from gem.utils.video_io_utils import get_video_lwh, read_video_np
 
@@ -180,6 +213,21 @@ def run_core_pipeline(models: Models, video_path: Path, preprocess_dir: Path, lo
     print(f"{log_prefix} {video_path.name}: {L} frames, {W}x{H}")
 
     bbx_xys = detect_and_track(str(video_path), str(preprocess_dir), yolo_model=models.yolo)
+
+    # get_video_lwh's frame count comes from container metadata, which can
+    # disagree with how many frames pyav actually decodes for a given file
+    # -- confirmed on real mobile-recorded footage: metadata said 145,
+    # detect_and_track's own decode only produced 144 boxes, and blindly
+    # using the metadata L for get_camera_static() below crashed model
+    # inference with a tensor-size mismatch (144 vs 145) far from the real
+    # cause. bbx_xys's actual length is what kp2d/data below are built
+    # against, so it — not the metadata L — is the frame count used from
+    # here on (same category of issue as get_video_lwh's own L==0 fallback,
+    # just off-by-a-few instead of entirely missing).
+    if bbx_xys.shape[0] != L:
+        print(f"{log_prefix} {video_path.name}: frame count mismatch -- metadata said {L} frames, "
+              f"actually decoded {bbx_xys.shape[0]}; using the decoded count")
+        L = bbx_xys.shape[0]
 
     frames = read_video_np(str(video_path))
     kp2d = models.vitpose.extract(frames, bbx_xys, batch_size=32)
@@ -199,6 +247,10 @@ def run_core_pipeline(models: Models, video_path: Path, preprocess_dir: Path, lo
     t_preproc = time.time() - t0
     print(f"{log_prefix} {video_path.name}: preprocessing done ({t_preproc:.1f}s)")
 
+    if cancel_check is not None and cancel_check():
+        print(f"{log_prefix} {video_path.name}: cancelled after preprocessing, skipping inference")
+        raise PipelineCancelled()
+
     data = assemble_data(
         kp2d=kp2d, bbx_xys=bbx_xys, K_fullimg=K_fullimg, cam_angvel=cam_angvel,
         cam_tvel=cam_tvel, R_w2c=R_w2c, f_imgseq=f_imgseq, has_img_mask=has_img_mask,
@@ -217,12 +269,15 @@ def run_core_pipeline(models: Models, video_path: Path, preprocess_dir: Path, lo
     incam_joints_np = get_incam_joints(models.body_model, pred["body_params_incam"]).numpy()
     counts = analyze_exercises(joints_np, fps=30.0, incam_joints=incam_joints_np)
     timeline = compute_rep_timeline(joints_np, counts, fps=30.0, incam_joints=incam_joints_np)
+    analysis = run_biomechanical_analysis(joints_np, timeline["key"], fps=30.0, incam_joints=incam_joints_np)
     t_exercise = time.time() - t_ex0
     print(f"{log_prefix} {video_path.name}: exercise counts = {counts}")
+    if analysis["analyses"]:
+        print(f"{log_prefix} {video_path.name}: biomechanics = {analysis['analyses']}")
 
     return dict(
         kp2d=kp2d, bbx_xys=bbx_xys, pred=pred, joints_np=joints_np,
-        counts=counts, timeline=timeline, L=L, W=W, H=H,
+        counts=counts, timeline=timeline, analysis=analysis, L=L, W=W, H=H,
         t_preproc=t_preproc, t_inference=t_inference, t_exercise=t_exercise, t0=t0,
     )
 

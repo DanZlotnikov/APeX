@@ -5,8 +5,10 @@ import { ActivityIndicator, Animated, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { getProfile, getSession, logout, signIn } from './src/api/auth';
 import { getAthleteById } from './src/api/athletes';
+import { addNotificationTapListener, registerForPushNotifications } from './src/api/pushNotifications';
+import { syncLocalDataFromServer } from './src/api/sync';
 import { AthleteViewModel, TargetExercise } from './src/api/types';
-import AnalysisScreen from './src/screens/AnalysisScreen';
+import { uploadAndQueueVideoJob } from './src/api/videoJobs';
 import CameraScreen from './src/screens/CameraScreen';
 import DashboardScreen from './src/screens/DashboardScreen';
 import LoginScreen from './src/screens/LoginScreen';
@@ -20,7 +22,7 @@ import { ConfirmDialogHost } from './src/utils/confirm';
 import { configureSound } from './src/utils/sound';
 
 type Role = 'athlete' | 'manager';
-type AthleteScreen = 'dashboard' | 'camera' | 'analysis';
+type AthleteScreen = 'dashboard' | 'camera';
 type ManagerScreen = 'manager-dashboard' | 'manager-athlete' | 'manager-settings';
 
 function FadeScreen({ children }: { children: React.ReactNode }) {
@@ -32,7 +34,7 @@ function FadeScreen({ children }: { children: React.ReactNode }) {
 }
 
 function AppInner() {
-  const { settings } = useSettings();
+  const { settings, refreshProfile } = useSettings();
 
   const [role,           setRole]           = useState<Role | null>(null);
   const [userId,         setUserId]         = useState<string | null>(null);
@@ -44,7 +46,6 @@ function AppInner() {
   // Athlete flow
   const [athleteScreen, setAthleteScreen] = useState<AthleteScreen>('dashboard');
   const [uploadedUri,   setUploadedUri]   = useState<string | null>(null);
-  const [videoUri,      setVideoUri]      = useState<string | null>(null);
   const [targetExercise, setTargetExercise] = useState<TargetExercise | null>(null);
   const [testMode] = useState(false);
 
@@ -52,7 +53,30 @@ function AppInner() {
   const [managerScreen,   setManagerScreen]   = useState<ManagerScreen>('manager-dashboard');
   const [selectedAthlete, setSelectedAthlete] = useState<AthleteViewModel | null>(null);
 
+  // Bumped on every tapped video-ready notification — DashboardScreen watches
+  // this to jump to Performance > Processing (see checklist item 9). A
+  // counter, not a boolean, so tapping a second notification while already on
+  // the dashboard still re-triggers the jump.
+  const [processingDeepLinkToken, setProcessingDeepLinkToken] = useState(0);
+
   useEffect(() => { configureSound(settings.sound); }, [settings.sound]);
+
+  // Push token registration is best-effort and safe to call once role/userId
+  // settle, whether from a fresh sign-in or a restored session — see
+  // api/pushNotifications.ts (no-ops in Expo Go, which has no remote push
+  // support since SDK 53; real registration needs an EAS dev build).
+  useEffect(() => {
+    if (role === 'athlete' && userId) void registerForPushNotifications(userId);
+  }, [role, userId]);
+
+  // Tapping a "your video is ready" notification deep-links to Performance >
+  // Processing — registered once, independent of which screen is showing.
+  useEffect(() => {
+    return addNotificationTapListener(() => {
+      setAthleteScreen('dashboard');
+      setProcessingDeepLinkToken((n) => n + 1);
+    });
+  }, []);
 
   // ── Restore session on mount (handles page refresh) ────────────────────────
   useEffect(() => {
@@ -73,17 +97,34 @@ function AppInner() {
   }, []);
 
   // ── Auth ───────────────────────────────────────────────────────────────────
+  // A genuine login/signup action (as opposed to the session-restore effect
+  // above, which resumes an already-logged-in device) pulls history + profile
+  // fresh from the DB before entering the app, so local storage — which is
+  // device-scoped and may be empty or stale on this device — never shows the
+  // wrong (or no) data for the first moment after signing in. Once inside the
+  // app, everything reads from local storage as normal (see api/sync.ts).
   async function handleSignIn(email: string, password: string) {
     const user    = await signIn(email, password);
     const profile = await getProfile(user.id);
     if (!profile) throw new Error('Profile not found. Contact support.');
+    if (profile.role === 'athlete') {
+      await syncLocalDataFromServer(user.id);
+      await refreshProfile();
+    }
     setUserId(user.id);
     setTeamId(profile.team_id);
     setAthleteName(profile.full_name);
     setRole(profile.role as Role);
   }
 
-  function handleSignUpComplete(newUserId: string, newTeamId: string | null, newRole: Role, name: string) {
+  // A new signup is treated the same as a fresh login (sync runs regardless
+  // of whether there's anything to pull yet — keeps the two paths identical
+  // rather than relying on "a brand-new account has no data anyway").
+  async function handleSignUpComplete(newUserId: string, newTeamId: string | null, newRole: Role, name: string) {
+    if (newRole === 'athlete') {
+      await syncLocalDataFromServer(newUserId);
+      await refreshProfile();
+    }
     setUserId(newUserId);
     setTeamId(newTeamId);
     setAthleteName(name);
@@ -124,17 +165,22 @@ function AppInner() {
     setAthleteScreen('camera');
   }
 
-  // "Record Again" from AnalysisScreen (requirement not met yet) — back to
-  // the camera for another attempt at the same target exercise.
-  function handleRecordAgain() {
-    setVideoUri(null);
+  // Upload + queue a video_jobs row for the server-side pipeline (see
+  // api/videoJobs.ts / HANDOFF_video_pipeline.md) — no more on-device
+  // analysis or synchronous "analysis" screen. Errors are left to propagate
+  // so CameraScreen's own confirm handler can catch them and show its error
+  // banner instead of the recording flow silently losing the clip.
+  async function handleVideoConfirmed(uri: string, durationSec: number) {
+    if (!userId) throw new Error('Not signed in.');
+    await uploadAndQueueVideoJob({
+      athleteId: userId,
+      localUri: uri,
+      durationSec,
+      targetExerciseKey: targetExercise?.key ?? null,
+    });
     setUploadedUri(null);
-    setAthleteScreen('camera');
-  }
-
-  function handleVideoReady(uri: string) {
-    setVideoUri(uri);
-    setAthleteScreen('analysis');
+    setTargetExercise(null);
+    setAthleteScreen('dashboard');
   }
 
   function handleAthleteLogout() {
@@ -203,7 +249,6 @@ function AppInner() {
 
   // ── Athlete app ────────────────────────────────────────────────────────────
   if (role === 'athlete') {
-    const showAnalysis = athleteScreen === 'analysis' && !!videoUri;
     return (
       <>
         <StatusBar style="light" />
@@ -217,6 +262,7 @@ function AppInner() {
               onUpload={() => void handleUpload()}
               onSelectTask={goToCameraForTask}
               onLogout={handleAthleteLogout}
+              jumpToProcessingSignal={processingDeepLinkToken}
             />
           </FadeScreen>
         )}
@@ -228,22 +274,10 @@ function AppInner() {
               testMode={testMode}
               initialVideoUri={uploadedUri ?? undefined}
               targetLabel={targetExercise?.label}
-              onVideoReady={handleVideoReady}
+              onVideoConfirmed={handleVideoConfirmed}
               onBack={() => { setUploadedUri(null); setTargetExercise(null); setAthleteScreen('dashboard'); }}
             />
           </FadeScreen>
-        )}
-
-        {showAnalysis && (
-          <AnalysisScreen
-            videoUri={videoUri!}
-            userId={userId ?? undefined}
-            teamId={teamId ?? undefined}
-            athleteName={athleteName}
-            targetExercise={targetExercise}
-            onRecordAgain={handleRecordAgain}
-            onHome={() => { setVideoUri(null); setTargetExercise(null); setAthleteScreen('dashboard'); }}
-          />
         )}
       </>
     );
