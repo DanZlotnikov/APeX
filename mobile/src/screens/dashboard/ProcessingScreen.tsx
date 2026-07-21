@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Animated, Easing, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import {
   cancelVideoJob, deleteJobStorage, deleteLocalRawVideo, discardVideoJob,
   getLocalRawVideoUri, getSignedVideoUrl, saveVideoJob, VideoJob,
@@ -7,7 +7,8 @@ import {
 import ApexLoader from '../../components/ApexLoader';
 import BiomechanicsReport from '../../components/BiomechanicsReport';
 import VideoPlayer from '../../components/VideoPlayer';
-import { useVideoJobs } from '../../hooks/useVideoJobs';
+import { useSettings } from '../../state/SettingsContext';
+import { useVideoJobsContext } from '../../state/VideoJobsContext';
 import { colors, spacing } from '../../theme';
 
 interface Props {
@@ -20,13 +21,39 @@ function fmtDate(iso: string): string {
     ' · ' + d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 }
 
+// A short, subtle fade + scale-down on Save/Discard/Remove — a card
+// shouldn't just vanish. Kept deliberately simple (no bounce/slide/color
+// flash): a quick, clean dismiss reads as "handled it" rather than drawing
+// attention to itself. The backend call fires immediately in parallel (see
+// each handler below); only removing the card from the list waits for this
+// to finish, so the tap still feels instant.
+function useCardExitAnimation() {
+  const progress = useRef(new Animated.Value(1)).current;
+
+  function playExit(onDone: () => void) {
+    Animated.timing(progress, {
+      toValue: 0,
+      duration: 200,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true,
+    }).start(({ finished }) => { if (finished) onDone(); });
+  }
+
+  const animatedStyle = {
+    opacity: progress,
+    transform: [{ scale: progress.interpolate({ inputRange: [0, 1], outputRange: [0.95, 1] }) }],
+  };
+
+  return { animatedStyle, playExit };
+}
+
 // Processing tab: every video_jobs row for this athlete, in every state
 // (queued/processing/completed/failed) — see HANDOFF_video_pipeline.md
 // section 4, items 4-7. Saving/discarding/removing all delete the row
 // server-side, so a job simply disappears from this list once one of those
 // completes (via the same Realtime subscription useVideoJobs uses).
 export default function ProcessingScreen({ userId }: Props) {
-  const { jobs, loading } = useVideoJobs(userId);
+  const { jobs, loading, markPendingRemoval } = useVideoJobsContext();
   const [removedIds, setRemovedIds] = useState<Set<string>>(new Set());
 
   // Optimistic removal: hide a card the instant its action is tapped rather
@@ -36,6 +63,12 @@ export default function ProcessingScreen({ userId }: Props) {
   // stale (row never actually got removed, e.g. a network failure), the next
   // real Realtime event still reconciles `jobs` — this only ever hides rows
   // that are still present, never fabricates ones that aren't.
+  //
+  // This is deliberately separate from markPendingRemoval (the shared
+  // context's instant count update, called from each card's handler below):
+  // that one drives the banner/tab-label count immediately, while this one
+  // drives THIS card's own animated exit — decoupling "how fast the count
+  // updates" from "how long the card's own dismiss animation takes".
   const visibleJobs = jobs.filter((j) => !removedIds.has(j.id));
 
   function markRemoved(id: string) {
@@ -54,7 +87,13 @@ export default function ProcessingScreen({ userId }: Props) {
           <Text style={styles.empty}>Nothing in progress. Record or upload a video to get started.</Text>
         ) : (
           visibleJobs.map((job) => (
-            <JobCard key={job.id} job={job} userId={userId} onRemoved={() => markRemoved(job.id)} />
+            <JobCard
+              key={job.id}
+              job={job}
+              userId={userId}
+              onRemoved={() => markRemoved(job.id)}
+              onActionStarted={() => markPendingRemoval(job.id)}
+            />
           ))
         )}
       </ScrollView>
@@ -62,15 +101,26 @@ export default function ProcessingScreen({ userId }: Props) {
   );
 }
 
-function JobCard({ job, userId, onRemoved }: { job: VideoJob; userId: string; onRemoved: () => void }) {
-  if (job.status === 'completed') return <CompletedCard job={job} userId={userId} onRemoved={onRemoved} />;
-  if (job.status === 'failed') return <FailedCard job={job} userId={userId} onRemoved={onRemoved} />;
-  return <PendingCard job={job} userId={userId} onRemoved={onRemoved} />;
+interface CardProps {
+  job: VideoJob;
+  userId: string;
+  onRemoved: () => void;
+  // Called the instant Save/Discard/Remove is tapped — updates the shared
+  // processingCount immediately, independent of this card's own animation.
+  onActionStarted: () => void;
+}
+
+function JobCard({ job, userId, onRemoved, onActionStarted }: CardProps) {
+  if (job.status === 'completed') return <CompletedCard job={job} userId={userId} onRemoved={onRemoved} onActionStarted={onActionStarted} />;
+  if (job.status === 'failed') return <FailedCard job={job} userId={userId} onRemoved={onRemoved} onActionStarted={onActionStarted} />;
+  return <PendingCard job={job} userId={userId} onRemoved={onRemoved} onActionStarted={onActionStarted} />;
 }
 
 // queued/processing — HANDOFF item 5: raw, unmodified video only, never the
 // two-panel render (it doesn't exist yet).
-function PendingCard({ job, userId, onRemoved }: { job: VideoJob; userId: string; onRemoved: () => void }) {
+function PendingCard({ job, userId, onRemoved, onActionStarted }: CardProps) {
+  const { accentColor } = useSettings();
+  const { animatedStyle, playExit } = useCardExitAnimation();
   const [videoUri, setVideoUri] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -88,7 +138,8 @@ function PendingCard({ job, userId, onRemoved }: { job: VideoJob; userId: string
   async function handleRemove() {
     if (busy) return;
     setBusy(true);
-    onRemoved();
+    onActionStarted();
+    playExit(onRemoved);
     try {
       // 'queued': cancel_video_job deletes the row immediately and the
       // worker never touches this job at all — nothing else will ever clean
@@ -107,13 +158,13 @@ function PendingCard({ job, userId, onRemoved }: { job: VideoJob; userId: string
   }
 
   return (
-    <View style={styles.card}>
+    <Animated.View style={[styles.card, animatedStyle]}>
       <View style={styles.video}>
         {videoUri ? <VideoPlayer videoUri={videoUri} fitContainer /> : <ApexLoader />}
       </View>
       <View style={styles.cardBody}>
         <View style={styles.statusRow}>
-          <View style={[styles.statusDot, job.status === 'processing' && styles.statusDotActive]} />
+          <View style={[styles.statusDot, job.status === 'processing' && { backgroundColor: accentColor }]} />
           <Text style={styles.statusText}>{job.status === 'processing' ? 'Processing…' : 'Queued'}</Text>
         </View>
         <Text style={styles.meta}>{Math.round(job.durationSec)}s · {fmtDate(job.recordedAt)}</Text>
@@ -121,19 +172,21 @@ function PendingCard({ job, userId, onRemoved }: { job: VideoJob; userId: string
           <Text style={styles.removeBtnText}>REMOVE EXERCISE</Text>
         </Pressable>
       </View>
-    </View>
+    </Animated.View>
   );
 }
 
 // HANDOFF item 7 — same Remove behavior as (5); cancel_video_job (fixed in
 // migration 010) deletes a 'failed' row immediately, same as 'queued'.
-function FailedCard({ job, userId, onRemoved }: { job: VideoJob; userId: string; onRemoved: () => void }) {
+function FailedCard({ job, userId, onRemoved, onActionStarted }: CardProps) {
+  const { animatedStyle, playExit } = useCardExitAnimation();
   const [busy, setBusy] = useState(false);
 
   async function handleRemove() {
     if (busy) return;
     setBusy(true);
-    onRemoved();
+    onActionStarted();
+    playExit(onRemoved);
     try {
       await cancelVideoJob(job.id);
       await deleteLocalRawVideo(userId, job.id);
@@ -144,7 +197,7 @@ function FailedCard({ job, userId, onRemoved }: { job: VideoJob; userId: string;
   }
 
   return (
-    <View style={[styles.card, styles.failedCard]}>
+    <Animated.View style={[styles.card, styles.failedCard, animatedStyle]}>
       <View style={styles.cardBody}>
         <Text style={styles.failedTitle}>Processing failed</Text>
         <Text style={styles.failedMessage}>{job.errorMessage ?? 'Something went wrong analyzing this video.'}</Text>
@@ -152,12 +205,13 @@ function FailedCard({ job, userId, onRemoved }: { job: VideoJob; userId: string;
           <Text style={styles.removeBtnText}>REMOVE EXERCISE</Text>
         </Pressable>
       </View>
-    </View>
+    </Animated.View>
   );
 }
 
 // HANDOFF item 6 — two-panel video + full analysis, Save/Discard.
-function CompletedCard({ job, userId, onRemoved }: { job: VideoJob; userId: string; onRemoved: () => void }) {
+function CompletedCard({ job, userId, onRemoved, onActionStarted }: CardProps) {
+  const { animatedStyle, playExit } = useCardExitAnimation();
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -172,7 +226,8 @@ function CompletedCard({ job, userId, onRemoved }: { job: VideoJob; userId: stri
   async function handleSave() {
     if (busy) return;
     setBusy(true);
-    onRemoved();
+    onActionStarted();
+    playExit(onRemoved);
     try {
       await saveVideoJob(job.id);
       await deleteLocalRawVideo(userId, job.id);
@@ -184,7 +239,8 @@ function CompletedCard({ job, userId, onRemoved }: { job: VideoJob; userId: stri
   async function handleDiscard() {
     if (busy) return;
     setBusy(true);
-    onRemoved();
+    onActionStarted();
+    playExit(onRemoved);
     try {
       await discardVideoJob(job.id);
       await deleteJobStorage(job);
@@ -195,7 +251,7 @@ function CompletedCard({ job, userId, onRemoved }: { job: VideoJob; userId: stri
   }
 
   return (
-    <View style={styles.card}>
+    <Animated.View style={[styles.card, animatedStyle]}>
       <View style={styles.video}>
         {videoUrl ? <VideoPlayer videoUri={videoUrl} fitContainer /> : <ApexLoader />}
       </View>
@@ -214,7 +270,7 @@ function CompletedCard({ job, userId, onRemoved }: { job: VideoJob; userId: stri
           </Pressable>
         </View>
       </View>
-    </View>
+    </Animated.View>
   );
 }
 
@@ -243,7 +299,6 @@ const styles = StyleSheet.create({
 
   statusRow: { flexDirection: 'row', alignItems: 'center' },
   statusDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.muted, marginRight: spacing.sm },
-  statusDotActive: { backgroundColor: colors.warning },
   statusText: { color: colors.text, fontSize: 14, fontWeight: '700' },
   meta: { color: colors.muted, fontSize: 12, marginTop: 4 },
 

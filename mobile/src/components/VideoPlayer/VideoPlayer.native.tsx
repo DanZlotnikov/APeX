@@ -3,30 +3,31 @@ import React, { useCallback, useRef, useState } from 'react';
 import { PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Rect } from 'react-native-svg';
+import { useSettings } from '../../state/SettingsContext';
 import { colors } from '../../theme';
+import ApexLoader from '../ApexLoader';
 
 function PlayIcon() {
   return (
-    <Svg width={14} height={14} viewBox="0 0 24 24" fill="white">
+    <Svg width={13} height={13} viewBox="0 0 24 24" fill="white">
       <Path d="M5 3l14 9-14 9V3z" />
     </Svg>
   );
 }
 function PauseIcon() {
   return (
-    <Svg width={14} height={14} viewBox="0 0 24 24" fill="white">
+    <Svg width={13} height={13} viewBox="0 0 24 24" fill="white">
       <Rect x="4" y="3" width="5" height="18" rx="1.5" />
       <Rect x="15" y="3" width="5" height="18" rx="1.5" />
     </Svg>
   );
 }
-function ReplayIcon() {
-  return (
-    <Svg width={14} height={14} viewBox="0 0 24 24" fill="white">
-      <Path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z" />
-    </Svg>
-  );
-}
+
+// Height of the branded bottom strip (the "APeX" bar the scrub line sits
+// above) — exported so a consumer positioning its own overlay near the
+// bottom of this player (e.g. CameraScreen's confirm/back buttons) can place
+// itself just above this chrome without guessing its height.
+export const BOTTOM_CHROME_HEIGHT = 26 + 40; // branded bar + scrub hit area
 
 interface Props {
   videoUri: string;
@@ -40,21 +41,21 @@ interface Props {
   // aspectRatio) so a fixed-width card never letterboxes — correct for
   // Processing/History's cards, which have no competing flex siblings.
   fitContainer?: boolean;
-  // Adds the device's bottom safe-area inset as clearance under the scrub
-  // bar — only meaningful when this player's own bottom edge IS the physical
-  // screen edge (e.g. CameraScreen's full-bleed review), where the bar would
-  // otherwise sit flush against the home indicator on notch-less iPhones.
-  // Left off (default) for Processing/History's cards, which aren't at the
-  // screen edge and shouldn't gain extra padding they don't need.
+  // True only when this player's own edges ARE the physical screen edges
+  // (currently just CameraScreen's full-bleed review) — adds the real
+  // bottom safe-area inset as clearance under the bottom bar/scrub line
+  // (otherwise flush against the home indicator on notch-less iPhones), and
+  // moves the status indicator from its default top-left corner to sit
+  // left-aligned just above that bottom chrome instead — up top it would
+  // collide with the system status bar/clock on a full-bleed screen. Left
+  // off (default) for Processing/History's cards, which are never near a
+  // physical screen edge and shouldn't gain padding/repositioning they
+  // don't need.
   avoidHomeIndicator?: boolean;
 }
 
-function fmtMs(ms: number): string {
-  const s = ms / 1000;
-  return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
-}
-
 export default function VideoPlayer({ videoUri, fitContainer = false, avoidHomeIndicator = false }: Props) {
+  const { accentColor } = useSettings();
   const insets    = useSafeAreaInsets();
   const videoRef  = useRef<Video>(null);
   const barWidth  = useRef(0);
@@ -65,9 +66,11 @@ export default function VideoPlayer({ videoUri, fitContainer = false, avoidHomeI
   // statusRef lets the stable PanResponder always read the latest playback state
   const statusRef = useRef<AVPlaybackStatus | null>(null);
 
-  const [status,     setStatus]     = useState<AVPlaybackStatus | null>(null);
-  // isFinished persists until user acts — didJustFinish is only true for one tick
-  const [isFinished, setIsFinished] = useState(false);
+  const [status,  setStatus]  = useState<AVPlaybackStatus | null>(null);
+  // Set once the first real frame is decoded (onReadyForDisplay) — until
+  // then an ApexLoader overlay covers the (otherwise blank) video area, so
+  // there's never a gap between "loader disappears" and "picture appears".
+  const [isReady, setIsReady] = useState(false);
   // Sized from the video's own natural dimensions (onReadyForDisplay) rather
   // than assumed — the container fits the video exactly (no letterbox bars)
   // instead of forcing it into an externally fixed height/AR box. Falls back
@@ -83,18 +86,12 @@ export default function VideoPlayer({ videoUri, fitContainer = false, avoidHomeI
   const onStatusUpdate = useCallback((s: AVPlaybackStatus) => {
     statusRef.current = s;
     setStatus(s);
-    if (s.isLoaded && (s as any).didJustFinish) {
-      setIsFinished(true);
-    }
   }, []);
 
   async function togglePlay() {
     const v = videoRef.current;
     if (!v || !loaded) return;
-    if (isFinished) {
-      setIsFinished(false);
-      await v.replayAsync();
-    } else if (playing) {
+    if (playing) {
       await v.pauseAsync();
     } else {
       await v.playAsync();
@@ -133,10 +130,21 @@ export default function VideoPlayer({ videoUri, fitContainer = false, avoidHomeI
   // the first onPanResponderMove that sees a loaded status anchors instead,
   // backing out however much dx already accumulated so the seek math stays
   // continuous (no jump) once it does.
+  // ...*Capture (not just onStartShouldSetPanResponder/onMoveShouldSetPanResponder)
+  // is required here: both Processing and History render this inside a
+  // ScrollView, and without claiming the gesture in the capture phase the
+  // ancestor ScrollView's own pan handling can steal part of a real diagonal
+  // finger drag before this responder gets it — confirmed in practice as
+  // "can only scrub to ~0% or ~66%", i.e. a truncated, non-continuous dx
+  // sequence rather than smooth per-pixel movement. Claiming capture here
+  // makes this the definitive owner of the gesture the instant it starts.
   const seekPan = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder:  () => true,
+      onStartShouldSetPanResponderCapture: () => true,
+      onMoveShouldSetPanResponderCapture:  () => true,
+      onPanResponderTerminationRequest: () => false, // don't yield back to the ScrollView mid-drag
       onPanResponderGrant: () => {
         dragAnchored.current = false;
         const s = statusRef.current;
@@ -146,7 +154,6 @@ export default function VideoPlayer({ videoUri, fitContainer = false, avoidHomeI
           dragStartRatio.current = Math.max(0, Math.min(1, pos / dur));
           dragAnchored.current = true;
         }
-        setIsFinished(false);
       },
       onPanResponderMove: (_e, gestureState) => {
         const s = statusRef.current;
@@ -164,8 +171,6 @@ export default function VideoPlayer({ videoUri, fitContainer = false, avoidHomeI
     }),
   ).current;
 
-  const Icon = isFinished ? ReplayIcon : playing ? PauseIcon : PlayIcon;
-
   return (
     <View style={[styles.root, fitContainer ? { width: '100%', aspectRatio } : styles.flexFill]}>
       <Pressable style={styles.videoWrap} onPress={togglePlay}>
@@ -179,34 +184,66 @@ export default function VideoPlayer({ videoUri, fitContainer = false, avoidHomeI
           onReadyForDisplay={(e) => {
             const { width, height } = e.naturalSize;
             if (width > 0 && height > 0) setAspectRatio(width / height);
+            setIsReady(true);
           }}
           shouldPlay
+          isLooping
           isMuted
         />
       </Pressable>
 
-      {/* Always visible — not a fade-in-on-touch overlay. Tapping the video
-          itself toggles play/pause (see the Pressable above); this bar is
-          purely for scrubbing + a visual play/pause affordance. */}
-      <View style={styles.overlay} pointerEvents="box-none">
-        <View style={[styles.cbar, avoidHomeIndicator && { paddingBottom: 14 + insets.bottom }]} pointerEvents="box-none">
-          <Pressable onPress={togglePlay} style={styles.pbtn}>
-            <Icon />
-          </Pressable>
+      {!isReady && (
+        <View style={styles.loaderOverlay} pointerEvents="none">
+          <ApexLoader />
+        </View>
+      )}
+
+      {isReady && (
+        <>
+          {/* Status indicator only, not a tap target — per the design, the
+              whole video is what toggles play/pause (see the Pressable
+              above). Shows the icon for what a tap would currently do,
+              matching the play/pause convention. Only shifted for
+              avoidHomeIndicator contexts, it sits left-aligned just above
+              this player's own bottom chrome instead — up top it would
+              collide with the system status bar/clock on a full-bleed
+              screen. Processing/History's cards keep the plain top-left
+              corner position unchanged. */}
+          <View
+            style={[
+              styles.statusIndicator,
+              avoidHomeIndicator
+                ? { bottom: 26 + 40 + insets.bottom - 12, left: 10 } // above the (enlarged) scrub hit area
+                : { top: 10, left: 10 },
+            ]}
+            pointerEvents="none"
+          >
+            {playing ? <PauseIcon /> : <PlayIcon />}
+          </View>
+
+          {/* Branded bar is CameraScreen's review-screen chrome only — the
+              scrub line has nothing to sit above in Processing/History's
+              cards, so it just sits flush at the bottom there instead. */}
+          {avoidHomeIndicator && (
+            <View style={[styles.bottomBar, { paddingBottom: insets.bottom }]} pointerEvents="none">
+              <View style={styles.bottomBarRow}>
+                <Text style={styles.bottomBarText}>APeX</Text>
+              </View>
+            </View>
+          )}
 
           <View
-            style={styles.track}
+            style={[styles.scrubHitArea, avoidHomeIndicator && { bottom: 26 + insets.bottom }]}
             onLayout={e => { barWidth.current = e.nativeEvent.layout.width; }}
             {...seekPan.panHandlers}
           >
-            <View style={styles.trackBg} />
-            <View style={[styles.trackFill, { width: `${Math.round(pct * 100)}%` as any }]} />
-            <View style={[styles.thumb,     { left: `${Math.round(pct * 100)}%` as any }]} />
+            <View style={styles.scrubTrack}>
+              <View style={styles.scrubBg} />
+              <View style={[styles.scrubFill, { width: `${Math.round(pct * 100)}%` as any, backgroundColor: accentColor }]} />
+            </View>
           </View>
-
-          <Text style={styles.time}>{fmtMs(posMs)}</Text>
-        </View>
-      </View>
+        </>
+      )}
     </View>
   );
 }
@@ -217,66 +254,77 @@ const styles = StyleSheet.create({
   videoWrap: { flex: 1 },
   video:     { flex: 1 },
 
-  overlay: {
+  loaderOverlay: {
     ...StyleSheet.absoluteFillObject,
-    justifyContent: 'flex-end',
-  },
-  cbar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-    paddingBottom: 20,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-  },
-  pbtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    borderWidth: 1.5,
-    borderColor: 'rgba(255,255,255,0.6)',
     alignItems: 'center',
     justifyContent: 'center',
-    flexShrink: 0,
   },
 
-  track: {
-    flex: 1,
+  // Play/pause status indicator, YouTube-Shorts-style — small, subtle, never
+  // the tap target itself. Position (top-left, or left-aligned above the
+  // bottom chrome) is applied per-instance, not here — see the JSX.
+  statusIndicator: {
+    position: 'absolute',
+    width: 28,
     height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center',
     justifyContent: 'center',
   },
-  trackBg: {
+
+  // Branded strip at the very bottom — purely decorative, gives the scrub
+  // line above it a deliberate margin from the true bottom edge instead of
+  // an empty/arbitrary gap. NOT a fixed height: for avoidHomeIndicator this
+  // grows via paddingBottom (a safe-area spacer strictly BELOW the visible
+  // row), rather than a taller fixed height + padding together, which was
+  // eating into the centering space and pushing the text toward the top.
+  bottomBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: colors.bg, // matches the screen behind it, not a distinct panel color
+  },
+  // The actual visible row — always exactly this tall regardless of safe-area
+  // padding on the parent, so the text is centered within a fixed, known box.
+  bottomBarRow: {
+    height: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bottomBarText: {
+    color: colors.primary,
+    fontSize: 14,
+    fontWeight: '900',
+    letterSpacing: 3,
+    includeFontPadding: false, // Android: strips extra top padding that pushes text off-center
+    marginTop: 5, // ~20% of bottomBarRow's 26px height — direct empirical
+                  // nudge down; flex centering alone still read as too high
+  },
+
+  // A thin full-width progress line sitting just above the branded bar, not
+  // a chunky control bar — the invisible hit area is taller than the visible
+  // line so it's still comfortably draggable.
+  scrubHitArea: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0, // avoidHomeIndicator overrides this to sit above the branded bar
+    height: 40,
+    justifyContent: 'flex-end',
+  },
+  scrubTrack: { height: 3, justifyContent: 'center' },
+  scrubBg: {
     position: 'absolute',
     left: 0,
     right: 0,
     height: 3,
-    borderRadius: 2,
     backgroundColor: 'rgba(255,255,255,0.25)',
   },
-  trackFill: {
+  scrubFill: {
     position: 'absolute',
     left: 0,
     height: 3,
-    borderRadius: 2,
-    backgroundColor: colors.primary,
-  },
-  thumb: {
-    position: 'absolute',
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: colors.primary,
-    marginLeft: -7,
-    top: 7,
-  },
-
-  time: {
-    color: 'rgba(255,255,255,0.8)',
-    fontSize: 11,
-    fontVariant: ['tabular-nums'],
-    minWidth: 36,
-    textAlign: 'right',
   },
 });

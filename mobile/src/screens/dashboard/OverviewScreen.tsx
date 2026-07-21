@@ -8,8 +8,8 @@ import { AthleteViewModel, ExerciseReadiness, TargetExercise } from '../../api/t
 import { VideoJob } from '../../api/videoJobs';
 import LineTrend from '../../components/charts/LineTrend';
 import DeltaChip from '../../components/DeltaChip';
-import { useVideoJobs } from '../../hooks/useVideoJobs';
 import { useSettings } from '../../state/SettingsContext';
+import { useVideoJobsContext } from '../../state/VideoJobsContext';
 import { mean } from '../../utils/history';
 import { ExerciseKey } from '../../utils/exerciseMetrics';
 import { exerciseLabel } from '../../utils/pipelineExercise';
@@ -66,7 +66,7 @@ export default function OverviewScreen({ userId, teamId, onSelectTask }: Props) 
   const [athlete, setAthlete]         = useState<AthleteViewModel | null>(null);
   const [minRepsByKey, setMinRepsByKey] = useState<Partial<Record<ExerciseKey, number>>>({});
   const [loading, setLoading]         = useState(true);
-  const { jobs } = useVideoJobs(userId);
+  const { jobs } = useVideoJobsContext();
 
   const todayUtc = new Date().toISOString().slice(0, 10);
   const todaysJobs = jobs.filter((j) => !!j.targetExerciseKey && j.recordedAt.startsWith(todayUtc));

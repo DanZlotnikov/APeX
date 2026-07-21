@@ -1,7 +1,7 @@
 import * as ImagePicker from 'expo-image-picker';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, Animated, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { getProfile, getSession, logout, signIn } from './src/api/auth';
 import { getAthleteById } from './src/api/athletes';
@@ -18,12 +18,17 @@ import ManagerHome from './src/screens/manager/ManagerHome';
 import ManagerSettings from './src/screens/manager/ManagerSettings';
 import ManagerTopBar from './src/screens/manager/ManagerTopBar';
 import { SettingsProvider, useSettings } from './src/state/SettingsContext';
+import { VideoJobsProvider } from './src/state/VideoJobsContext';
 import { ConfirmDialogHost } from './src/utils/confirm';
 import { configureSound } from './src/utils/sound';
 
 type Role = 'athlete' | 'manager';
 type AthleteScreen = 'dashboard' | 'camera';
 type ManagerScreen = 'manager-dashboard' | 'manager-athlete' | 'manager-settings';
+
+// Must match CameraScreen.tsx's RECORD_SECONDS — this is the same cap
+// applied to an uploaded/picked clip instead of a live recording.
+const MAX_VIDEO_DURATION_SEC = 20;
 
 function FadeScreen({ children }: { children: React.ReactNode }) {
   const opacity = useRef(new Animated.Value(0)).current;
@@ -46,6 +51,12 @@ function AppInner() {
   // Athlete flow
   const [athleteScreen, setAthleteScreen] = useState<AthleteScreen>('dashboard');
   const [uploadedUri,   setUploadedUri]   = useState<string | null>(null);
+  // Duration of an uploaded/picked clip, captured here since CameraScreen's
+  // own duration-tracking (its recording timer, or its own dead pickVideo()
+  // path) never runs for this flow — without threading it through explicitly,
+  // CameraScreen's videoDurationSec stayed null and every upload silently
+  // recorded duration_sec=0, regardless of the clip's real length.
+  const [uploadedDurationSec, setUploadedDurationSec] = useState<number | null>(null);
   const [targetExercise, setTargetExercise] = useState<TargetExercise | null>(null);
   const [testMode] = useState(false);
 
@@ -138,6 +149,7 @@ function AppInner() {
   // Analysis behavior.
   function goToCamera() {
     setUploadedUri(null);
+    setUploadedDurationSec(null);
     setTargetExercise(null);
     setAthleteScreen('camera');
   }
@@ -149,7 +161,17 @@ function AppInner() {
         quality: 1,
       });
       if (!res.canceled && res.assets?.[0]?.uri) {
-        setUploadedUri(res.assets[0].uri);
+        const asset = res.assets[0];
+        // duration comes back in ms; expo-image-picker's videoMaxDuration
+        // option only limits a NEW recording made through the picker's own
+        // camera, not which existing library video can be selected — so an
+        // over-length clip has to be caught here, after picking.
+        if (asset.duration != null && asset.duration / 1000 > MAX_VIDEO_DURATION_SEC) {
+          Alert.alert('Video too long', `Please choose a video ${MAX_VIDEO_DURATION_SEC} seconds or shorter.`);
+          return;
+        }
+        setUploadedUri(asset.uri);
+        setUploadedDurationSec(asset.duration != null ? asset.duration / 1000 : null);
         setTargetExercise(null);
         setAthleteScreen('camera');
       }
@@ -161,6 +183,7 @@ function AppInner() {
   // AnalysisScreen can compare what was actually performed against it.
   function goToCameraForTask(target: TargetExercise) {
     setUploadedUri(null);
+    setUploadedDurationSec(null);
     setTargetExercise(target);
     setAthleteScreen('camera');
   }
@@ -250,7 +273,7 @@ function AppInner() {
   // ── Athlete app ────────────────────────────────────────────────────────────
   if (role === 'athlete') {
     return (
-      <>
+      <VideoJobsProvider athleteId={userId ?? undefined}>
         <StatusBar style="light" />
 
         {athleteScreen === 'dashboard' && (
@@ -273,13 +296,14 @@ function AppInner() {
               pickOnMount={false}
               testMode={testMode}
               initialVideoUri={uploadedUri ?? undefined}
+              initialVideoDurationSec={uploadedDurationSec ?? undefined}
               targetLabel={targetExercise?.label}
               onVideoConfirmed={handleVideoConfirmed}
-              onBack={() => { setUploadedUri(null); setTargetExercise(null); setAthleteScreen('dashboard'); }}
+              onBack={() => { setUploadedUri(null); setUploadedDurationSec(null); setTargetExercise(null); setAthleteScreen('dashboard'); }}
             />
           </FadeScreen>
         )}
-      </>
+      </VideoJobsProvider>
     );
   }
 

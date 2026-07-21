@@ -1,7 +1,7 @@
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { useVideoJobs } from '../../hooks/useVideoJobs';
+import { useVideoJobsContext } from '../../state/VideoJobsContext';
 import { colors, spacing } from '../../theme';
 import HistoryDetailScreen from './HistoryDetailScreen';
 import HistoryScreen from './HistoryScreen';
@@ -37,7 +37,7 @@ interface Props {
 // processing" banner can jump straight to the Processing sub-view, not just
 // the Performance tab.
 export default function PerformanceScreen({ userId, sub, onSubChange }: Props) {
-  const { processingCount } = useVideoJobs(userId);
+  const { processingCount } = useVideoJobsContext();
 
   return (
     <View style={styles.root}>

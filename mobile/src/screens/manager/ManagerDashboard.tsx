@@ -77,26 +77,45 @@ export default function ManagerDashboard({ teamId, onAthleteSelect }: Props) {
     // assignment override) — so a manager ticking an exercise on/off there
     // is reflected here immediately, not just on next mount/session.
     // NOTE: Supabase → Database → Replication must have these tables enabled.
-    const channel = supabase
-      .channel(`sessions:${teamId}`)
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'sessions' },
-        () => { void loadAthletes(); },
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'athlete_exercise_assignments' },
-        () => { void loadAthletes(); },
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'team_exercises' },
-        () => { void loadAthletes(); },
-      )
-      .subscribe();
+    //
+    // Topic includes the manager's own user id, not just teamId:
+    // supabase.channel(topic) reuses an existing channel object for a
+    // matching topic string rather than creating a new one (confirmed the
+    // hard way elsewhere in this app — see videoJobs.ts/VideoJobsContext.tsx)
+    // — a team-only topic would collide across every manager viewing the same
+    // team simultaneously, or across a fast unmount/remount of this same
+    // component racing removeChannel's async teardown. Fetched here (rather
+    // than threaded in as a prop) to keep this a self-contained fix.
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    let cancelled = false;
 
-    return () => { void supabase.removeChannel(channel); };
+    void supabase.auth.getUser().then(({ data }) => {
+      if (cancelled) return;
+      const uid = data.user?.id ?? 'anon';
+      channel = supabase
+        .channel(`sessions:${teamId}:${uid}`)
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'sessions' },
+          () => { void loadAthletes(); },
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'athlete_exercise_assignments' },
+          () => { void loadAthletes(); },
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'team_exercises' },
+          () => { void loadAthletes(); },
+        )
+        .subscribe();
+    });
+
+    return () => {
+      cancelled = true;
+      if (channel) void supabase.removeChannel(channel);
+    };
   }, [loadAthletes, teamId]);
 
   // Switching tabs (e.g. Exercises → Athletes) doesn't unmount this screen,

@@ -103,11 +103,8 @@ function fromRow(r: any): VideoJob {
 
 // Excludes cancel_requested rows unconditionally — not just while queued/
 // processing. The instant an athlete taps Remove, cancel_requested flips
-// true and the row must never be shown by ANY consumer again, regardless of
-// which screen instigated the cancel (the banner and the Processing tab each
-// run their own independent useVideoJobs() instance, so a purely local
-// "hide this one" state in one of them doesn't help the other), and
-// regardless of what status the worker eventually leaves the row in —
+// true and the row must never be shown again, regardless of what status the
+// worker eventually leaves the row in —
 // including 'failed', if it errors while tidying up after a cancellation.
 // That backend-side tidy-up crashing and relabeling a cancelled job as
 // 'failed' is a real bug (see HANDOFF follow-up), but filtering here means
@@ -130,11 +127,11 @@ export async function getVideoJobs(athleteId: string): Promise<VideoJob[]> {
 // Topic includes a random suffix, not just athleteId: supabase.channel(topic)
 // returns the SAME channel object for a repeated topic string rather than a
 // new one, and .on() can't be called again after .subscribe() has already
-// run on it. useVideoJobs backs both the processing banner and the
-// Processing tab, so two mounts with the same athleteId would otherwise
-// collide on one shared channel and throw on the second .on() call. Each
-// caller getting its own topic keeps every subscription independent; Supabase
-// multiplexes them over one websocket regardless, so this isn't wasteful.
+// run on it. useVideoJobs is meant to have exactly one live instance app-wide
+// (see state/VideoJobsContext.tsx — every screen reads the shared context
+// instead of calling this directly), but the random suffix is cheap
+// insurance against a second call with the same athleteId ever colliding on
+// one shared channel, e.g. during a brief remount.
 export function subscribeToVideoJobs(athleteId: string, onChange: () => void): () => void {
   const topic = `video_jobs:${athleteId}:${Math.random().toString(36).slice(2)}`;
   const channel = supabase

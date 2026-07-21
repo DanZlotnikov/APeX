@@ -1,6 +1,7 @@
 import * as ImagePicker from 'expo-image-picker';
 import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import StatusBanner from '../components/StatusBanner';
 import LiveCamera, { LiveCameraHandle } from '../components/LiveCamera';
 import VideoPlayer from '../components/VideoPlayer';
@@ -8,8 +9,21 @@ import { useSettings } from '../state/SettingsContext';
 import { colors, spacing } from '../theme';
 import { normalizeVideoUri } from '../utils/video';
 
+// Must stay in sync with VideoPlayer.native.tsx's own BOTTOM_CHROME_HEIGHT
+// (branded bar + scrub hit area) — the confirm/back row below is positioned
+// just above that player chrome, not importable directly since the
+// VideoPlayer barrel only re-exports the default (native/web platform split).
+const VIDEO_BOTTOM_CHROME_HEIGHT = 66;
+
+// Rendered height of reviewHeaderBar's own content, below its
+// paddingTop:insets.top (paddingBottom + the text row) — the target-pill
+// row is positioned this far below the header bar's bottom edge.
+const REVIEW_HEADER_BAR_CONTENT_HEIGHT = 42;
+
 const COUNTDOWN_SECONDS = 5;
-const RECORD_SECONDS = 30;
+// Must match App.tsx's MAX_VIDEO_DURATION_SEC — same cap, applied to a live
+// recording here vs. an uploaded/picked clip there.
+const RECORD_SECONDS = 20;
 
 interface Props {
   pickOnMount: boolean;
@@ -21,11 +35,19 @@ interface Props {
   onVideoConfirmed: (uri: string, durationSec: number) => Promise<void>;
   onBack: () => void;
   initialVideoUri?: string; // pre-picked upload — skip picker, go straight to review
+  // Duration of initialVideoUri, captured by the caller at pick time —
+  // CameraScreen has no way to recover it itself for this flow (its own
+  // duration tracking is either the live-recording timer, or its own
+  // pickVideo(), neither of which run when a video arrives pre-picked via
+  // this prop), so without this every upload silently recorded 0s regardless
+  // of the clip's real length.
+  initialVideoDurationSec?: number;
   targetLabel?: string; // set when recording for a specific required task (e.g. "Squat")
 }
 
-export default function CameraScreen({ pickOnMount, testMode, onVideoConfirmed, onBack, initialVideoUri, targetLabel }: Props) {
+export default function CameraScreen({ pickOnMount, testMode, onVideoConfirmed, onBack, initialVideoUri, initialVideoDurationSec, targetLabel }: Props) {
   const { accentColor, accentOn } = useSettings();
+  const insets = useSafeAreaInsets();
   const liveCamRef = useRef<LiveCameraHandle>(null);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const recordTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -34,7 +56,7 @@ export default function CameraScreen({ pickOnMount, testMode, onVideoConfirmed, 
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState<number | null>(null);
   const [videoUri, setVideoUri] = useState<string | null>(initialVideoUri ?? null);
-  const [videoDurationSec, setVideoDurationSec] = useState<number | null>(null);
+  const [videoDurationSec, setVideoDurationSec] = useState<number | null>(initialVideoDurationSec ?? null);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   // True while the image picker is open — suppresses camera view to avoid a
@@ -117,10 +139,16 @@ export default function CameraScreen({ pickOnMount, testMode, onVideoConfirmed, 
         quality: 1,
       });
       if (!res.canceled && res.assets?.[0]?.uri) {
-        setVideoUri(res.assets[0].uri);
+        const asset = res.assets[0];
+        const durationSec = asset.duration != null ? asset.duration / 1000 : null;
+        if (durationSec != null && durationSec > RECORD_SECONDS) {
+          setError(`Please choose a video ${RECORD_SECONDS} seconds or shorter.`);
+          return;
+        }
+        setVideoUri(asset.uri);
         // duration comes back in ms for a picked video asset; undefined for
         // some platforms/formats — falls back to 0 (unknown) at upload time.
-        setVideoDurationSec(res.assets[0].duration != null ? res.assets[0].duration / 1000 : null);
+        setVideoDurationSec(durationSec);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not open library.');
@@ -143,13 +171,15 @@ export default function CameraScreen({ pickOnMount, testMode, onVideoConfirmed, 
   }
 
   // ── clip preview ──────────────────────────────────────────────────────────
-  // Full-bleed video with floating chrome, matching the live camera screen's
-  // own top-overlay pattern (back/flip icon buttons + a target pill) rather
-  // than a separate title bar + a stacked column of full-width buttons below
-  // the video. Only two actions: confirm (✓) or back (✕) — no "Retry", since
-  // Back already covers "I don't want this take" (re-record/re-pick from
-  // scratch). Both icons anchor top-left specifically so they never sit near
-  // VideoPlayer's own bottom scrub-bar overlay.
+  // Full-bleed video with floating chrome. The target pill (which exercise
+  // this take is for) stays up top, matching the live camera screen's own
+  // top-overlay pattern. Confirm (✓) / back (✕) — no "Retry", since Back
+  // already covers "I don't want this take" — sit centered just above
+  // VideoPlayer's own bottom chrome (branded bar + scrub line), not up top:
+  // up there they'd collide with the system status bar/clock on a full-bleed
+  // screen, which is exactly why VideoPlayer's own play/pause status
+  // indicator moves to sit left-aligned above that same bottom chrome for
+  // avoidHomeIndicator contexts too (see VideoPlayer.native.tsx).
   if (videoUri) {
     return (
       <View style={styles.reviewScreen}>
@@ -157,38 +187,50 @@ export default function CameraScreen({ pickOnMount, testMode, onVideoConfirmed, 
           <VideoPlayer videoUri={videoUri} avoidHomeIndicator />
         </View>
 
-        <SafeAreaView style={styles.topOverlay} pointerEvents="box-none">
-          <View style={[styles.topBar, styles.reviewTopBar]}>
-            <View style={styles.reviewActions}>
-              <Pressable
-                onPress={onBack}
-                disabled={uploading}
-                style={({ pressed }) => [styles.iconBtn, styles.reviewIconBtnSecondary, pressed && styles.pressed]}
-              >
-                <Text style={[styles.iconText, styles.reviewIconTextSecondary]}>✕</Text>
-              </Pressable>
-              <Pressable
-                onPress={handleConfirm}
-                disabled={uploading}
-                style={({ pressed }) => [styles.iconBtn, styles.reviewIconBtnPrimary, { backgroundColor: accentColor }, pressed && styles.pressed]}
-              >
-                {uploading ? <ActivityIndicator size="small" color={accentOn} /> : <Text style={[styles.iconText, styles.reviewIconTextPrimary, { color: accentOn }]}>✓</Text>}
-              </Pressable>
-            </View>
+        {/* Full-bleed to the true top edge (not inset by the SafeAreaView
+            below) — the bar's fill should reach behind the status bar, only
+            its text needs to clear the notch/status bar icons. */}
+        <View style={[styles.reviewHeaderBar, { paddingTop: insets.top }]} pointerEvents="box-none">
+          <Text style={[styles.reviewHeaderText, { color: accentColor }]}>READY TO RUMBLE?</Text>
+        </View>
 
-            {targetLabel && (
-              <View style={styles.targetPill}>
-                <Text style={styles.targetPillText}>{targetLabel.toUpperCase()}</Text>
-              </View>
-            )}
+        {/* Not a SafeAreaView: the header bar above already accounts for the
+            safe area, so this just sits a fixed distance below its bottom
+            edge — a second independent safe-area inset here would double-
+            count and push this row down twice as far as intended. */}
+        {targetLabel && (
+          <View style={[styles.reviewTopBar, { top: insets.top + REVIEW_HEADER_BAR_CONTENT_HEIGHT }]} pointerEvents="box-none">
+            <View style={styles.targetPill}>
+              <Text style={styles.targetPillText}>{targetLabel.toUpperCase()}</Text>
+            </View>
           </View>
+        )}
 
-          {error && (
-            <View style={styles.reviewErrorWrap}>
-              <StatusBanner message={error} tone="error" />
-            </View>
-          )}
-        </SafeAreaView>
+        <View
+          style={[styles.reviewActions, { bottom: VIDEO_BOTTOM_CHROME_HEIGHT + insets.bottom + spacing.xl }]}
+          pointerEvents="box-none"
+        >
+          <Pressable
+            onPress={onBack}
+            disabled={uploading}
+            style={({ pressed }) => [styles.iconBtn, styles.reviewIconBtnSecondary, pressed && styles.pressed]}
+          >
+            <Text style={[styles.iconText, styles.reviewIconTextSecondary]}>✕</Text>
+          </Pressable>
+          <Pressable
+            onPress={handleConfirm}
+            disabled={uploading}
+            style={({ pressed }) => [styles.iconBtn, styles.reviewIconBtnPrimary, { backgroundColor: accentColor }, pressed && styles.pressed]}
+          >
+            {uploading ? <ActivityIndicator size="small" color={accentOn} /> : <Text style={[styles.iconText, styles.reviewIconTextPrimary, { color: accentOn }]}>✓</Text>}
+          </Pressable>
+        </View>
+
+        {error && (
+          <View style={[styles.reviewErrorWrap, { top: insets.top + 16 }]}>
+            <StatusBanner message={error} tone="error" />
+          </View>
+        )}
       </View>
     );
   }
@@ -271,21 +313,42 @@ const styles = StyleSheet.create({
   reviewScreen: { flex: 1, backgroundColor: colors.bg },
   reviewViewer: { flex: 1 },
   // 16pt gap: standard 8pt-grid spacing between two adjacent tap targets.
-  reviewActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  // Lower and closer to the left edge than the live camera screen's back/flip
-  // icons — this screen has no recording timer competing for the same top
-  // strip, so the buttons can sit in a more relaxed, easier-to-reach spot
-  // instead of hugging the very top corner. paddingLeft: spacing.md (16pt) is
-  // the standard iOS/Material screen-edge content margin, not an arbitrary number.
-  reviewTopBar: { paddingTop: spacing.xl, paddingLeft: spacing.md },
-  // ✕ (back, secondary) at 44pt: Apple HIG's minimum recommended tap target.
-  // ✓ (confirm, primary) at 56dp: Material Design's standard FAB size — a
-  // deliberately larger primary action, the same size-hierarchy convention
-  // FABs use everywhere.
-  reviewIconBtnSecondary: { width: 44, height: 44, borderRadius: 22 },
-  reviewIconBtnPrimary:   { width: 56, height: 56, borderRadius: 28 },
-  reviewIconTextSecondary: { fontSize: 18 },
-  reviewIconTextPrimary:   { fontSize: 24 },
+  reviewActions: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.md,
+  },
+  // Target-pill row, positioned (via inline `top`) a fixed distance below
+  // the "READY TO RUMBLE" header bar. paddingLeft: spacing.md (16pt) is the
+  // standard iOS/Material screen-edge content margin.
+  reviewTopBar: { position: 'absolute', left: 0, right: 0, paddingTop: spacing.md, paddingLeft: spacing.md },
+  // Branded header bar — mirrors VideoPlayer's own bottom "APeX" bar (same
+  // colors.bg fill as the screen behind it, so it blends in rather than
+  // standing out as a separate panel), text colored with the app's selected
+  // accent color to match the scrub line and the confirm button. Absolutely
+  // positioned (not inside the SafeAreaView below) so its fill reaches the
+  // true top edge — paddingTop: insets.top is applied inline where it's used,
+  // so only the text itself clears the status bar/notch.
+  reviewHeaderBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: colors.bg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingBottom: spacing.lg,
+  },
+  reviewHeaderText: { fontSize: 14, fontWeight: '900', letterSpacing: 3, marginTop: spacing.sm },
+  // Both actions equal weight/size — no primary/secondary size hierarchy.
+  reviewIconBtnSecondary: { width: 64, height: 64, borderRadius: 32 },
+  reviewIconBtnPrimary:   { width: 64, height: 64, borderRadius: 32 },
+  reviewIconTextSecondary: { fontSize: 26 },
+  reviewIconTextPrimary:   { fontSize: 26 },
   reviewErrorWrap: { paddingHorizontal: spacing.lg, marginTop: spacing.sm },
   pressed: { opacity: 0.6 },
 

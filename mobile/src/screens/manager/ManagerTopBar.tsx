@@ -66,8 +66,15 @@ export default function ManagerTopBar({
 
     // Realtime: no server-side filter (requires special Supabase publication setup);
     // filter client-side instead so it works on any plan.
+    // Topic includes managerId, not just teamId: supabase.channel(topic) reuses
+    // an existing channel object for a matching topic string rather than
+    // creating a new one (confirmed the hard way elsewhere in this app — see
+    // videoJobs.ts/VideoJobsContext.tsx) — a team-only topic would collide
+    // across every manager viewing the same team simultaneously, or across a
+    // fast unmount/remount of this same component racing removeChannel's
+    // async teardown.
     const channel = supabase
-      .channel(`notif:${teamId}`)
+      .channel(`notif:${teamId}:${managerId}`)
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'notifications' },

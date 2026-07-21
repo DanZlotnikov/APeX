@@ -66,7 +66,6 @@ export default function BiomechanicsReport({ analysis, fallbackExerciseType, rep
                   <View style={styles.jointTrack}>
                     <View style={[styles.jointFill, { width: `${Math.max(0, Math.min(100, jc.balance_pct))}%`, backgroundColor: color }]} />
                   </View>
-                  {jc.informational && <Text style={styles.informationalNote}>Engineering estimate — not literature-validated</Text>}
                 </View>
               );
             })}

@@ -9,8 +9,8 @@ import PerformanceScreen, { PerformanceSub } from './dashboard/PerformanceScreen
 import SettingsScreen from './dashboard/SettingsScreen';
 import { TargetExercise } from '../api/types';
 import ProcessingBanner from '../components/ProcessingBanner';
-import { useVideoJobs } from '../hooks/useVideoJobs';
 import { useSettings } from '../state/SettingsContext';
+import { useVideoJobsContext } from '../state/VideoJobsContext';
 import { colors } from '../theme';
 
 const Tab = createBottomTabNavigator();
@@ -40,7 +40,7 @@ export default function DashboardScreen({ userId, teamId, onRecord, onUpload, on
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [performanceSub, setPerformanceSub] = useState<PerformanceSub>('history');
   const navRef = useNavigationContainerRef();
-  const { processingCount } = useVideoJobs(userId);
+  const { processingCount } = useVideoJobsContext();
 
   // Floating, fully-rounded tab bar lifted off the bottom edge.
   const tabBarStyle = [styles.tabBar, { marginBottom: (insets.bottom || 0) + 12 }];
