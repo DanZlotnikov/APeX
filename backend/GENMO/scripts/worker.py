@@ -204,13 +204,22 @@ def run_core_pipeline(
     Raises PipelineCancelled (see cancel_check above) if the pipeline was
     aborted after preprocessing but before inference.
     """
-    from gem.utils.video_io_utils import get_video_lwh, read_video_np
+    from gem.utils.video_io_utils import get_rotation_degrees, get_video_lwh, read_video_np
 
     t0 = time.time()
     preprocess_dir.mkdir(parents=True, exist_ok=True)
 
     L, W, H = get_video_lwh(str(video_path))
-    print(f"{log_prefix} {video_path.name}: {L} frames, {W}x{H}")
+    rotation = get_rotation_degrees(str(video_path))
+    # Always logged, not just when non-zero -- the interesting failure mode
+    # here isn't "rotation applied wrong", it's "device/app never wrote
+    # rotation metadata at all" (confirmed happening for at least one real
+    # camera library on Android), which looks IDENTICAL to "genuinely no
+    # rotation needed" from inside this function. Seeing "rotation: 0" next
+    # to a suspiciously sideways-looking result for a portrait recording is
+    # the fastest way to tell those two cases apart later without re-deriving
+    # this from scratch.
+    print(f"{log_prefix} {video_path.name}: {L} frames, {W}x{H} (rotation: {rotation} deg)")
 
     bbx_xys = detect_and_track(str(video_path), str(preprocess_dir), yolo_model=models.yolo)
 
