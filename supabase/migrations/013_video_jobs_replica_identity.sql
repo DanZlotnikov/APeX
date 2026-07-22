@@ -1,0 +1,28 @@
+-- APeX · Fix Realtime DELETE events never reaching subscribers for video_jobs
+-- Run this AFTER 012_session_replace_and_readiness_backfill.sql.
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Confirmed in production: save/discard/cancel all correctly DELETE the
+-- video_jobs row, but the athlete's own client never learns about it via
+-- Realtime -- the Processing tab could show an already-saved job again after
+-- navigating away and back (see mobile/src/hooks/useVideoJobs.ts's shared
+-- `jobs` array, which only ever updates via refetch() or a Realtime event).
+-- INSERT/UPDATE were unaffected (queued -> processing -> completed all
+-- appeared live, matching the diagnosis below).
+--
+-- Root cause: Postgres logical replication (what Realtime is built on) only
+-- includes a deleted row's REPLICA IDENTITY columns in the WAL record -- by
+-- default just the primary key. Supabase Realtime needs the row's other
+-- columns (here, athlete_id) to evaluate the subscriber's RLS policy for a
+-- DELETE event ("was this subscriber even allowed to see this row"), and
+-- without them it can't safely deliver the event at all. INSERT/UPDATE don't
+-- have this problem -- the new row's full data is already in the WAL record
+-- regardless of replica identity, so RLS can be evaluated against that.
+--
+-- REPLICA IDENTITY FULL makes Postgres include the entire old row on
+-- DELETE/UPDATE, giving Realtime enough to evaluate RLS correctly. Minor,
+-- acceptable cost: slightly larger WAL records for this table -- video_jobs
+-- is low-volume (one row per recorded exercise, deleted within moments of
+-- completion) so this is not a concern here.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+ALTER TABLE public.video_jobs REPLICA IDENTITY FULL;

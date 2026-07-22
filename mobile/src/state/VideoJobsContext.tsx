@@ -26,6 +26,11 @@ interface VideoJobsContextValue {
   // waiting on the real Realtime round-trip. Call this from any
   // Save/Discard/Remove handler.
   markPendingRemoval: (jobId: string) => void;
+  // Reverts markPendingRemoval if the action's RPC actually failed.
+  unmarkPendingRemoval: (jobId: string) => void;
+  // Confirmed removal — splices a job out of the shared `jobs` array. Only
+  // call after the action's RPC has actually succeeded.
+  removeJobLocally: (jobId: string) => void;
 }
 
 const VideoJobsContext = createContext<VideoJobsContextValue | null>(null);

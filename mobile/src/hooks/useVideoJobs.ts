@@ -43,6 +43,32 @@ export function useVideoJobs(athleteId: string | undefined) {
   const markPendingRemoval = useCallback((jobId: string) => {
     setPendingRemovalIds((prev) => (prev.has(jobId) ? prev : new Set(prev).add(jobId)));
   }, []);
+
+  // Reverts markPendingRemoval — call this if the action that justified it
+  // (Save/Discard/Remove's RPC) actually failed, so the count doesn't stay
+  // permanently wrong for a job that's still there.
+  const unmarkPendingRemoval = useCallback((jobId: string) => {
+    setPendingRemovalIds((prev) => {
+      if (!prev.has(jobId)) return prev;
+      const next = new Set(prev);
+      next.delete(jobId);
+      return next;
+    });
+  }, []);
+
+  // Confirmed removal: splices a job straight out of the canonical `jobs`
+  // array. Only call this once the backend call that removes the row has
+  // actually succeeded (Save/Discard/Remove) — never optimistically. Because
+  // `jobs` lives here, in the one shared instance, this survives whatever a
+  // screen-local `useState` wouldn't (e.g. ProcessingScreen remounting when
+  // the athlete switches History <-> Processing sub-tabs — confirmed in
+  // production as the exact cause of a saved/discarded job reappearing in
+  // Processing after navigating away and back). No-op if the id isn't
+  // present (e.g. a redundant call after a real Realtime refetch already
+  // removed it).
+  const removeJobLocally = useCallback((jobId: string) => {
+    setJobs((prev) => prev.filter((j) => j.id !== jobId));
+  }, []);
   // Guards against an out-of-order response clobbering a newer one. Two
   // Realtime events firing in quick succession (e.g. discarding two jobs
   // back to back) each trigger their own refetch(); nothing otherwise stops
@@ -101,5 +127,5 @@ export function useVideoJobs(athleteId: string | undefined) {
   // been optimistically marked pending removal (see markPendingRemoval above).
   const processingCount = jobs.filter((j) => !pendingRemovalIds.has(j.id)).length;
 
-  return { jobs, loading, processingCount, refetch, markPendingRemoval };
+  return { jobs, loading, processingCount, refetch, markPendingRemoval, unmarkPendingRemoval, removeJobLocally };
 }
