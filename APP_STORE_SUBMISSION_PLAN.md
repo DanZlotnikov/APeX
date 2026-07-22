@@ -1,11 +1,31 @@
 # APeX · App Store Submission Plan
 
-Status: **planning only — no code has been changed as part of this document.**
-Written after a full read of the current codebase (`mobile/`, `backend/`, `supabase/`) plus
-research into current Apple App Store Review Guidelines, privacy-manifest requirements, and
-common rejection causes for Expo/Supabase-backed apps. Where a code change is required, it's
-described precisely (file, what, why) but **not applied** — that's a follow-up task once you've
-seen this plan.
+Status: **in progress — most of §1 (hard blockers) is now implemented.** Originally written as
+planning-only; updated after several follow-up sessions that implemented account deletion,
+`app.json`/`eas.json`, the Privacy Policy draft, and the microphone-permission removal. Every
+item below is now tagged ✅ **Done**, 🟡 **Partial / needs a decision**, or 🔴 **Not started** so
+this doc stays a reliable single source of truth for what's actually left — update the tag
+whenever you change something, don't just add new prose underneath stale tags.
+
+## Current status at a glance
+
+| # | Item | Status |
+|---|---|---|
+| 1.1 | In-app account deletion | ✅ Done — Edge Function deployed, UI live in both Settings screens |
+| 1.2 | Service-role key isolation | ✅ Done — re-verified against the actual built bundle, not just source |
+| 1.3 | `app.json` / `eas.json` fields | ✅ Done — bundle IDs, icon, version strategy all set |
+| 1.4 | Privacy Policy | 🟡 Partial — drafted and accurate, **not yet hosted at a public URL**, 2 fields still unfilled |
+| 2.1 | Worker cadence during review | 🔴 Not started — still manual 1-2x/day, still the single biggest risk |
+| 2.2 | Health/fitness disclaimer copy | 🔴 Not started — no in-app disclaimer exists yet |
+| 2.3 | Sign in with Apple | ✅ N/A — confirmed still not required, no change needed |
+| 2.4 | Unnecessary microphone permission | ✅ Done — removed at every layer, including one not originally anticipated |
+| 2.5 | `userInterfaceStyle` light/dark mismatch | 🔴 Not started — still a one-line fix sitting untouched |
+| Phase C/D/E | Build, TestFlight, metadata, submit | 🔴 Not started |
+
+**The three things standing between here and submission, in order:** finish the Privacy Policy
+(host it, fill in contact info — 30 minutes of your own time, nothing left for me to do), decide
+the worker-cadence approach (§2.1 — this is a product decision, not code), then knock out the two
+remaining one-line/one-paragraph fixes (§2.2, §2.5) before starting Phase C.
 
 ---
 
@@ -37,99 +57,99 @@ Review — see §2.1, the single biggest risk in this plan.
 These aren't judgment calls; Apple's tooling and/or guidelines will not let a submission through
 without them.
 
-### 1.1 In-app account deletion (Guideline 5.1.1(v)) — **not implemented, required**
+### 1.1 In-app account deletion (Guideline 5.1.1(v)) — ✅ **Done**
 
-Confirmed via code search: there is no account-deletion path anywhere in `mobile/src`. Any app
-that lets a user create an account (this one does — `signUpAthlete`/`signUpManager` in
-`mobile/src/api/auth.ts`) **must** let them delete it from inside the app, not just deactivate
-it. This has been enforced since June 2022; it is not a courtesy feature, it's a review gate.
+Implemented: `supabase/functions/delete-account/index.ts` (Edge Function, deployed), a
+`deleteAccount()` client call in `mobile/src/api/auth.ts`, and a destructive-confirm "Delete
+Account" row in both `SettingsScreen.tsx` (athlete) and `ManagerSettings.tsx` (manager), gated by
+`confirmAsync(..., { destructive: true })` and signing the user out on success.
 
-**What "delete" has to actually do**, per your schema: remove (or fully anonymize) the
-`auth.users` row, `profiles`, `athlete_profiles`, `sessions`, `session_metrics`,
-`athlete_routines`, `video_jobs`, and the athlete's Storage objects — i.e., a real data deletion,
-not a soft flag.
+**Deployment gotcha worth remembering**: the first deploy attempt (via the Supabase Dashboard's
+inline function editor) landed under an auto-generated random slug instead of `delete-account`,
+so the client's `supabase.functions.invoke('delete-account')` call 404'd with zero visible error
+beyond a generic non-2xx — the dashboard's "Function name" field defaults to a placeholder
+codename and doesn't auto-adopt what you typed elsewhere. Confirmed fixed by explicitly setting
+the function name field before deploying. If you ever redeploy this function, double-check the
+name field, not just the code.
 
-**Why this can't be a plain client-side RPC like your other mutations**: deleting an
-`auth.users` row requires Supabase's **admin** API (`supabase.auth.admin.deleteUser`), which
-needs the **service-role key** — the same key that must never ship in the app bundle (see §1.2).
-The client can't do this call directly, safely.
+Original requirement, still accurate for context: any app that lets a user create an account
+(this one does — `signUpAthlete`/`signUpManager` in `mobile/src/api/auth.ts`) **must** let them
+delete it from inside the app, not just deactivate it. Enforced since June 2022; not a courtesy
+feature, a review gate.
 
-**Recommended implementation** (documenting, not building yet):
-1. A new **Supabase Edge Function** (`delete-account`), deployed with the service-role key as a
-   secret (Edge Functions run server-side inside Supabase, not on your PC or in the app — this is
-   the one piece of "backend" that should live in Supabase itself, since it needs to work even
-   when your PC is off).
-2. The function: verifies the caller's JWT (Supabase gives you the authenticated user for free
-   in an Edge Function), deletes the athlete's rows in dependency order (or relies on your
-   existing `ON DELETE CASCADE`s — `athlete_profiles`, `sessions`, `session_metrics`,
-   `athlete_routines`, `video_jobs` already cascade from `profiles`/`auth.users` per your
-   migrations, so deleting `auth.users` via the admin API should cascade the rest automatically —
-   **verify this against every table**, particularly ones added later like `athlete_routines`),
-   removes the athlete's Storage objects (`raw/{id}/*`, `processed/{id}/*`), then calls
-   `supabase.auth.admin.deleteUser(userId)`.
-3. A "Delete Account" row in `SettingsScreen.tsx`, gated behind a confirmation dialog (you
-   already have `ConfirmDialogHost`/`utils/confirm.ts` for this pattern), calling the Edge
-   Function and then signing the client out / returning to the login screen.
-4. Decide what happens to a **manager's** team when they delete their account (orphaned team? Or
-   require the manager to transfer/delete the team first?) — a real product decision, not just
-   plumbing.
+**What "delete" actually does now**, confirmed against the deployed function: removes the
+`auth.users` row via the admin API (which cascades `profiles`, `athlete_profiles`, `sessions`,
+`athlete_routines`, `video_jobs`, `notification_reads` automatically per existing `ON DELETE
+CASCADE`s), plus two things that do **not** cascade and needed explicit handling: a recursive
+Storage walk that deletes every object under `raw/{id}/` and `processed/{id}/` in the
+`exercise-videos` bucket, and an explicit `DELETE FROM notifications WHERE athlete_id = ...`
+(that FK is `ON DELETE SET NULL`, not `CASCADE`, so the athlete's name baked into the
+notification's `message` text would otherwise survive deletion). Storage/notification cleanup is
+best-effort (logged, doesn't block) — the auth deletion itself is the one step that must succeed.
 
-This is a non-trivial feature (new Edge Function + new UI + a real decision about team
-ownership), not a checkbox — budget real time for it.
+**Team-ownership decision, made and implemented**: a manager deleting their account does **not**
+delete or orphan their team — `teams` has no FK back to a specific manager, and the product
+decision was that a user can only ever delete their *own* data, never cascade-destroy their
+athletes' data. Documented directly in the Edge Function's code comments.
 
-### 1.2 Confirm the service-role key never ships in the client bundle
+### 1.2 Confirm the service-role key never ships in the client bundle — ✅ **Done, re-verified**
 
-**Verified safe right now**: `SUPABASE_SERVICE_ROLE_KEY` in `mobile/.env` is **not**
-`EXPO_PUBLIC_`-prefixed, so Expo does not inline it into the JS bundle (only `EXPO_PUBLIC_*` vars
-get baked into what ships). Grepped `mobile/src` for any reference to it — none found. The
-backend worker reads it from a real OS environment variable at process launch
-(`SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... python supabase_worker.py`), never from a
-committed file. `.env` itself is gitignored and confirmed **not tracked** in git history.
+Re-checked more rigorously than the original pass: grepped `mobile/src`/config for any reference
+(none), confirmed `SUPABASE_SERVICE_ROLE_KEY` is still not `EXPO_PUBLIC_`-prefixed, and — the
+actual proof, not just inference — built a real `expo export` bundle and grepped the output JS
+for the literal 219-character key value. Zero matches. As a control, the anon key's full literal
+value *does* appear once, exactly as expected. Standing rule unchanged: never prefix it
+`EXPO_PUBLIC_`, never read it from mobile code; the Edge Function (§1.1) and the worker process
+are the only two places that should ever see it.
 
-**This is good — but it's exactly the kind of thing that regresses silently.** Add this as a
-standing rule for every future session/PR: *never* add `EXPO_PUBLIC_` in front of the service
-key, and never let a mobile-side file read `process.env.SUPABASE_SERVICE_ROLE_KEY`. If you build
-the account-deletion Edge Function from §1.1, that's the **only** place besides your own worker
-process that should ever see this key.
+### 1.3 `app.json` / `eas.json` — ✅ **Done**
 
-### 1.3 `app.json` is missing fields EAS Build requires for a production submission
+- `ios.bundleIdentifier` / `android.package`: `com.apexathletics.app`.
+- `icon`: `./assets/icon.png` — a generated placeholder (teal "peak" mark on the app's navy
+  background, via a small Pillow script kept at `mobile/assets/generate_icon.py`), good enough to
+  satisfy EAS Build's requirement but **swap it for real artwork before final submission** — it's
+  not final branding.
+- Version numbering: decided on EAS remote auto-increment (`eas.json`'s `cli.appVersionSource:
+  "remote"` + `build.production.autoIncrement: true`) — no `ios.buildNumber`/`android.versionCode`
+  in `app.json` by design, EAS tracks and bumps it for you on every `eas build --profile
+  production`.
+- `eas.json` created (hand-authored to the same shape `eas build:configure` produces —
+  `development`/`preview`/`production` profiles).
+- Validated: `npx expo config` resolves cleanly, and `npx expo prebuild` was run once as a
+  correctness check (native folders removed afterward — this stays a managed-workflow project,
+  no committed `android/`/`ios/` directories).
 
-Current `mobile/app.json` has no `ios.bundleIdentifier`, no `android.package`, no app `icon`, and
-no explicit `ios.buildNumber`/`android.versionCode`. `expo-camera` and `expo-notifications` are
-plugin-configured correctly, but the build itself can't be produced without these:
+**Still needs you specifically**: register `com.apexathletics.app` in your Apple Developer
+account (Certificates, Identifiers & Profiles) before your first EAS build — that step can only
+happen through Apple's own site.
 
-- `expo.ios.bundleIdentifier` — e.g. `"com.yourcompany.apex"` (must match what you register in
-  App Store Connect / your Apple Developer account; reverse-DNS, can't be changed later without
-  creating a new app).
-- `expo.android.package` — same idea, only relevant if/when you also target Android, but cheap to
-  set now.
-- `expo.icon` — a 1024×1024 PNG; without it EAS Build will fail (or generate a placeholder you
-  don't want live).
-- Version numbering — either set `ios.buildNumber` manually per build, or use EAS's
-  `cli.appVersionSource: "remote"` + `eas build --auto-increment` so it's handled for you. Decide
-  once, don't mix strategies.
-- `eas.json` doesn't exist yet — created by running `eas build:configure` (defines build
-  profiles: `development`, `preview`, `production`).
+### 1.4 Privacy Policy — 🟡 **Drafted, not yet publishable as-is**
 
-### 1.4 No Privacy Policy anywhere (required field in App Store Connect, and best practice in-app)
+`PRIVACY_POLICY.md` is written and accurate to the app's real behavior (verified against actual
+code, not assumed): what's collected (account info, optional profile fields, muted video-only
+recordings, derived readiness/balance/ROM data, injury status, push tokens), that Supabase/Expo
+are named sub-processors, that a coach/manager can see their team athletes' data (and an
+individual athlete's data is visible to no one else), retention and the real account-deletion
+mechanism from §1.1, and a 13+ children's-privacy clause matching how signup actually works
+(direct self-registration, no age gate). Also published as a shareable Artifact with a design
+pass (branded, both light/dark themes, section-jump navigation) for easy review.
 
-App Store Connect **will not let you submit** without a Privacy Policy URL in the app's metadata.
-Grepped the app for any privacy/terms reference — none exists, in-app or otherwise. Given this
-app records video of the athlete's body, stores biomechanical/fitness data, and creates
-identifiable accounts, this needs to be a real, accurate document, not boilerplate — it has to
-actually describe: what's collected (video, derived pose/joint data, exercise counts, readiness
-scores, email, name, height/weight if provided), that it's stored in Supabase (a sub-processor,
-name it), that raw video currently also transits your own PC for processing, retention (does a
-discarded/failed video's data really get deleted? — yes, per your Storage RLS/RPCs, good, say
-so), and how a user deletes their data (link back to §1.1's feature). This can be a simple static
-page (GitHub Pages, Notion public page, etc.) — it doesn't need to be fancy, but it needs to be
-**true**, since Apple's privacy nutrition label (see §3.3) has to match what the policy says.
+**Two things you still need to do before this can go live**:
+1. Fill in Section 11 ("Contact Us") — a real support/privacy email and your developer/legal
+   entity name. Left as visibly-flagged placeholders rather than guessed, since fabricating
+   contact info in a legal document is worse than an obvious blank.
+2. **Host it at a public URL** — App Store Connect requires a Privacy Policy *URL* in metadata,
+   not just a document. The Artifact link is private by default (shareable from its own page, or
+   you can host the Markdown/HTML anywhere else you prefer — GitHub Pages, your own site, etc.).
+
+Also recommended, stated in the document itself: have a lawyer review it before publishing,
+especially for GDPR/CCPA-specific language if you'll operate in the EU/UK or California.
 
 ---
 
 ## 2. Serious risks — not automatic rejections, but genuinely likely to cause one
 
-### 2.1 Manually running the backend 1-2x/day, during App Review — **the single biggest risk here**
+### 2.1 Manually running the backend 1-2x/day, during App Review — 🔴 **Not started — still the single biggest risk here**
 
 This is worth being blunt about, since it's the part of your plan most likely to actually sink a
 submission.
@@ -172,7 +192,11 @@ move to something always-on or have evidence that occasional processing windows 
 to your actual users. This is a recommendation, not something I've assumed you'll do — it's your
 call, but it's the highest-leverage single decision in this whole plan.
 
-### 2.2 Health/fitness "risk" framing may draw enhanced scrutiny (Guideline 1.4.1 / 5.1.3)
+### 2.2 Health/fitness "risk" framing may draw enhanced scrutiny (Guideline 1.4.1 / 5.1.3) — 🔴 **Not started**
+
+No in-app disclaimer exists yet — the Privacy Policy (§1.4) touches on it briefly for the injury
+flag specifically ("does not constitute medical advice or a diagnosis"), but that's not the same
+as the dedicated, reachable-from-the-main-flow disclaimer this section recommends. Still open.
 
 Your own biomechanics code — confirmed by reading `backend/GENMO/scripts/biomechanics/` — is
 explicitly framed around clinical/injury-risk literature: `at_risk` joint-check severity,
@@ -194,7 +218,7 @@ reviewer asking follow-up questions or requesting substantiation. Mitigate with:
   language if this app is going to be marketed with health claims at all, this is not legal
   advice.
 
-### 2.3 Sign in with Apple — confirmed **not required** for you, worth stating explicitly so it doesn't get "fixed" unnecessarily later
+### 2.3 Sign in with Apple — ✅ **N/A, confirmed not required** — worth stating explicitly so it doesn't get "fixed" unnecessarily later
 
 Checked `mobile/src/api/auth.ts`: the app only offers Supabase email/password
 (`signInWithPassword`/`auth.signUp`), no Google/Facebook/other third-party OAuth. Apple's rule
@@ -203,27 +227,28 @@ offer a third-party login service — an app using solely its own account system
 action needed here. Just don't add "Sign in with Google" later without also adding Sign in with
 Apple in the same release.
 
-### 2.4 Requesting microphone permission for a silent, pose-only analysis pipeline
+### 2.4 Requesting microphone permission for a silent, pose-only analysis pipeline — ✅ **Done**
 
-`app.json` requests `NSMicrophoneUsageDescription`/Android `RECORD_AUDIO`, and the description
-text implies audio is actually used ("Audio is recorded alongside the movement video"). Nothing
-in the GEM/pose pipeline reads or uses audio at all — it's 100% visual. Requesting a permission
-you don't use is a real (if minor) Guideline 5.1.1 smell ("apps should only request access to
-data relevant to the core functionality"), and it's one more permission prompt in the way of a
-new user's first recording. Recommended fix (documented, not applied): record video **muted**
-(expo-camera supports disabling audio capture) and drop the microphone permission/description
-entirely, unless you have a concrete future use for audio.
+Turned out to need more than the originally-anticipated `app.json` edit. Fixed at every layer
+that actually contributed it:
+- Removed `NSMicrophoneUsageDescription`, Android's `RECORD_AUDIO` permission, and the
+  `expo-camera` plugin's `microphonePermission`/`recordAudioAndroid` config from `app.json`.
+- Removed a live `requestMicPerm()` call in `LiveCamera.native.tsx` that was actively prompting
+  for microphone access at recording time, despite recording always being muted (`mute: true`).
+- Discovered — by actually running `expo prebuild` and inspecting the generated
+  `AndroidManifest.xml`, not just editing config and assuming it worked — that `expo-camera`'s
+  *compiled Android module* bundles `RECORD_AUDIO` in its own native manifest unconditionally,
+  and `expo-av` (used legitimately for video playback/sound effects elsewhere in the app) does
+  the same by default. Neither is controllable via `app.json` plugin options alone. Fixed with a
+  small local config plugin (`mobile/plugins/withoutRecordAudio.js`) that adds the standard
+  Android manifest-merger `tools:node="remove"` override, and an explicit `expo-av` plugin entry
+  (`{"microphonePermission": false}`). Re-verified against a fresh `expo prebuild` output that
+  the permission is actually gone from the generated manifest, not just from `app.json`.
 
-### 2.5 `userInterfaceStyle: "light"` on an app that's entirely dark-navy-themed
+### 2.5 `userInterfaceStyle: "light"` on an app that's entirely dark-navy-themed — 🔴 **Not started**
 
-`app.json` sets `"userInterfaceStyle": "light"`, but every screen in this app (per `theme.ts`
-and every screen file) is a fixed dark navy (`#07101C`) design — not actually responsive to
-system light/dark mode at all. This mismatch can cause native OS chrome (system alerts, the
-keyboard, activity indicators, share sheets) to render in light styling against your dark app,
-which looks unpolished and is an easy, cheap fix: set this to `"dark"` to match what the app
-actually always looks like (simplest correct fix, since the app doesn't currently support a real
-light mode), or build real light/dark support if that's ever wanted. Low severity, pure polish,
-but free to fix.
+Still exactly as originally described — a one-line fix (`"dark"` instead of `"light"` in
+`app.json`) that hasn't been made yet. Cheap to do whenever; low severity, pure polish.
 
 ---
 
@@ -231,44 +256,39 @@ but free to fix.
 
 ### Phase A — Apple account & project setup (can start today, in parallel with code work)
 
-1. Enroll in the **Apple Developer Program** ($99/yr) if not already done — individual
+1. 🔴 Enroll in the **Apple Developer Program** ($99/yr) if not already done — individual
    enrollment is usually same-day to a couple of days; organization enrollment (needs a D-U-N-S
    number) can take substantially longer. **Start this first**, since it gates everything else
-   and has the least predictable timeline.
-2. In App Store Connect, create the app record: name, primary language, bundle ID (must match
-   what you decide in §1.3), SKU.
-3. Decide and register the real `bundleIdentifier` — you cannot change it later without creating
-   a new App Store listing from scratch.
+   and has the least predictable timeline. *(Only you can do this — it's your Apple account.)*
+2. 🔴 In App Store Connect, create the app record: name, primary language, bundle ID (`com.
+   apexathletics.app`, per §1.3), SKU.
+3. 🔴 Register the `com.apexathletics.app` bundle identifier in your Apple Developer account
+   (Certificates, Identifiers & Profiles) — decided and set in code (§1.3), just not yet
+   registered with Apple. Cannot be changed later without a new App Store listing.
 
 ### Phase B — Required code/config changes (this is the "fix the blockers" phase)
 
-Do these in whatever order suits you, but none of them can be skipped:
+4. ✅ Implement account deletion end-to-end (§1.1) — done, deployed, verified.
+5. ✅ Fill in `app.json` + `eas.json` (§1.3) — done.
+6. ✅ Mic-permission removal (§2.4) — done, including the native-manifest layer.
+7. 🔴 Fix `userInterfaceStyle` (§2.5) — one-line change, still not done.
+8. 🟡 Privacy Policy (§1.4) — drafted and accurate; still needs hosting at a public URL and the
+   two contact-info fields filled in. Also still worth linking from the sign-up screen once
+   hosted (not yet done).
+9. 🔴 Add the health-disclaimer copy (§2.2) somewhere reachable in the app — not started.
+10. 🔴 Decide your worker-cadence approach for launch (§2.1) and, if changing it from manual
+    1-2x/day, build whatever minimal automation you land on — not started, still the biggest
+    open risk in this whole plan.
 
-4. Implement account deletion end-to-end (§1.1): Edge Function + Settings UI + verify cascade
-   deletes cover every table, including newer ones (`athlete_routines`) that postdate the
-   original schema.
-5. Fill in `app.json`: `bundleIdentifier`, `android.package`, `icon`, version/build numbering
-   strategy. Run `eas build:configure` to generate `eas.json`.
-6. Decide on and implement the mic-permission removal (§2.4) if you agree with the
-   recommendation, or leave it and be ready to justify it if asked.
-7. Fix `userInterfaceStyle` (§2.5) — one-line change.
-8. Write the real Privacy Policy (§1.4) and host it somewhere stable; add its URL to
-   `app.json`'s… actually App Store Connect metadata (not an app.json field) — just make sure you
-   have the URL ready for Phase D. Consider also linking it from the sign-up screen.
-9. Add the health-disclaimer copy (§2.2) somewhere reachable in the app.
-10. Decide your worker-cadence approach for launch (§2.1) and, if you're changing it from manual
-    1-2x/day, build whatever minimal automation you land on (even a simple scheduled task running
-    the existing `supabase_worker.py` on a loop — no architecture change needed, just cadence).
-
-### Phase C — Build & internal testing
+### Phase C — Build & internal testing — 🔴 not started
 
 11. `eas login`, then `eas build --platform ios --profile production` (or `preview` first for
-    your own device testing via ad-hoc distribution).
+    your own device testing via ad-hoc distribution). `eas.json` profiles are ready for this now.
 12. Set up push notification credentials: run through EAS's prompt to generate an APNs key when
     building (or `eas credentials`) — required for `expo-notifications` to actually deliver in a
     production/TestFlight build; it silently no-ops in Expo Go and did during this whole dev
     cycle, so **this is the first time it'll be truly exercised** — test it for real on a
-    TestFlight build before assuming it works.
+    TestFlight build before assuming it works. Still not exercised.
 13. `eas submit --platform ios` to push the build to App Store Connect / TestFlight (or
     `eas build --auto-submit`).
 14. Install via TestFlight on a real device. Walk the **entire** golden path yourself, on a
@@ -280,27 +300,30 @@ Do these in whatever order suits you, but none of them can be skipped:
     rather than a dev client — assume something will surface that Expo Go / dev builds hid (this
     is a common source of last-minute surprises, e.g. permission prompts behaving differently,
     push tokens, deep links).
-15. Test account deletion for real, on this build. Confirm the data is actually gone in Supabase
-    afterward, not just that the button doesn't error.
+15. Test account deletion for real, on this build. The Edge Function itself has been reviewed
+    carefully and matches the schema's FK cascade behavior exactly, but it has **not** been
+    exercised against a real TestFlight build end-to-end yet — confirm the data is actually gone
+    in Supabase afterward, not just that the button doesn't error.
 
-### Phase D — App Store Connect metadata
+### Phase D — App Store Connect metadata — 🔴 not started
 
 16. App Privacy questionnaire (the "nutrition label"): declare **User Content** (the recorded
     videos — "Data Linked to You," since they're tied to an account) and **Health & Fitness**
     data (derived readiness/rep/joint data). Be accurate, not minimal — Apple has rejected apps
     for mismatches between the declared label and actual app behavior discovered during review.
     Declare Supabase as a data processor if the flow in App Store Connect asks for that level of
-    detail.
+    detail. The Privacy Policy (§1.4) is written to support answering this accurately once it's
+    hosted.
 17. Age rating questionnaire.
 18. Screenshots for the required device sizes (currently the largest iPhone size, 6.9"/6.7"
     class, is mandatory at minimum — check current App Store Connect requirements at submission
     time, this changes periodically).
 19. App description, keywords, support URL, marketing URL (support URL is mandatory; marketing
     URL is optional).
-20. Privacy Policy URL (§1.4/§8).
+20. Privacy Policy URL — ready to fill in once §1.4's two remaining items are done.
 21. "App Review Information": demo account credentials + the reviewer notes from §2.1 option 3.
 
-### Phase E — Submit
+### Phase E — Submit — 🔴 not started
 
 22. Select the TestFlight build you tested in Phase C, attach it to the version, submit for
     review.
@@ -315,8 +338,11 @@ Do these in whatever order suits you, but none of them can be skipped:
 
 - **RLS is now your entire security boundary** for a production, public app — it already looks
   well-built from this session's work (every table's policies were built and iterated on
-  deliberately), but this is worth one dedicated pass specifically framed as "assume a hostile
-  client with only the anon key" before launch, not just "does the happy path work."
+  deliberately, and the new `team_routines`/`athlete_exercise_assignments` tables added since this
+  plan was written follow the same established manager/athlete visibility pattern as everything
+  else), but this is worth one dedicated pass specifically framed as "assume a hostile client with
+  only the anon key" before launch, not just "does the happy path work." Still not done as a
+  distinct pass.
 - **Storage bucket `exercise-videos` is private** (confirmed) — good, keep it that way; signed
   URLs are the only access path, which is correct for user video content.
 - **Video upload size/data cost**: raw clips upload over the user's own connection before your
@@ -338,3 +364,17 @@ Worth stating plainly so nothing gets "fixed" that isn't broken:
 - Realtime/Storage/RLS design generally — this session's extensive bug-fixing work already
   brought this to a solid, production-plausible state; this plan is about *App Store* readiness
   specifically, not a re-litigation of the whole architecture.
+- Account deletion (§1.1), `app.json`/`eas.json` (§1.3), and the microphone permission (§2.4) —
+  all done and verified; don't re-open these unless something actually regresses.
+
+## 6. What's left, in the order it actually needs to happen
+
+1. **You**: fill in Privacy Policy contact info + host it publicly (§1.4) — the only remaining
+   piece of that item, nothing left for me to draft.
+2. **You**: decide the worker-cadence approach for launch (§2.1) — a product call, not code; tell
+   me what you land on and I can help build whatever automation it needs.
+3. **Either of us, quick**: `userInterfaceStyle` fix (§2.5) and the health-disclaimer copy (§2.2)
+   — both small, both still open.
+4. **You**: Apple Developer Program enrollment + registering the bundle ID (Phase A) — gates
+   everything after it, has the least predictable timeline, worth starting in parallel with 1-3.
+5. Then Phase C onward (build, TestFlight, metadata, submit) — none of it started yet.

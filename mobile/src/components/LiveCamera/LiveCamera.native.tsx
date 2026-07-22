@@ -1,4 +1,4 @@
-import { CameraView, useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import React, { forwardRef, useImperativeHandle, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { colors, spacing } from '../../theme';
@@ -12,7 +12,6 @@ interface Props {
 const LiveCamera = forwardRef<LiveCameraHandle, Props>(
   ({ onRecordingComplete, onError }, ref) => {
     const [cameraPerm, requestCameraPerm] = useCameraPermissions();
-    const [, requestMicPerm] = useMicrophonePermissions();
     const cameraRef = useRef<CameraView>(null);
     const [facing, setFacing] = useState<'front' | 'back'>('back');
 
@@ -23,7 +22,6 @@ const LiveCamera = forwardRef<LiveCameraHandle, Props>(
           onError('Camera permission required.');
           return;
         }
-        await requestMicPerm();
         try {
           const result = await cameraRef.current?.recordAsync({ maxDuration: maxSeconds, mute: true } as any);
           if (result?.uri) onRecordingComplete(result.uri);

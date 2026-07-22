@@ -5,21 +5,23 @@
     "version": "0.1.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
+    "icon": "./assets/icon.png",
     "splash": {
       "resizeMode": "contain",
       "backgroundColor": "#0B1220"
     },
     "assetBundlePatterns": ["**/*"],
     "ios": {
+      "bundleIdentifier": "com.apexathletics.app",
       "supportsTablet": true,
       "infoPlist": {
         "NSCameraUsageDescription": "This app uses the camera to record short movement tests.",
-        "NSMicrophoneUsageDescription": "Audio is recorded alongside the movement video.",
         "NSPhotoLibraryUsageDescription": "Select a test video from your library for processing."
       }
     },
     "android": {
-      "permissions": ["CAMERA", "RECORD_AUDIO", "READ_EXTERNAL_STORAGE"]
+      "package": "com.apexathletics.app",
+      "permissions": ["CAMERA", "READ_EXTERNAL_STORAGE"]
     },
     "web": {
       "bundler": "metro"
@@ -29,8 +31,13 @@
         "expo-camera",
         {
           "cameraPermission": "Allow APeX to use the camera to record movement tests.",
-          "microphonePermission": "Allow APeX to record audio with your video.",
-          "recordAudioAndroid": true
+          "recordAudioAndroid": false
+        }
+      ],
+      [
+        "expo-av",
+        {
+          "microphonePermission": false
         }
       ],
       [
@@ -44,7 +51,8 @@
         {
           "color": "#00D4BC"
         }
-      ]
+      ],
+      "./plugins/withoutRecordAudio.js"
     ]
   }
 }
