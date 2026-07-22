@@ -1,7 +1,7 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { VideoJobAnalysis } from '../api/videoJobs';
-import { exerciseLabel } from '../utils/pipelineExercise';
+import { exerciseLabel, readinessPctFromAnalysis } from '../utils/pipelineExercise';
 import { colors, riskColor, spacing } from '../theme';
 import ReadinessGauge from './ReadinessGauge';
 
@@ -15,28 +15,36 @@ function severityStatus(s: 'ok' | 'watch' | 'at_risk'): 'green' | 'yellow' | 're
   return s === 'ok' ? 'green' : s === 'watch' ? 'yellow' : 'red';
 }
 
-// Stopgap readiness decision (see migration 011): the legacy formula's
-// readiness_score (squat/jump/pullup only) and the new pipeline's balance
-// score are independently computed and can disagree for the same session —
-// e.g. legacy=100 while balance=93 — confusing to show side by side. Until a
-// more precise unified assessment is built, "readiness" everywhere is just
-// overall_balance_pct, rounded, using the same Ready/Caution/High Risk bands
-// ReadinessGauge already uses for its color (>=80/>=55/below).
+// Readiness decision (see migration 016): averages L/R balance and range of
+// motion when both are present for this exercise — an athlete who's
+// perfectly symmetric but barely dipping (poor ROM), or vice versa,
+// shouldn't read as "Ready" on one score alone. Computed the same way
+// client-side here as save_video_job computes it server-side, so a
+// completed-but-not-yet-saved job (this component's data straight from
+// video_jobs.analysis_json) shows the identical number it'll have once
+// saved into sessions.readiness_score — never a value that changes the
+// moment Save is tapped. Falls back to whichever single score is present
+// if only one analyzer produced a result (e.g. 0 reps). Same Ready/Caution/
+// High Risk bands ReadinessGauge already uses for its color (>=80/>=55/below).
 function readinessLabelFor(pct: number): string {
   return pct >= 80 ? 'Ready' : pct >= 55 ? 'Caution' : 'High Risk';
 }
 
 /**
  * Renders one video_jobs/sessions analysis_json report (see
- * HANDOFF_video_pipeline.md section 1): the balance/joint-symmetry
- * breakdown, which every exercise has (and which "readiness" is now derived
- * from — see readinessLabelFor above). Shared by the Processing tab's
- * completed-job card and Performance > History's session detail — same
- * shape, same rendering either way.
+ * HANDOFF_video_pipeline.md section 1): the balance (L/R symmetry) and ROM
+ * (range-of-motion) breakdowns, each exercise's own separately-titled but
+ * identically-styled block, which "readiness" is now derived from — see
+ * readinessLabelFor above. Shared by the Processing tab's completed-job
+ * card and Performance > History's session detail — same shape, same
+ * rendering either way.
  */
 export default function BiomechanicsReport({ analysis, fallbackExerciseType, repCount }: Props) {
   const balance = analysis?.analyses?.balance ?? null;
+  const rom = analysis?.analyses?.rom ?? null;
   const exerciseType = analysis?.exercise ?? fallbackExerciseType ?? null;
+
+  const readinessPct = readinessPctFromAnalysis(analysis);
 
   return (
     <View>
@@ -45,31 +53,57 @@ export default function BiomechanicsReport({ analysis, fallbackExerciseType, rep
         <Text style={styles.reps}>{repCount} rep{repCount === 1 ? '' : 's'}</Text>
       </View>
 
-      {balance ? (
+      {readinessPct != null ? (
         <>
-          <ReadinessGauge readiness={Math.round(balance.overall_balance_pct)} label={readinessLabelFor(balance.overall_balance_pct)} />
+          <ReadinessGauge readiness={Math.round(readinessPct)} label={readinessLabelFor(readinessPct)} />
 
-          <View style={styles.balanceCard}>
-            <View style={styles.balanceHead}>
-              <Text style={styles.balanceTitle}>L/R BALANCE</Text>
-              <Text style={styles.balanceScore}>{Math.round(balance.overall_balance_pct)}%</Text>
+          {balance && (
+            <View style={styles.balanceCard}>
+              <View style={styles.balanceHead}>
+                <Text style={styles.balanceTitle}>L/R BALANCE</Text>
+                <Text style={styles.balanceScore}>{Math.round(balance.overall_balance_pct)}%</Text>
+              </View>
+
+              {balance.joint_checks.map((jc) => {
+                const color = riskColor(severityStatus(jc.severity));
+                return (
+                  <View key={jc.id} style={[styles.jointRow, jc.informational && styles.jointRowInformational]}>
+                    <View style={styles.jointTop}>
+                      <Text style={styles.jointLabel} numberOfLines={1}>{jc.label}</Text>
+                      <Text style={[styles.jointPct, { color }]}>{Math.round(jc.balance_pct)}%</Text>
+                    </View>
+                    <View style={styles.jointTrack}>
+                      <View style={[styles.jointFill, { width: `${Math.max(0, Math.min(100, jc.balance_pct))}%`, backgroundColor: color }]} />
+                    </View>
+                  </View>
+                );
+              })}
             </View>
+          )}
 
-            {balance.joint_checks.map((jc) => {
-              const color = riskColor(severityStatus(jc.severity));
-              return (
-                <View key={jc.id} style={[styles.jointRow, jc.informational && styles.jointRowInformational]}>
-                  <View style={styles.jointTop}>
-                    <Text style={styles.jointLabel} numberOfLines={1}>{jc.label}</Text>
-                    <Text style={[styles.jointPct, { color }]}>{Math.round(jc.balance_pct)}%</Text>
+          {rom && (
+            <View style={styles.balanceCard}>
+              <View style={styles.balanceHead}>
+                <Text style={styles.balanceTitle}>RANGE OF MOTION</Text>
+                <Text style={styles.balanceScore}>{Math.round(rom.overall_rom_pct)}%</Text>
+              </View>
+
+              {rom.joint_checks.map((jc) => {
+                const color = riskColor(severityStatus(jc.severity));
+                return (
+                  <View key={jc.id} style={[styles.jointRow, jc.informational && styles.jointRowInformational]}>
+                    <View style={styles.jointTop}>
+                      <Text style={styles.jointLabel} numberOfLines={1}>{jc.label}</Text>
+                      <Text style={[styles.jointPct, { color }]}>{Math.round(jc.rom_pct)}%</Text>
+                    </View>
+                    <View style={styles.jointTrack}>
+                      <View style={[styles.jointFill, { width: `${Math.max(0, Math.min(100, jc.rom_pct))}%`, backgroundColor: color }]} />
+                    </View>
                   </View>
-                  <View style={styles.jointTrack}>
-                    <View style={[styles.jointFill, { width: `${Math.max(0, Math.min(100, jc.balance_pct))}%`, backgroundColor: color }]} />
-                  </View>
-                </View>
-              );
-            })}
-          </View>
+                );
+              })}
+            </View>
+          )}
         </>
       ) : (
         <View style={styles.noData}>

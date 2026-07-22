@@ -13,20 +13,23 @@ steps: it's called once exercise detection has already produced a joints
 array, an active exercise key, and (via exercises.get_exercise_reps) the
 rep windows for that exercise; it returns the JSON-serializable report.
 
-── Adding a new analysis method (fatigue, range-of-motion, ...) ──────────
+── Adding a new analysis method (fatigue, ...) ────────────────────────────
 1. Add its thresholds to thresholds.py (or a sibling thresholds module,
-   if the new method's tunables don't fit JointBalanceCheck's shape).
+   if the new method's tunables don't fit JointBalanceCheck's shape — see
+   rom_thresholds.py for a worked example of the sibling-module path).
 2. Write a new module (e.g. fatigue.py) with a function
    `analyze_x(joints_np, exercise_key, reps, fps) -> dict | None`.
 3. Add one line to _ANALYZERS below.
 No other file in this package or the rest of the pipeline needs to change —
 this function's signature and the report's top-level shape stay fixed.
 
-`legacy_metrics` (see legacy_metrics.py) is a second analyzer of this kind,
-not a "future" one — it's the compatibility bridge to the retired on-device
-analyzer's readiness score / session_metrics vocabulary that the manager
-module depends on. It's a normal citizen of _ANALYZERS like `balance`, just
-aimed at a different consumer (see its module docstring).
+`legacy_metrics` (see legacy_metrics.py) and `rom` (see rom.py) are further
+analyzers of this kind, not "future" ones — legacy_metrics is the
+compatibility bridge to the retired on-device analyzer's readiness score /
+session_metrics vocabulary the manager module depends on; rom scores how
+much of each exercise's expected joint range of motion a rep actually
+achieved, alongside balance's left/right symmetry. Both are normal citizens
+of _ANALYZERS like `balance`, just aimed at different questions.
 """
 from __future__ import annotations
 
@@ -34,10 +37,11 @@ import numpy as np
 
 from exercises import get_exercise_reps
 
-from . import balance, legacy_metrics
+from . import balance, legacy_metrics, rom
 
 _ANALYZERS = {
     "balance": balance.analyze_balance,
+    "rom": rom.analyze_rom,
     "legacy_metrics": legacy_metrics.analyze_legacy_metrics,
 }
 

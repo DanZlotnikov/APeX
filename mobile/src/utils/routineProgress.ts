@@ -28,7 +28,7 @@
 import { SessionHistoryEntry } from '../api/sessions';
 import { RoutineSetting } from '../api/routine';
 import { VideoJob } from '../api/videoJobs';
-import { exerciseLabel, resolveJobExerciseKey } from './pipelineExercise';
+import { exerciseLabel, readinessPctFromAnalysis, resolveJobExerciseKey } from './pipelineExercise';
 
 export interface RoutineProgressRow {
   exerciseType: string;
@@ -72,8 +72,8 @@ export function computeRoutineProgress(
       totalReps += job.analysis?.rep_count ?? 0;
       if (latestRecordedAt == null || job.recordedAt > latestRecordedAt) {
         latestRecordedAt = job.recordedAt;
-        const balancePct = job.analysis?.analyses?.balance?.overall_balance_pct;
-        latestReadinessPct = balancePct != null ? Math.round(balancePct) : null;
+        const readinessPct = readinessPctFromAnalysis(job.analysis);
+        latestReadinessPct = readinessPct != null ? Math.round(readinessPct) : null;
       }
     }
 

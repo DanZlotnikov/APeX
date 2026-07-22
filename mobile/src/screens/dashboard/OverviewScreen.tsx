@@ -13,7 +13,7 @@ import { useSettings } from '../../state/SettingsContext';
 import { useVideoJobsContext } from '../../state/VideoJobsContext';
 import { mean } from '../../utils/history';
 import { ExerciseKey } from '../../utils/exerciseMetrics';
-import { exerciseLabel } from '../../utils/pipelineExercise';
+import { exerciseLabel, readinessPctFromAnalysis } from '../../utils/pipelineExercise';
 import { computeRoutineProgress } from '../../utils/routineProgress';
 import { StatDelta } from '../../utils/stats';
 import { formatHeight, formatWeight } from '../../utils/units';
@@ -41,11 +41,11 @@ function resolveTaskStatus(key: ExerciseKey, dbState: ExerciseReadiness, todaysJ
     if (job.status === 'failed') return { kind: 'failed' };
     if (job.status === 'completed') {
       const legacy = job.analysis?.analyses?.legacy_metrics;
-      const balancePct = job.analysis?.analyses?.balance?.overall_balance_pct;
+      const readinessPct = readinessPctFromAnalysis(job.analysis);
       const actualKey = legacy?.legacy_exercise_key ?? job.exerciseType;
-      // "Readiness" is the balance score, not the legacy formula's score —
-      // see migration 011 / BiomechanicsReport's readinessLabelFor.
-      if (actualKey === key) return { kind: 'done', readinessPct: balancePct != null ? Math.round(balancePct) : null };
+      // "Readiness" is the balance+ROM average, not the legacy formula's
+      // score — see migration 016 / pipelineExercise's readinessPctFromAnalysis.
+      if (actualKey === key) return { kind: 'done', readinessPct: readinessPct != null ? Math.round(readinessPct) : null };
       return { kind: 'mismatch', actualLabel: exerciseLabel(actualKey) };
     }
   }

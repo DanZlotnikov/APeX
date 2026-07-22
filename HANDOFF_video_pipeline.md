@@ -44,7 +44,7 @@ The first draft of this handoff under-specified three things the application Cla
 Three things landed before this handoff, all already tested end-to-end on real sample videos:
 
 1. **GEM-based pose pipeline** (`backend/GENMO/`): video → 3D pose (NVIDIA GEM) → exercise detection/rep-counting for 6 exercises (squat, deadlift, vertical_jump, pull_up, push_up, ab_crunch) → two-panel render (original | skeleton+counter).
-2. **Biomechanical analysis** (`backend/GENMO/scripts/biomechanics/`): an extensible orchestrator (`analysis.py`) that currently runs two analyzers once exercise detection succeeds — `balance` (new: a left/right symmetry score, built for the new Performance/Processing UI) and `legacy_metrics` (new: the manager-module compatibility bridge, see section 3.4). Report shape (this is what ends up in `video_jobs.analysis_json`, see section 3.1):
+2. **Biomechanical analysis** (`backend/GENMO/scripts/biomechanics/`): an extensible orchestrator (`analysis.py`) that currently runs three analyzers once exercise detection succeeds — `balance` (a left/right symmetry score), `rom` (a range-of-motion score: how much of each exercise's expected joint excursion a rep actually achieved, 1-2 main joints per exercise — see `rom_thresholds.py` for the per-exercise research citations), and `legacy_metrics` (the manager-module compatibility bridge, see section 3.4). `balance` and `rom` are both built for the new Performance/Processing UI and are averaged together into `sessions.readiness_score` at save time (migration 016). Report shape (this is what ends up in `video_jobs.analysis_json`, see section 3.1):
    ```jsonc
    {
      "exercise": "squat",              // or null if nothing was confidently detected
@@ -70,6 +70,28 @@ Three things landed before this handoff, all already tested end-to-end on real s
          ],
          "at_risk_joints": [ /* flattened list of every rep that hit "at_risk", with id/label/joints/rep/frame/asymmetry_pct */ ]
        },
+       "rom": {
+         "method": "range_of_motion",
+         "overall_rom_pct": 88.1,               // 0-100, higher = closer to (or beyond) the expected joint excursion
+         "rep_count": 4,
+         "joint_checks": [
+           {
+             "id": "knee_flexion", "label": "Knee flexion", "joint": "KNEE",  // single joint, not an L/R pair — this is bilateral-average achieved-vs-expected, not a symmetry comparison
+             "informational": false,
+             "target_rom_deg": 90.0,             // literature-derived expected degrees of angle change, start-frame to bottom-frame (see rom_thresholds.py)
+             "rom_pct": 88.1,
+             "severity": "ok",                    // same "ok"|"watch"|"at_risk" vocabulary as balance, but inverted: LOWER rom_pct is worse
+             "watch_threshold_pct": 80.0, "at_risk_threshold_pct": 60.0,
+             "reps": [ { "rep": 0, "start_frame": 12, "end_frame": 40, "l_deg": 79.3, "r_deg": 80.1, "achieved_deg": 79.7, "rom_pct": 88.6, "severity": "ok" }, ... ]
+           }
+           // 1-2 main joints per exercise: squat (knee_flexion + hip_flexion, informational), deadlift (hip_hinge only —
+           // deliberately no knee check, since a good deadlift keeps knee flexion small), vertical_jump (landing_flexion —
+           // reads start->end, not start->bottom: a FLIGHT_PHASE rep's "bottom" is the peak of the flight-height signal,
+           // not the countermovement crouch, which happens before the rep window even starts), pull_up/push_up
+           // (elbow_flexion), ab_crunch (trunk_flexion, reusing hip_angle read in a lying-down context, same as balance's check)
+         ],
+         "limited_joints": [ /* flattened list of every rep that hit "at_risk", with id/label/joint/rep/achieved_deg/rom_pct */ ]
+       },
        "legacy_metrics": {                       // present ONLY for squat/vertical_jump/pull_up — see section 3.4
          "legacy_exercise_key": "squat",          // "squat" | "jump" | "pullup" — already renamed to mobile's old vocabulary
          "readiness_score": 97,                   // 0-100, same weighted-average formula the old on-device analyzer used
@@ -81,7 +103,7 @@ Three things landed before this handoff, all already tested end-to-end on real s
            { "metric_key": "squat_fatigue", "value": 13 }
          ]
        }
-       // future methods (fatigue, range-of-motion) will appear as sibling keys here, same shape convention
+       // future methods (fatigue, ...) will appear as sibling keys here, same shape convention
      }
    }
    ```
@@ -184,7 +206,7 @@ Storage RLS: athletes can `insert`/`select`/`delete` objects under `raw/{their o
 
 - `cancel_video_job(job_id uuid)` — verifies `athlete_id = auth.uid()`. If `status = 'queued'`, deletes the row immediately (the worker hasn't touched it yet, nothing to signal). If `status = 'processing'`, sets `cancel_requested = true` and leaves the row for the worker to delete once it notices (see the two-checkpoint cancellation behavior in `supabase_worker.py`). The app should optimistically hide rows with `cancel_requested = true` from its UI rather than waiting for the row to actually disappear.
 - `discard_video_job(job_id uuid)` — verifies ownership and `status = 'completed'`, deletes the row. (The app deletes the two storage objects itself via the Storage RLS in 3.2 — no need for this RPC to touch storage.)
-- `save_video_job(job_id uuid)` — verifies ownership and `status = 'completed'`, inserts a `sessions` row from the job's data (see 3.4 for exactly which fields, now resolved), then deletes the `video_jobs` row.
+- `save_video_job(job_id uuid)` — verifies ownership and `status = 'completed'`, inserts (or, for a same-day repeat of the same exercise, accumulates into — see migration 015) a `sessions` row from the job's data (see 3.4 for exactly which fields, now resolved), then deletes the `video_jobs` row. `sessions.readiness_score` is `analyses.balance.overall_balance_pct` and `analyses.rom.overall_rom_pct` averaged together (migration 016) — whichever one is present if only one analyzer produced a result.
 
 A single `remove_video_job(job_id uuid)` that branches internally on the row's current status (queued/processing → same as `cancel_video_job`; completed/failed → same as `discard_video_job`) is a reasonable simplification if you'd rather the app call one function regardless of which tab triggered it — your call.
 

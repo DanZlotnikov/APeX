@@ -46,6 +46,44 @@ export interface BalanceReport {
   at_risk_joints: unknown[];
 }
 
+export interface JointRomCheckRep {
+  rep: number;
+  start_frame: number;
+  end_frame: number;
+  l_deg: number;
+  r_deg: number;
+  achieved_deg: number;
+  rom_pct: number;
+  severity: 'ok' | 'watch' | 'at_risk';
+}
+
+// Mirrors JointCheck's shape (see biomechanics/rom.py, a sibling analyzer
+// to balance.py) but scores achieved-vs-expected range of motion for one
+// joint (bilateral average) rather than an L/R symmetry comparison — there's
+// no `joints` pair or `metric`/`asymmetry_pct` here since this isn't an
+// interlimb comparison, and severity runs the opposite direction (higher
+// rom_pct = better, so LOWER values are what trip watch/at_risk).
+export interface JointRomCheck {
+  id: string;
+  label: string;
+  joint: string;
+  informational: boolean;
+  target_rom_deg: number;
+  rom_pct: number;
+  severity: 'ok' | 'watch' | 'at_risk';
+  watch_threshold_pct: number;
+  at_risk_threshold_pct: number;
+  reps: JointRomCheckRep[];
+}
+
+export interface RomReport {
+  method: string;
+  overall_rom_pct: number;
+  rep_count: number;
+  joint_checks: JointRomCheck[];
+  limited_joints: unknown[];
+}
+
 export interface LegacyMetricsReport {
   legacy_exercise_key: ExerciseKey;
   readiness_score: number;
@@ -59,6 +97,7 @@ export interface VideoJobAnalysis {
   rep_count: number;
   analyses: {
     balance?: BalanceReport;
+    rom?: RomReport;
     legacy_metrics?: LegacyMetricsReport;
   };
 }
@@ -147,7 +186,14 @@ export function subscribeToVideoJobs(athleteId: string, onChange: () => void): (
 
 // RFC4122 v4 UUID via Math.random() — no crypto dependency needed. Not
 // security-sensitive: this only ever becomes a job id.
-function randomUUID(): string {
+//
+// Exported so a caller can generate the id BEFORE calling
+// uploadAndQueueVideoJob (see App.tsx's handleVideoConfirmed) and reuse it
+// for an optimistic local-upload entry (state/localUploads.ts) — the real
+// video_jobs row ends up with the exact same id, so the local entry can be
+// pruned the instant the real row appears instead of needing a separate
+// "which local entry does this new row correspond to" matching step.
+export function generateJobId(): string {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
     const r = (Math.random() * 16) | 0;
     const v = c === 'x' ? r : (r & 0x3) | 0x8;
@@ -207,15 +253,18 @@ const VIDEO_MIME_BY_EXT: Record<string, string> = {
 // filename regardless of this extension, so it's safe to reflect the
 // clip's real container here rather than hardcoding .mp4). targetExerciseKey
 // is set when this recording was made for a specific Today's Task tile;
-// omit/null for a free record/upload.
+// omit/null for a free record/upload. jobId: pass a pre-generated one (see
+// generateJobId) to reuse across an optimistic local-upload entry and this
+// call's real row; omitted/undefined generates a fresh one as before.
 export async function uploadAndQueueVideoJob(params: {
   athleteId: string;
   localUri: string;
   durationSec: number;
   targetExerciseKey?: ExerciseKey | null;
+  jobId?: string;
 }): Promise<VideoJob> {
   const { athleteId, localUri, durationSec, targetExerciseKey } = params;
-  const jobId = randomUUID();
+  const jobId = params.jobId ?? generateJobId();
   const ext = (localUri.split('.').pop()?.split('?')[0] || 'mp4').toLowerCase();
   const contentType = VIDEO_MIME_BY_EXT[ext] ?? 'video/mp4';
   const path = `raw/${athleteId}/${jobId}.${ext}`;
