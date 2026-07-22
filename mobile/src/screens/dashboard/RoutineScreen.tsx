@@ -1,8 +1,9 @@
 import { useFocusEffect } from '@react-navigation/native';
 import React, { useCallback, useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { getRoutine, RoutineSetting, setRoutineExercise } from '../../api/routine';
 import RepStepper from '../../components/RepStepper';
+import Toggle from '../../components/Toggle';
 import { useSettings } from '../../state/SettingsContext';
 import { exerciseLabel, PIPELINE_EXERCISE_KEYS, PipelineExerciseKey } from '../../utils/pipelineExercise';
 import { colors, spacing } from '../../theme';
@@ -82,13 +83,12 @@ export default function RoutineScreen({ userId, teamId }: Props) {
             return (
               <View key={key} style={styles.card}>
                 <View style={styles.headerRow}>
-                  <Text style={styles.exerciseLabel}>{exerciseLabel(key)}</Text>
-                  <Switch
+                  <Text style={[styles.exerciseLabel, !setting.enabled && styles.exerciseLabelOff]}>{exerciseLabel(key)}</Text>
+                  <Toggle
                     value={setting.enabled}
                     onValueChange={(v) => void updateSetting(key, { enabled: v })}
                     disabled={readOnly}
-                    trackColor={{ false: colors.toggleOff, true: accentColor }}
-                    thumbColor={colors.surfaceHigh}
+                    accentColor={accentColor}
                   />
                 </View>
 
@@ -133,6 +133,7 @@ const styles = StyleSheet.create({
   },
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   exerciseLabel: { color: colors.text, fontSize: 16, fontWeight: '800' },
+  exerciseLabelOff: { color: colors.muted },
 
   stepperBlock: { flexDirection: 'row', alignItems: 'center', marginTop: spacing.md },
   repsCaption: { color: colors.muted, fontSize: 10, fontWeight: '700', letterSpacing: 1.2, marginLeft: spacing.sm },

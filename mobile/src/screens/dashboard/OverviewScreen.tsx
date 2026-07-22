@@ -222,12 +222,15 @@ export default function OverviewScreen({ userId, teamId, onSelectTask }: Props) 
           ) : (
             <>
               <View style={styles.bigRow}>
-                <Text style={[styles.big, { color: accentColor }]}>{routineProgress.completedPct}</Text>
-                <Text style={[styles.bigPct, { color: accentColor }]}>%</Text>
+                <Text style={[
+                  styles.big,
+                  { color: routineProgress.completedCount >= routineProgress.requiredCount ? accentColor : colors.text },
+                ]}>
+                  {routineProgress.completedCount}
+                </Text>
+                <Text style={[styles.big, { color: accentColor }]}>/{routineProgress.requiredCount}</Text>
               </View>
-              <Text style={styles.routineSub}>
-                {routineProgress.completedCount} of {routineProgress.requiredCount} exercises complete today
-              </Text>
+              <Text style={styles.routineSub}>exercises completed today</Text>
 
               <View style={styles.routineHeaderRow}>
                 <Text style={[styles.routineHeaderCell, styles.routineExerciseCol]}>EXERCISE</Text>

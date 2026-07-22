@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { Animated, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import Toggle from '../../components/Toggle';
 import { useSettings } from '../../state/SettingsContext';
 import { ACCENTS, AccentKey, colors, FontScaleKey, spacing } from '../../theme';
 import { heightInputToCm, weightInputToKg } from '../../utils/units';
@@ -97,11 +98,10 @@ export default function SettingsScreen() {
         <View style={styles.card}>
           <View style={styles.switchRow}>
             <Text style={styles.rowLabel}>Sound effects</Text>
-            <Switch
+            <Toggle
               value={settings.sound}
               onValueChange={(v) => update({ sound: v })}
-              trackColor={{ true: accentColor, false: colors.surfaceHigh }}
-              thumbColor="#fff"
+              accentColor={accentColor}
             />
           </View>
 

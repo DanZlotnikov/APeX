@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Animated, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { getTeamInviteCode, getTeamName, regenerateInviteCode } from '../../api/teams';
+import Toggle from '../../components/Toggle';
 import { useSettings } from '../../state/SettingsContext';
 import { ACCENTS, AccentKey, colors, FontScaleKey, spacing } from '../../theme';
 
@@ -131,11 +132,10 @@ export default function ManagerSettings({ teamId }: Props) {
           <View style={styles.card}>
             <View style={styles.switchRow}>
               <Text style={styles.rowLabel}>Sound effects</Text>
-              <Switch
+              <Toggle
                 value={settings.sound}
                 onValueChange={(v) => update({ sound: v })}
-                trackColor={{ true: accentColor, false: colors.surfaceHigh }}
-                thumbColor="#fff"
+                accentColor={accentColor}
               />
             </View>
 

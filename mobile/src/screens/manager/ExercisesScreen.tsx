@@ -4,12 +4,12 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   TextInput,
   View,
 } from 'react-native';
 import { getTeamAthletes } from '../../api/athletes';
+import Toggle from '../../components/Toggle';
 import { getEffectiveAssignments, getTeamExercises, setAssignmentOverride, TeamExerciseConfig, updateTeamExercise } from '../../api/exercises';
 import { colors, spacing } from '../../theme';
 import { EXERCISE_KEYS, EXERCISE_LABELS, EXERCISE_METRICS, ExerciseKey } from '../../utils/exerciseMetrics';
@@ -148,11 +148,9 @@ function ExerciseCard({
     <View style={styles.card}>
       <View style={styles.cardHead}>
         <Text style={styles.exerciseTitle}>{EXERCISE_LABELS[config.exerciseKey]}</Text>
-        <Switch
+        <Toggle
           value={config.enabled}
           onValueChange={(v) => onChange({ enabled: v })}
-          trackColor={{ true: colors.primary, false: colors.surfaceHigh }}
-          thumbColor="#fff"
         />
       </View>
 

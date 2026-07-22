@@ -6,16 +6,18 @@
  *   - todaysCompletedJobs: today's completed-but-not-yet-saved video_jobs
  *     (VideoJobsContext's `jobs`, filtered to status === 'completed')
  *
- * Reps accumulate across every attempt at an exercise today, not just the
- * latest one — mirroring save_video_job's same-day accumulate behavior
- * (migration 015: multiple saves of the same exercise on the same day sum
- * their rep counts into one session instead of the later one replacing the
- * earlier). This function sums today's saved session's rep_count (already a
- * running total server-side) with every completed-but-not-yet-saved job's
- * reps, so the count here matches what saving those jobs will actually
- * produce, before the athlete even taps Save. If the athlete discards a
- * completed job, it's deleted and never becomes a session, so it naturally
- * drops out of the total.
+ * Reps shown are the TOTAL across every separate attempt at an exercise
+ * today, not just the latest one — but each attempt is (as of migration
+ * 017) its own permanent, separate `sessions` row; there is no server-side
+ * pre-summed running total to read anymore (migration 015/016's same-day
+ * MERGE behavior was reverted after it turned out not to be what was
+ * wanted — it silently overwrote each attempt's own video/report with the
+ * next one's, which read as "the same video, but reps keep counting up").
+ * So this sums across every matching session today itself, plus every
+ * completed-but-not-yet-saved job's reps, so the total here matches what
+ * saving those jobs will actually add up to before the athlete even taps
+ * Save. If the athlete discards a completed job, it's deleted and never
+ * becomes a session, so it naturally drops out of the total.
  *
  * An exercise counts as "completed" once that running total meets the daily
  * target, not merely once something was attempted — 3 reps against a
@@ -60,11 +62,15 @@ export function computeRoutineProgress(
     let latestRecordedAt: string | null = null;
     let latestReadinessPct: number | null = null;
 
-    const session = todaysSessions.find((s) => s.exerciseType === setting.exerciseType);
-    if (session) {
+    // Every attempt today is its own separate session row (migration 017)
+    // — sum across ALL of them, not just the first/only match.
+    for (const session of todaysSessions) {
+      if (session.exerciseType !== setting.exerciseType) continue;
       totalReps += session.repCount;
-      latestRecordedAt = session.recordedAt;
-      latestReadinessPct = session.readinessScore;
+      if (latestRecordedAt == null || session.recordedAt > latestRecordedAt) {
+        latestRecordedAt = session.recordedAt;
+        latestReadinessPct = session.readinessScore;
+      }
     }
 
     for (const job of todaysCompletedJobs) {
