@@ -3,7 +3,8 @@ import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { getAthleteById } from '../../api/athletes';
 import { getTeamExercises } from '../../api/exercises';
-import { getSessionHistory } from '../../api/sessions';
+import { getRoutine, RoutineSetting } from '../../api/routine';
+import { getSessionHistory, SessionHistoryEntry } from '../../api/sessions';
 import { AthleteViewModel, ExerciseReadiness, TargetExercise } from '../../api/types';
 import { VideoJob } from '../../api/videoJobs';
 import LineTrend from '../../components/charts/LineTrend';
@@ -13,6 +14,7 @@ import { useVideoJobsContext } from '../../state/VideoJobsContext';
 import { mean } from '../../utils/history';
 import { ExerciseKey } from '../../utils/exerciseMetrics';
 import { exerciseLabel } from '../../utils/pipelineExercise';
+import { computeRoutineProgress } from '../../utils/routineProgress';
 import { StatDelta } from '../../utils/stats';
 import { formatHeight, formatWeight } from '../../utils/units';
 import { colors, spacing } from '../../theme';
@@ -62,7 +64,8 @@ interface Props {
 
 export default function OverviewScreen({ userId, teamId, onSelectTask }: Props) {
   const { profile, settings, accentColor } = useSettings();
-  const [sessionCount, setSessionCount] = useState(0);
+  const [sessions, setSessions]       = useState<SessionHistoryEntry[]>([]);
+  const [routine, setRoutine]         = useState<RoutineSetting[]>([]);
   const [athlete, setAthlete]         = useState<AthleteViewModel | null>(null);
   const [minRepsByKey, setMinRepsByKey] = useState<Partial<Record<ExerciseKey, number>>>({});
   const [loading, setLoading]         = useState(true);
@@ -70,6 +73,9 @@ export default function OverviewScreen({ userId, teamId, onSelectTask }: Props) 
 
   const todayUtc = new Date().toISOString().slice(0, 10);
   const todaysJobs = jobs.filter((j) => !!j.targetExerciseKey && j.recordedAt.startsWith(todayUtc));
+  const todaysSessions = sessions.filter((s) => s.recordedAt.startsWith(todayUtc));
+  const todaysCompletedJobs = jobs.filter((j) => j.status === 'completed' && j.recordedAt.startsWith(todayUtc));
+  const routineProgress = computeRoutineProgress(routine, todaysSessions, todaysCompletedJobs);
 
   // Refetch on every focus (not just mount) so completing a task and coming
   // back from AnalysisScreen shows it as done immediately, alongside every
@@ -79,10 +85,14 @@ export default function OverviewScreen({ userId, teamId, onSelectTask }: Props) 
       let active = true;
       if (userId) {
         getSessionHistory(userId)
-          .then((s) => active && setSessionCount(s.length))
-          .catch((e) => console.warn('[APeX] Failed to load session count:', e));
+          .then((s) => active && setSessions(s))
+          .catch((e) => console.warn('[APeX] Failed to load session history:', e));
+        getRoutine(userId)
+          .then((r) => active && setRoutine(r))
+          .catch((e) => console.warn('[APeX] Failed to load routine:', e));
       } else {
-        setSessionCount(0);
+        setSessions([]);
+        setRoutine([]);
       }
 
       // getAthleteById works with no team (an individual athlete just has no
@@ -143,7 +153,7 @@ export default function OverviewScreen({ userId, teamId, onSelectTask }: Props) 
         <View style={styles.profileRow}>
           <ProfileStat label="HEIGHT" value={formatHeight(profile.heightCm, settings.units)} />
           <ProfileStat label="WEIGHT" value={formatWeight(profile.weightKg, settings.units)} />
-          <ProfileStat label="SESSIONS" value={String(sessionCount)} />
+          <ProfileStat label="SESSIONS" value={String(sessions.length)} />
         </View>
 
         {!!athlete?.perExerciseReadiness.length && (
@@ -202,6 +212,41 @@ export default function OverviewScreen({ userId, teamId, onSelectTask }: Props) 
             </>
           ) : (
             <Text style={styles.empty}>No sessions yet. Complete a required exercise to start tracking your readiness.</Text>
+          )}
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>TODAY'S ROUTINE</Text>
+          {routineProgress.requiredCount === 0 ? (
+            <Text style={styles.empty}>No exercises in your routine yet. Set one up in the Routine tab.</Text>
+          ) : (
+            <>
+              <View style={styles.bigRow}>
+                <Text style={[styles.big, { color: accentColor }]}>{routineProgress.completedPct}</Text>
+                <Text style={[styles.bigPct, { color: accentColor }]}>%</Text>
+              </View>
+              <Text style={styles.routineSub}>
+                {routineProgress.completedCount} of {routineProgress.requiredCount} exercises complete today
+              </Text>
+
+              <View style={styles.routineHeaderRow}>
+                <Text style={[styles.routineHeaderCell, styles.routineExerciseCol]}>EXERCISE</Text>
+                <Text style={[styles.routineHeaderCell, styles.routineRepsCol]}>REPS</Text>
+                <Text style={[styles.routineHeaderCell, styles.routineReadinessCol]}>READINESS</Text>
+              </View>
+              {routineProgress.rows.map((row) => (
+                <View key={row.exerciseType} style={styles.routineRow}>
+                  <View style={styles.routineExerciseCol}>
+                    <View style={[styles.taskDot, row.completed && styles.taskDotDone]} />
+                    <Text style={styles.routineExerciseLabel} numberOfLines={1}>{row.label}</Text>
+                  </View>
+                  <Text style={[styles.routineCell, styles.routineRepsCol]}>{row.completedReps}/{row.targetReps}</Text>
+                  <Text style={[styles.routineCell, styles.routineReadinessCol]}>
+                    {row.readinessPct != null ? `${row.readinessPct}%` : '—'}
+                  </Text>
+                </View>
+              ))}
+            </>
           )}
         </View>
 
@@ -282,6 +327,19 @@ const styles = StyleSheet.create({
   bigRow: { flexDirection: 'row', alignItems: 'flex-start', marginTop: spacing.sm },
   big: { fontSize: 52, fontWeight: '900', lineHeight: 56 },
   bigPct: { fontSize: 20, fontWeight: '800', marginTop: 4, marginLeft: 2 },
+
+  routineSub: { color: colors.muted, fontSize: 12, fontWeight: '600', marginTop: 2, marginBottom: spacing.sm },
+  routineHeaderRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border,
+  },
+  routineHeaderCell: { color: colors.muted, fontSize: 9, fontWeight: '700', letterSpacing: 1 },
+  routineRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.sm },
+  routineCell: { color: colors.text, fontSize: 13, fontWeight: '700' },
+  routineExerciseCol: { flex: 2, flexDirection: 'row', alignItems: 'center' },
+  routineExerciseLabel: { color: colors.text, fontSize: 13, fontWeight: '700', flexShrink: 1 },
+  routineRepsCol: { flex: 1, textAlign: 'center' },
+  routineReadinessCol: { flex: 1, textAlign: 'right' },
 
   miniStats: { flexDirection: 'row', marginTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.md },
   mStat: { flex: 1, alignItems: 'center' },

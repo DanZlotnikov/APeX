@@ -9,6 +9,12 @@ export const colors = {
   danger: '#FF3B30',
   warning: '#F5A623',
   border: '#1C2E40',
+  // Plain light gray for an "off" toggle track — colors.border/.muted are
+  // dark, desaturated navy-grays tuned to sit ON the dark background, which
+  // reads as barely-there when used for an interactive control's off state
+  // instead of as structure (a divider/label). This needs to look distinctly
+  // "off but visible," not blend into the bg.
+  toggleOff: '#8A93A3',
 };
 
 // Maps a readiness/risk status to its display color.

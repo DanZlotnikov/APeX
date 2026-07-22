@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AppBar from './dashboard/AppBar';
 import OverviewScreen from './dashboard/OverviewScreen';
 import PerformanceScreen, { PerformanceSub } from './dashboard/PerformanceScreen';
+import RoutineScreen from './dashboard/RoutineScreen';
 import SettingsScreen from './dashboard/SettingsScreen';
 import { TargetExercise } from '../api/types';
 import ProcessingBanner from '../components/ProcessingBanner';
@@ -16,7 +17,7 @@ import { colors } from '../theme';
 const Tab = createBottomTabNavigator();
 
 // ︎ = variation selector-15: forces text rendering, prevents iOS emoji substitution
-const GLYPH: Record<string, string> = { Overview: '◉︎', Performance: '≡︎' };
+const GLYPH: Record<string, string> = { Overview: '◉︎', Performance: '≡︎', Routine: '☑︎' };
 
 const navTheme = {
   ...DarkTheme,
@@ -90,6 +91,9 @@ export default function DashboardScreen({ userId, teamId, onRecord, onUpload, on
             </Tab.Screen>
             <Tab.Screen name="Performance">
               {() => <PerformanceScreen userId={userId} sub={performanceSub} onSubChange={setPerformanceSub} />}
+            </Tab.Screen>
+            <Tab.Screen name="Routine">
+              {() => <RoutineScreen userId={userId} teamId={teamId} />}
             </Tab.Screen>
           </Tab.Navigator>
         </NavigationContainer>
