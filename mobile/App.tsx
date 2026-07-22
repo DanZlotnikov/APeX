@@ -8,7 +8,7 @@ import { getAthleteById } from './src/api/athletes';
 import { addNotificationTapListener, registerForPushNotifications } from './src/api/pushNotifications';
 import { syncLocalDataFromServer } from './src/api/sync';
 import { AthleteViewModel, TargetExercise } from './src/api/types';
-import { uploadAndQueueVideoJob } from './src/api/videoJobs';
+import { generateJobId, uploadAndQueueVideoJob } from './src/api/videoJobs';
 import CameraScreen from './src/screens/CameraScreen';
 import DashboardScreen from './src/screens/DashboardScreen';
 import LoginScreen from './src/screens/LoginScreen';
@@ -17,6 +17,7 @@ import AthleteDetailPreview from './src/screens/manager/AthleteDetailPreview';
 import ManagerHome from './src/screens/manager/ManagerHome';
 import ManagerSettings from './src/screens/manager/ManagerSettings';
 import ManagerTopBar from './src/screens/manager/ManagerTopBar';
+import { addLocalUpload, markLocalUploadFailed } from './src/state/localUploads';
 import { SettingsProvider, useSettings } from './src/state/SettingsContext';
 import { VideoJobsProvider } from './src/state/VideoJobsContext';
 import { ConfirmDialogHost } from './src/utils/confirm';
@@ -188,22 +189,60 @@ function AppInner() {
     setAthleteScreen('camera');
   }
 
-  // Upload + queue a video_jobs row for the server-side pipeline (see
-  // api/videoJobs.ts / HANDOFF_video_pipeline.md) — no more on-device
-  // analysis or synchronous "analysis" screen. Errors are left to propagate
-  // so CameraScreen's own confirm handler can catch them and show its error
-  // banner instead of the recording flow silently losing the clip.
-  async function handleVideoConfirmed(uri: string, durationSec: number) {
-    if (!userId) throw new Error('Not signed in.');
-    await uploadAndQueueVideoJob({
-      athleteId: userId,
-      localUri: uri,
-      durationSec,
-      targetExerciseKey: targetExercise?.key ?? null,
-    });
+  // Tapping confirm (✓) on the review screen returns to the dashboard
+  // immediately — the upload + video_jobs insert (api/videoJobs.ts /
+  // HANDOFF_video_pipeline.md) runs in the background, not awaited by the
+  // caller. CameraScreen used to await this and block the review screen on
+  // the network round-trip; now it doesn't wait at all, so this function is
+  // synchronous from CameraScreen's point of view. Local values that
+  // setTargetExercise(null)/etc. below would otherwise clear are captured
+  // into consts first.
+  //
+  // The job id is generated HERE, up front, instead of letting
+  // uploadAndQueueVideoJob generate its own — addLocalUpload registers an
+  // optimistic "N videos processing" entry under that id the instant this
+  // runs (state/localUploads.ts; this component isn't a descendant of
+  // VideoJobsProvider so it can't use the context directly), and reusing
+  // the same id for the real row means useVideoJobs.ts can hand off from
+  // the loader placeholder to the real card by id, not by some separate
+  // matching heuristic.
+  function handleVideoConfirmed(uri: string, durationSec: number) {
+    if (!userId) {
+      Alert.alert('Not signed in', 'Please sign in again and try recording once more.');
+      return;
+    }
+    const athleteId = userId;
+    const targetExerciseKey = targetExercise?.key ?? null;
+    const jobId = generateJobId();
+
     setUploadedUri(null);
     setTargetExercise(null);
     setAthleteScreen('dashboard');
+
+    addLocalUpload({ id: jobId, durationSec, targetExerciseKey });
+
+    void (async () => {
+      try {
+        await uploadAndQueueVideoJob({ jobId, athleteId, localUri: uri, durationSec, targetExerciseKey });
+        // Deliberately does NOT call removeLocalUpload here on success.
+        // This component isn't a descendant of VideoJobsProvider, so it has
+        // no way to push the freshly-uploaded real job into the shared
+        // `jobs` array directly — only useVideoJobs.ts's refetch (Realtime-
+        // triggered, confirmed to sometimes take 5-6s end to end) can do
+        // that. Removing the local upload's "processing" contribution the
+        // instant THIS call resolves, ahead of that, would drop
+        // processingCount to 0 for however long Realtime takes to catch up
+        // — a real, confirmed-possible flicker, not a theoretical one.
+        // Leaving it in place until useVideoJobs.ts's own reconciliation
+        // (which prunes a local upload the moment a real job with the same
+        // id shows up in `jobs`, in the very same refetch that adds it)
+        // guarantees zero gap: the local "processing" slot only clears at
+        // the exact moment the real one takes over.
+      } catch (e) {
+        console.warn('[APeX] Background video upload failed:', e);
+        markLocalUploadFailed(jobId, e instanceof Error ? e.message : 'Upload failed');
+      }
+    })();
   }
 
   function handleAthleteLogout() {

@@ -15,10 +15,13 @@
 import React, { createContext, useContext } from 'react';
 import { useVideoJobs } from '../hooks/useVideoJobs';
 import { VideoJob } from '../api/videoJobs';
+import { LocalUpload } from './localUploads';
 
 interface VideoJobsContextValue {
   jobs: VideoJob[];
   loading: boolean;
+  // Includes both real "live" video_jobs rows and any upload still in
+  // flight (see state/localUploads.ts) — the count the banner/tab label show.
   processingCount: number;
   refetch: () => Promise<void>;
   // Instantly excludes a job from processingCount (but not from `jobs`
@@ -31,6 +34,18 @@ interface VideoJobsContextValue {
   // Confirmed removal — splices a job out of the shared `jobs` array. Only
   // call after the action's RPC has actually succeeded.
   removeJobLocally: (jobId: string) => void;
+  // Optimistic client-side uploads not yet (or never) turned into a real
+  // video_jobs row — see state/localUploads.ts. Includes both 'uploading'
+  // and 'failed' entries; ProcessingScreen renders 'uploading' ones as a
+  // loader placeholder, DashboardScreen's failed-upload banner reads
+  // failedUploads below.
+  localUploads: LocalUpload[];
+  failedUploads: LocalUpload[];
+  // Bumped whenever processingCount increases — see useVideoJobs.ts's
+  // header comment on why this lives here rather than as banner-local
+  // state (DashboardScreen/ProcessingBanner remounts when navigating to/
+  // from the camera screen; this provider does not).
+  processingIncreaseSignal: number;
 }
 
 const VideoJobsContext = createContext<VideoJobsContextValue | null>(null);

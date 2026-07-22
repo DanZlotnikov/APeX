@@ -10,6 +10,8 @@ import RoutineScreen from './dashboard/RoutineScreen';
 import SettingsScreen from './dashboard/SettingsScreen';
 import { TargetExercise } from '../api/types';
 import ProcessingBanner from '../components/ProcessingBanner';
+import UploadFailedBanner from '../components/UploadFailedBanner';
+import { removeLocalUploadsByStatus } from '../state/localUploads';
 import { useSettings } from '../state/SettingsContext';
 import { useVideoJobsContext } from '../state/VideoJobsContext';
 import { colors } from '../theme';
@@ -41,7 +43,7 @@ export default function DashboardScreen({ userId, teamId, onRecord, onUpload, on
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [performanceSub, setPerformanceSub] = useState<PerformanceSub>('history');
   const navRef = useNavigationContainerRef();
-  const { processingCount } = useVideoJobsContext();
+  const { processingCount, failedUploads, processingIncreaseSignal } = useVideoJobsContext();
 
   // Floating, fully-rounded tab bar lifted off the bottom edge.
   const tabBarStyle = [styles.tabBar, { marginBottom: (insets.bottom || 0) + 12 }];
@@ -69,7 +71,8 @@ export default function DashboardScreen({ userId, teamId, onRecord, onUpload, on
         settingsOpen={settingsOpen}
         onBack={() => setSettingsOpen(false)}
       />
-      <ProcessingBanner count={processingCount} onPress={goToProcessing} />
+      <ProcessingBanner count={processingCount} onPress={goToProcessing} shineTrigger={processingIncreaseSignal} />
+      <UploadFailedBanner count={failedUploads.length} onDismiss={() => removeLocalUploadsByStatus('failed')} />
       <View style={styles.body}>
         <NavigationContainer ref={navRef} theme={navTheme}>
           <Tab.Navigator

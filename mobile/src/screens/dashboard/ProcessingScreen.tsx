@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, Easing, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import {
   cancelVideoJob, deleteJobStorage, deleteLocalRawVideo, discardVideoJob,
@@ -7,6 +7,7 @@ import {
 import ApexLoader from '../../components/ApexLoader';
 import BiomechanicsReport from '../../components/BiomechanicsReport';
 import VideoPlayer from '../../components/VideoPlayer';
+import { LocalUpload } from '../../state/localUploads';
 import { useSettings } from '../../state/SettingsContext';
 import { useVideoJobsContext } from '../../state/VideoJobsContext';
 import { colors, spacing } from '../../theme';
@@ -24,27 +25,84 @@ function fmtDate(iso: string): string {
 // A short, subtle fade + scale-down on Save/Discard/Remove — a card
 // shouldn't just vanish. Kept deliberately simple (no bounce/slide/color
 // flash): a quick, clean dismiss reads as "handled it" rather than drawing
-// attention to itself. The backend call fires immediately in parallel (see
-// each handler below); only removing the card from the list waits for this
-// to finish, so the tap still feels instant.
+// attention to itself.
+//
+// animatedStyle MUST be memoized (stable object + stable interpolate() node
+// for the component's whole lifetime), not recomputed every render — every
+// card shares one VideoJobsContext whose value object is recreated on any
+// state change anywhere in the video-jobs system, and save/discard/cancel's
+// own row DELETE triggers a Realtime-driven refetch that lands squarely
+// inside this animation's ~180ms window. Confirmed as the cause of a
+// reported "weird, laggy" fade: recreating the style object (and therefore
+// a brand-new interpolation node) on every one of those incidental
+// re-renders forced the native side to re-bind mid-flight instead of
+// playing the animation through untouched, producing a visible stutter.
 function useCardExitAnimation() {
   const progress = useRef(new Animated.Value(1)).current;
 
-  function playExit(onDone: () => void) {
+  function playTo(target: number, onDone?: () => void) {
     Animated.timing(progress, {
-      toValue: 0,
-      duration: 200,
-      easing: Easing.out(Easing.quad),
+      toValue: target,
+      duration: 180,
+      easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
-    }).start(({ finished }) => { if (finished) onDone(); });
+    }).start(({ finished }) => { if (finished && onDone) onDone(); });
   }
 
-  const animatedStyle = {
-    opacity: progress,
-    transform: [{ scale: progress.interpolate({ inputRange: [0, 1], outputRange: [0.95, 1] }) }],
-  };
+  const playExit = (onDone: () => void) => playTo(0, onDone);
+  // Reverses the exit — Animated.timing always animates from wherever
+  // `progress` currently is, so calling this mid-exit smoothly reverses
+  // course rather than jumping; no separate "how far did it get" tracking
+  // needed.
+  const playEnter = () => playTo(1);
 
-  return { animatedStyle, playExit };
+  const animatedStyle = useMemo(() => ({
+    opacity: progress,
+    transform: [{ scale: progress.interpolate({ inputRange: [0, 1], outputRange: [0.96, 1] }) }],
+  }), [progress]);
+
+  return { animatedStyle, playExit, playEnter };
+}
+
+// Starts the exit animation THE INSTANT it's called — not gated on
+// `action` (the Save/Discard/Remove RPC) resolving first — so the tap
+// feels immediate rather than pausing for a network round-trip before
+// anything visibly happens. The animation and the RPC run on independent
+// timelines and are only reconciled at the end: onSuccess fires once BOTH
+// the animation has finished playing AND `action` has resolved
+// successfully, whichever finishes last. That means a fast RPC can never
+// truncate the animation (removeJobLocally never fires before the card has
+// actually finished visually fading), and a slow RPC never sits waiting on
+// an already-finished animation either. On failure, the animation reverses
+// immediately (fades back in, from wherever it currently is) rather than
+// leaving the card looking gone while an error alert pops up separately —
+// exactly the inconsistent-looking state an earlier fix in this file
+// already eliminated for the "wait for RPC first" version; this preserves
+// that guarantee while making the common (success) path feel instant.
+function runExitAnimation(
+  playExit: (onDone: () => void) => void,
+  playEnter: () => void,
+  action: () => Promise<void>,
+  onSuccess: () => void,
+  onFailure: (e: unknown) => void,
+) {
+  let animDone = false;
+  let actionOk = false;
+
+  playExit(() => {
+    animDone = true;
+    if (actionOk) onSuccess();
+  });
+
+  action()
+    .then(() => {
+      actionOk = true;
+      if (animDone) onSuccess();
+    })
+    .catch((e) => {
+      playEnter();
+      onFailure(e);
+    });
 }
 
 // A synchronous reentrancy guard for Save/Discard/Remove — confirmed in
@@ -83,18 +141,22 @@ function isAlreadyHandledError(e: unknown): boolean {
 // Processing tab: every video_jobs row for this athlete, in every state
 // (queued/processing/completed/failed) — see HANDOFF_video_pipeline.md
 // section 4, items 4-7. Saving/discarding/removing all delete the row
-// server-side; each card only disappears once its own action's RPC has
-// actually confirmed success (see removeJobLocally in useVideoJobs.ts) —
-// never optimistically. `jobs` itself is the single, shared, persistent
-// source of truth for what's rendered here (no screen-local "hidden ids"
-// state), so this list is correct even if the tab remounts mid-action —
+// server-side. Each card's own exit animation starts the instant it's
+// tapped (see runExitAnimation) — but the card is only actually spliced
+// out of the shared `jobs` array (removeJobLocally in useVideoJobs.ts)
+// once its RPC has confirmed success, never optimistically: on failure the
+// animation reverses instead. `jobs` itself is the single, shared,
+// persistent source of truth for what's rendered here (no screen-local
+// "hidden ids" state), so this list is correct even if the tab remounts
+// mid-action —
 // confirmed in production as the cause of a saved job reappearing here after
 // switching to History and back: the old local `removedIds` reset on
 // remount while the underlying `jobs` array (fed by a Realtime DELETE event
 // that was silently dropped for RLS reasons — see migration 013) still had
 // the row.
 export default function ProcessingScreen({ userId }: Props) {
-  const { jobs, loading, refetch } = useVideoJobsContext();
+  const { jobs, loading, refetch, localUploads } = useVideoJobsContext();
+  const uploadingLocalUploads = localUploads.filter((u) => u.status === 'uploading');
 
   // Backstop refetch, independent of Realtime: catches the moment this tab
   // becomes visible again (e.g. switching History -> Processing in
@@ -106,18 +168,50 @@ export default function ProcessingScreen({ userId }: Props) {
 
   if (!userId) return null;
 
+  const isEmpty = !loading && jobs.length === 0 && uploadingLocalUploads.length === 0;
+
   return (
     <View style={styles.screen}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <Text style={styles.kicker}>PROCESSING</Text>
         {loading ? (
           <ActivityIndicator color={colors.primary} style={styles.loading} />
-        ) : jobs.length === 0 ? (
+        ) : isEmpty ? (
           <Text style={styles.empty}>Nothing in progress. Record or upload a video to get started.</Text>
         ) : (
-          jobs.map((job) => <JobCard key={job.id} job={job} userId={userId} />)
+          <>
+            {/* Always newest, so these sit above every real job — an
+                upload just started is necessarily more recent than
+                anything already in `jobs`. Swaps out for the real
+                PendingCard automatically once the upload lands (see
+                useVideoJobs.ts's refetch reconciliation / App.tsx's
+                handleVideoConfirmed) — same id, so React treats it as the
+                same list slot rather than a remove+insert. */}
+            {uploadingLocalUploads.map((u) => <UploadingCard key={u.id} upload={u} />)}
+            {jobs.map((job) => <JobCard key={job.id} job={job} userId={userId} />)}
+          </>
         )}
       </ScrollView>
+    </View>
+  );
+}
+
+// Optimistic placeholder for a video still uploading — no video_jobs row
+// exists yet, so there's nothing to preview or act on, just a loading
+// state until the real row (and the regular PendingCard for it) appears.
+function UploadingCard({ upload }: { upload: LocalUpload }) {
+  return (
+    <View style={styles.card}>
+      <View style={styles.video}>
+        <ApexLoader />
+      </View>
+      <View style={styles.cardBody}>
+        <View style={styles.statusRow}>
+          <View style={styles.statusDot} />
+          <Text style={styles.statusText}>Uploading…</Text>
+        </View>
+        <Text style={styles.meta}>{Math.round(upload.durationSec)}s</Text>
+      </View>
     </View>
   );
 }
@@ -138,7 +232,7 @@ function JobCard({ job, userId }: CardProps) {
 function PendingCard({ job, userId }: CardProps) {
   const { accentColor } = useSettings();
   const { markPendingRemoval, unmarkPendingRemoval, removeJobLocally } = useVideoJobsContext();
-  const { animatedStyle, playExit } = useCardExitAnimation();
+  const { animatedStyle, playExit, playEnter } = useCardExitAnimation();
   const { guard, reset } = useActionGuard();
   const [videoUri, setVideoUri] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -154,41 +248,51 @@ function PendingCard({ job, userId }: CardProps) {
     return () => { active = false; };
   }, [job.id, job.rawVideoPath, userId]);
 
-  async function handleRemove() {
+  function handleRemove() {
     if (!guard()) return;
     setBusy(true);
     // Instant, optimistic — updates the shared processingCount immediately,
     // independent of the RPC below.
     markPendingRemoval(job.id);
-    try {
-      await cancelVideoJob(job.id);
-    } catch (e) {
-      if (!isAlreadyHandledError(e)) {
+
+    runExitAnimation(
+      playExit, playEnter,
+      async () => {
+        try {
+          await cancelVideoJob(job.id);
+        } catch (e) {
+          // Already gone server-side (a prior call already succeeded) — treat as success.
+          if (!isAlreadyHandledError(e)) throw e;
+        }
+      },
+      () => {
+        removeJobLocally(job.id);
+        // Best-effort cleanup — a failure here doesn't change what the
+        // athlete sees, so it's not worth surfacing as an error.
+        void (async () => {
+          try {
+            // 'queued': cancel_video_job deletes the row immediately and the
+            // worker never touches this job at all — nothing else will ever
+            // clean up its raw video object, so the app must delete it here.
+            // 'processing': cancel_video_job only flags cancel_requested and
+            // leaves the row (and its storage object) for the worker to
+            // remove once it notices — the worker may still be actively
+            // reading raw_video_path, so deleting it client-side right now
+            // would risk a race with that in-flight read.
+            if (job.status === 'queued') await deleteJobStorage(job);
+            await deleteLocalRawVideo(userId, job.id);
+          } catch (e) {
+            console.warn('[APeX] Cleanup after removing video job failed:', e);
+          }
+        })();
+      },
+      () => {
         unmarkPendingRemoval(job.id);
         setBusy(false);
         reset();
         Alert.alert('Could not remove', 'Something went wrong removing this exercise. Please try again.');
-        return;
-      }
-      // Already gone server-side (a prior call already succeeded) — treat as success.
-    }
-    // Only now, with the RPC confirmed, does the card actually leave the list.
-    playExit(() => removeJobLocally(job.id));
-    // Best-effort cleanup — a failure here doesn't change what the athlete
-    // sees, so it's not worth surfacing as an error.
-    try {
-      // 'queued': cancel_video_job deletes the row immediately and the
-      // worker never touches this job at all — nothing else will ever clean
-      // up its raw video object, so the app must delete it here. 'processing':
-      // cancel_video_job only flags cancel_requested and leaves the row (and
-      // its storage object) for the worker to remove once it notices — the
-      // worker may still be actively reading raw_video_path, so deleting it
-      // client-side right now would risk a race with that in-flight read.
-      if (job.status === 'queued') await deleteJobStorage(job);
-      await deleteLocalRawVideo(userId, job.id);
-    } catch (e) {
-      console.warn('[APeX] Cleanup after removing video job failed:', e);
-    }
+      },
+    );
   }
 
   return (
@@ -214,32 +318,42 @@ function PendingCard({ job, userId }: CardProps) {
 // migration 010) deletes a 'failed' row immediately, same as 'queued'.
 function FailedCard({ job, userId }: CardProps) {
   const { markPendingRemoval, unmarkPendingRemoval, removeJobLocally } = useVideoJobsContext();
-  const { animatedStyle, playExit } = useCardExitAnimation();
+  const { animatedStyle, playExit, playEnter } = useCardExitAnimation();
   const { guard, reset } = useActionGuard();
   const [busy, setBusy] = useState(false);
 
-  async function handleRemove() {
+  function handleRemove() {
     if (!guard()) return;
     setBusy(true);
     markPendingRemoval(job.id);
-    try {
-      await cancelVideoJob(job.id);
-    } catch (e) {
-      if (!isAlreadyHandledError(e)) {
+
+    runExitAnimation(
+      playExit, playEnter,
+      async () => {
+        try {
+          await cancelVideoJob(job.id);
+        } catch (e) {
+          if (!isAlreadyHandledError(e)) throw e;
+        }
+      },
+      () => {
+        removeJobLocally(job.id);
+        void (async () => {
+          try {
+            await deleteLocalRawVideo(userId, job.id);
+            await deleteJobStorage(job);
+          } catch (e) {
+            console.warn('[APeX] Cleanup after removing failed job failed:', e);
+          }
+        })();
+      },
+      () => {
         unmarkPendingRemoval(job.id);
         setBusy(false);
         reset();
         Alert.alert('Could not remove', 'Something went wrong removing this exercise. Please try again.');
-        return;
-      }
-    }
-    playExit(() => removeJobLocally(job.id));
-    try {
-      await deleteLocalRawVideo(userId, job.id);
-      await deleteJobStorage(job);
-    } catch (e) {
-      console.warn('[APeX] Cleanup after removing failed job failed:', e);
-    }
+      },
+    );
   }
 
   return (
@@ -258,7 +372,7 @@ function FailedCard({ job, userId }: CardProps) {
 // HANDOFF item 6 — two-panel video + full analysis, Save/Discard.
 function CompletedCard({ job, userId }: CardProps) {
   const { markPendingRemoval, unmarkPendingRemoval, removeJobLocally } = useVideoJobsContext();
-  const { animatedStyle, playExit } = useCardExitAnimation();
+  const { animatedStyle, playExit, playEnter } = useCardExitAnimation();
   const { guard, reset } = useActionGuard();
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -271,51 +385,71 @@ function CompletedCard({ job, userId }: CardProps) {
     return () => { active = false; };
   }, [job.resultVideoPath]);
 
-  async function handleSave() {
+  function handleSave() {
     if (!guard()) return;
     setBusy(true);
     markPendingRemoval(job.id);
-    try {
-      await saveVideoJob(job.id);
-    } catch (e) {
-      if (!isAlreadyHandledError(e)) {
+
+    runExitAnimation(
+      playExit, playEnter,
+      async () => {
+        try {
+          await saveVideoJob(job.id);
+        } catch (e) {
+          if (!isAlreadyHandledError(e)) throw e;
+        }
+      },
+      () => {
+        removeJobLocally(job.id);
+        void (async () => {
+          try {
+            await deleteLocalRawVideo(userId, job.id);
+          } catch (e) {
+            console.warn('[APeX] Cleanup after saving video job failed:', e);
+          }
+        })();
+      },
+      () => {
         unmarkPendingRemoval(job.id);
         setBusy(false);
         reset();
         Alert.alert('Could not save', 'Something went wrong saving this exercise. Please try again.');
-        return;
-      }
-    }
-    playExit(() => removeJobLocally(job.id));
-    try {
-      await deleteLocalRawVideo(userId, job.id);
-    } catch (e) {
-      console.warn('[APeX] Cleanup after saving video job failed:', e);
-    }
+      },
+    );
   }
 
-  async function handleDiscard() {
+  function handleDiscard() {
     if (!guard()) return;
     setBusy(true);
     markPendingRemoval(job.id);
-    try {
-      await discardVideoJob(job.id);
-    } catch (e) {
-      if (!isAlreadyHandledError(e)) {
+
+    runExitAnimation(
+      playExit, playEnter,
+      async () => {
+        try {
+          await discardVideoJob(job.id);
+        } catch (e) {
+          if (!isAlreadyHandledError(e)) throw e;
+        }
+      },
+      () => {
+        removeJobLocally(job.id);
+        void (async () => {
+          try {
+            await deleteJobStorage(job);
+            await deleteLocalRawVideo(userId, job.id);
+          } catch (e) {
+            console.warn('[APeX] Cleanup after discarding video job failed:', e);
+          }
+        })();
+      },
+      () => {
         unmarkPendingRemoval(job.id);
         setBusy(false);
         reset();
         Alert.alert('Could not discard', 'Something went wrong discarding this exercise. Please try again.');
-        return;
-      }
-    }
-    playExit(() => removeJobLocally(job.id));
-    try {
-      await deleteJobStorage(job);
-      await deleteLocalRawVideo(userId, job.id);
-    } catch (e) {
-      console.warn('[APeX] Cleanup after discarding video job failed:', e);
-    }
+      },
+    );
   }
 
   return (

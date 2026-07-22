@@ -28,11 +28,12 @@ const RECORD_SECONDS = 20;
 interface Props {
   pickOnMount: boolean;
   testMode: boolean;
-  // Async pipeline: this uploads the clip and queues a video_jobs row (see
-  // api/videoJobs.ts) rather than running any on-device analysis — the
-  // promise resolves once the upload + row insert succeed, not once the
-  // exercise has actually been analyzed (that happens server-side, later).
-  onVideoConfirmed: (uri: string, durationSec: number) => Promise<void>;
+  // Async pipeline: this queues the clip for upload and immediately
+  // navigates away — it does NOT wait for the upload (or the exercise
+  // analysis, which happens server-side later still) to finish. The
+  // caller handles the actual upload in the background and surfaces a
+  // failure via its own alert, since this screen will already be gone.
+  onVideoConfirmed: (uri: string, durationSec: number) => void;
   onBack: () => void;
   initialVideoUri?: string; // pre-picked upload — skip picker, go straight to review
   // Duration of initialVideoUri, captured by the caller at pick time —
@@ -158,14 +159,19 @@ export default function CameraScreen({ pickOnMount, testMode, onVideoConfirmed, 
   }
 
   async function handleConfirm() {
-    if (!videoUri) return;
+    if (!videoUri || uploading) return;
     setUploading(true);
     setError(null);
     try {
+      // The only await left here is a local, usually-instant file-URI
+      // normalization (see normalizeVideoUri) — not the upload itself.
+      // onVideoConfirmed is fire-and-forget: it navigates away right away
+      // and runs the actual upload in the background (see App.tsx), so
+      // this screen never waits on the network round-trip.
       const uri = await normalizeVideoUri(videoUri);
-      await onVideoConfirmed(uri, videoDurationSec ?? 0);
+      onVideoConfirmed(uri, videoDurationSec ?? 0);
     } catch (e) {
-      setError('Could not upload video: ' + (e instanceof Error ? e.message : String(e)));
+      setError('Could not process video: ' + (e instanceof Error ? e.message : String(e)));
       setUploading(false);
     }
   }
