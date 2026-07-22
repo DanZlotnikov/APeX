@@ -51,7 +51,7 @@ export default function BiomechanicsReport({ analysis, fallbackExerciseType, rep
 
           <View style={styles.balanceCard}>
             <View style={styles.balanceHead}>
-              <Text style={styles.balanceTitle}>BALANCE</Text>
+              <Text style={styles.balanceTitle}>L/R BALANCE</Text>
               <Text style={styles.balanceScore}>{Math.round(balance.overall_balance_pct)}%</Text>
             </View>
 

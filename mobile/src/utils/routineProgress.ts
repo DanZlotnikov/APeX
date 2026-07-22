@@ -6,18 +6,24 @@
  *   - todaysCompletedJobs: today's completed-but-not-yet-saved video_jobs
  *     (VideoJobsContext's `jobs`, filtered to status === 'completed')
  *
- * An exercise becomes eligible to count as "completed" the moment a
- * completed video_jobs row exists for it today — before Save is even
- * tapped — and stays eligible once saved (the same row just moves from
- * video_jobs to sessions). It only actually counts as completed once its
- * rep count meets the daily target, though: 3 reps against a target of 10 is
- * still incomplete, just with progress. If the athlete discards it, the job
- * is deleted and never becomes a session, so it naturally drops out of both
- * input lists and reverts to not-completed. Multiple attempts at the same
- * exercise on the same day (e.g. two completed-but-unsaved recordings, or a
- * completed recording plus an earlier saved session) resolve to whichever is
- * most recent — mirroring sessions' own same-day-replace rule (migration
- * 007/012).
+ * Reps accumulate across every attempt at an exercise today, not just the
+ * latest one — mirroring save_video_job's same-day accumulate behavior
+ * (migration 015: multiple saves of the same exercise on the same day sum
+ * their rep counts into one session instead of the later one replacing the
+ * earlier). This function sums today's saved session's rep_count (already a
+ * running total server-side) with every completed-but-not-yet-saved job's
+ * reps, so the count here matches what saving those jobs will actually
+ * produce, before the athlete even taps Save. If the athlete discards a
+ * completed job, it's deleted and never becomes a session, so it naturally
+ * drops out of the total.
+ *
+ * An exercise counts as "completed" once that running total meets the daily
+ * target, not merely once something was attempted — 3 reps against a
+ * target of 10 is still incomplete, just with progress. Readiness displayed
+ * is whichever attempt (saved session or unsaved job) was recorded most
+ * recently — there's no meaningful way to merge two different clips'
+ * joint-by-joint breakdowns into one number, so this is a "your last set's
+ * reading" indicator, not an average.
  */
 import { SessionHistoryEntry } from '../api/sessions';
 import { RoutineSetting } from '../api/routine';
@@ -40,12 +46,6 @@ export interface RoutineProgress {
   completedPct: number | null; // null when nothing is required (avoid a misleading 0%)
 }
 
-interface Candidate {
-  recordedAt: string;
-  reps: number;
-  readinessPct: number | null;
-}
-
 export function computeRoutineProgress(
   routine: RoutineSetting[],
   todaysSessions: SessionHistoryEntry[],
@@ -56,38 +56,38 @@ export function computeRoutineProgress(
   let completedCount = 0;
 
   for (const setting of required) {
-    const candidates: Candidate[] = [];
+    let totalReps = 0;
+    let latestRecordedAt: string | null = null;
+    let latestReadinessPct: number | null = null;
 
     const session = todaysSessions.find((s) => s.exerciseType === setting.exerciseType);
     if (session) {
-      candidates.push({ recordedAt: session.recordedAt, reps: session.repCount, readinessPct: session.readinessScore });
+      totalReps += session.repCount;
+      latestRecordedAt = session.recordedAt;
+      latestReadinessPct = session.readinessScore;
     }
 
     for (const job of todaysCompletedJobs) {
       if (resolveJobExerciseKey(job) !== setting.exerciseType) continue;
-      const balancePct = job.analysis?.analyses?.balance?.overall_balance_pct;
-      candidates.push({
-        recordedAt: job.recordedAt,
-        reps: job.analysis?.rep_count ?? 0,
-        readinessPct: balancePct != null ? Math.round(balancePct) : null,
-      });
+      totalReps += job.analysis?.rep_count ?? 0;
+      if (latestRecordedAt == null || job.recordedAt > latestRecordedAt) {
+        latestRecordedAt = job.recordedAt;
+        const balancePct = job.analysis?.analyses?.balance?.overall_balance_pct;
+        latestReadinessPct = balancePct != null ? Math.round(balancePct) : null;
+      }
     }
-
-    const latest = candidates.length
-      ? candidates.reduce((a, b) => (b.recordedAt > a.recordedAt ? b : a))
-      : null;
 
     // Completed means the daily rep target was actually met, not just that
     // an attempt was processed today — e.g. 3/10 reps is still incomplete.
-    const completed = latest != null && latest.reps >= setting.targetReps;
+    const completed = totalReps >= setting.targetReps;
     if (completed) completedCount += 1;
 
     rows.push({
       exerciseType: setting.exerciseType,
       label: exerciseLabel(setting.exerciseType),
       targetReps: setting.targetReps,
-      completedReps: latest?.reps ?? 0,
-      readinessPct: latest?.readinessPct ?? null,
+      completedReps: totalReps,
+      readinessPct: latestReadinessPct,
       completed,
     });
   }
