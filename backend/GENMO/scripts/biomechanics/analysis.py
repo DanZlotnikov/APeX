@@ -23,13 +23,10 @@ rep windows for that exercise; it returns the JSON-serializable report.
 No other file in this package or the rest of the pipeline needs to change —
 this function's signature and the report's top-level shape stay fixed.
 
-`legacy_metrics` (see legacy_metrics.py) and `rom` (see rom.py) are further
-analyzers of this kind, not "future" ones — legacy_metrics is the
-compatibility bridge to the retired on-device analyzer's readiness score /
-session_metrics vocabulary the manager module depends on; rom scores how
-much of each exercise's expected joint range of motion a rep actually
-achieved, alongside balance's left/right symmetry. Both are normal citizens
-of _ANALYZERS like `balance`, just aimed at different questions.
+`rom` (see rom.py) is a further analyzer of this kind, not a "future" one —
+it scores how much of each exercise's expected joint range of motion a rep
+actually achieved, alongside balance's left/right symmetry. It's a normal
+citizen of _ANALYZERS like `balance`, just aimed at a different question.
 """
 from __future__ import annotations
 
@@ -37,12 +34,11 @@ import numpy as np
 
 from exercises import get_exercise_reps
 
-from . import balance, legacy_metrics, rom
+from . import balance, rom
 
 _ANALYZERS = {
     "balance": balance.analyze_balance,
     "rom": rom.analyze_rom,
-    "legacy_metrics": legacy_metrics.analyze_legacy_metrics,
 }
 
 

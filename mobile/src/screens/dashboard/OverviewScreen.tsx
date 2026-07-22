@@ -2,7 +2,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { getAthleteById } from '../../api/athletes';
-import { getTeamExercises } from '../../api/exercises';
+import { getTeamRoutine } from '../../api/teamRoutine';
 import { getRoutine, RoutineSetting } from '../../api/routine';
 import { getSessionHistory, SessionHistoryEntry } from '../../api/sessions';
 import { AthleteViewModel, ExerciseReadiness, TargetExercise } from '../../api/types';
@@ -12,8 +12,7 @@ import DeltaChip from '../../components/DeltaChip';
 import { useSettings } from '../../state/SettingsContext';
 import { useVideoJobsContext } from '../../state/VideoJobsContext';
 import { mean } from '../../utils/history';
-import { ExerciseKey } from '../../utils/exerciseMetrics';
-import { exerciseLabel, readinessPctFromAnalysis } from '../../utils/pipelineExercise';
+import { exerciseLabel, PipelineExerciseKey, readinessPctFromAnalysis, resolveJobExerciseKey } from '../../utils/pipelineExercise';
 import { computeRoutineProgress } from '../../utils/routineProgress';
 import { StatDelta } from '../../utils/stats';
 import { formatHeight, formatWeight } from '../../utils/units';
@@ -34,17 +33,14 @@ type TaskStatus =
   | { kind: 'failed' }
   | { kind: 'not_done' };
 
-function resolveTaskStatus(key: ExerciseKey, dbState: ExerciseReadiness, todaysJobs: VideoJob[]): TaskStatus {
+function resolveTaskStatus(key: PipelineExerciseKey, dbState: ExerciseReadiness, todaysJobs: VideoJob[]): TaskStatus {
   const job = todaysJobs.find((j) => j.targetExerciseKey === key);
   if (job) {
     if (job.status === 'queued' || job.status === 'processing') return { kind: 'pending' };
     if (job.status === 'failed') return { kind: 'failed' };
     if (job.status === 'completed') {
-      const legacy = job.analysis?.analyses?.legacy_metrics;
       const readinessPct = readinessPctFromAnalysis(job.analysis);
-      const actualKey = legacy?.legacy_exercise_key ?? job.exerciseType;
-      // "Readiness" is the balance+ROM average, not the legacy formula's
-      // score — see migration 016 / pipelineExercise's readinessPctFromAnalysis.
+      const actualKey = resolveJobExerciseKey(job);
       if (actualKey === key) return { kind: 'done', readinessPct: readinessPct != null ? Math.round(readinessPct) : null };
       return { kind: 'mismatch', actualLabel: exerciseLabel(actualKey) };
     }
@@ -67,7 +63,7 @@ export default function OverviewScreen({ userId, teamId, onSelectTask }: Props) 
   const [sessions, setSessions]       = useState<SessionHistoryEntry[]>([]);
   const [routine, setRoutine]         = useState<RoutineSetting[]>([]);
   const [athlete, setAthlete]         = useState<AthleteViewModel | null>(null);
-  const [minRepsByKey, setMinRepsByKey] = useState<Partial<Record<ExerciseKey, number>>>({});
+  const [minRepsByKey, setMinRepsByKey] = useState<Partial<Record<PipelineExerciseKey, number>>>({});
   const [loading, setLoading]         = useState(true);
   const { jobs } = useVideoJobsContext();
 
@@ -87,7 +83,7 @@ export default function OverviewScreen({ userId, teamId, onSelectTask }: Props) 
         getSessionHistory(userId)
           .then((s) => active && setSessions(s))
           .catch((e) => console.warn('[APeX] Failed to load session history:', e));
-        getRoutine(userId)
+        getRoutine(userId, teamId ?? null)
           .then((r) => active && setRoutine(r))
           .catch((e) => console.warn('[APeX] Failed to load routine:', e));
       } else {
@@ -95,16 +91,17 @@ export default function OverviewScreen({ userId, teamId, onSelectTask }: Props) 
         setRoutine([]);
       }
 
-      // getAthleteById works with no team (an individual athlete just has no
-      // required exercises — see buildViewModel) — only the team-exercise
-      // min-reps lookup (used for the task-detail requirement) needs a team.
+      // getAthleteById now resolves required exercises the same way for
+      // every athlete, team or individual (see buildViewModel / migration
+      // 018) — the team-routine target-reps lookup below (used for the
+      // task-detail requirement) only needs a team for team athletes.
       if (userId) {
-        Promise.all([getAthleteById(userId), teamId ? getTeamExercises(teamId) : Promise.resolve([])])
-          .then(([a, exs]) => {
+        Promise.all([getAthleteById(userId), teamId ? getTeamRoutine(teamId) : Promise.resolve([])])
+          .then(([a, routineDefaults]) => {
             if (!active) return;
             setAthlete(a);
-            const m: Partial<Record<ExerciseKey, number>> = {};
-            exs.forEach((e) => { m[e.exerciseKey] = e.minReps; });
+            const m: Partial<Record<PipelineExerciseKey, number>> = {};
+            routineDefaults.forEach((r) => { m[r.exerciseType] = r.targetReps; });
             setMinRepsByKey(m);
           })
           .catch((e) => console.warn('Failed to load athlete overview', e))
@@ -139,7 +136,7 @@ export default function OverviewScreen({ userId, teamId, onSelectTask }: Props) 
         }
       : null;
 
-  function handleTaskPress(key: ExerciseKey, label: string) {
+  function handleTaskPress(key: PipelineExerciseKey, label: string) {
     onSelectTask({ key, label, requiredRepsByKey: minRepsByKey });
   }
 

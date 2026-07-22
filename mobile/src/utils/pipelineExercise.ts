@@ -1,15 +1,14 @@
 /**
  * Display labels for the new pipeline's exercise_type vocabulary — squat/jump/
- * pullup are the legacy-bridged keys (see legacy_metrics.legacy_exercise_key);
- * deadlift/push_up/ab_crunch are the pipeline's own raw keys, which have no
- * legacy profile (see HANDOFF_video_pipeline.md section 3.4). Used by
- * Performance/History and the Processing tab, not the old manager-module
- * catalog in exerciseMetrics.ts.
+ * pullup are the bridged keys (see RAW_TO_BRIDGED below); deadlift/push_up/
+ * ab_crunch are the pipeline's own raw keys, which already coincide with
+ * their bridged form. Used by Performance/History, the Processing tab, and
+ * the manager module — all share this one vocabulary now (see
+ * MANAGER_MODULE_AUDIT.md).
  *
  * Both the bridged AND raw forms are listed for every exercise, even where
- * that's a duplicate entry (e.g. squat/deadlift/push_up/ab_crunch's raw key
- * already equals their bridged one) — `video_jobs.analysis_json.exercise`
- * and `video_jobs.exercise_type` are always the pipeline's RAW key
+ * that's a duplicate entry — `video_jobs.analysis_json.exercise` and
+ * `video_jobs.exercise_type` are always the pipeline's RAW key
  * (squat|deadlift|vertical_jump|pull_up|push_up|ab_crunch; see migration
  * 009's comment), never the bridged one, so any call site passing either of
  * those straight into exerciseLabel() was showing the raw "vertical_jump"/
@@ -43,18 +42,22 @@ export type PipelineExerciseKey = 'squat' | 'jump' | 'pullup' | 'deadlift' | 'pu
 
 export const PIPELINE_EXERCISE_KEYS: PipelineExerciseKey[] = ['squat', 'jump', 'pullup', 'deadlift', 'push_up', 'ab_crunch'];
 
+// The pipeline's raw exercise keys -> the bridged vocabulary every table
+// (sessions.exercise_type, athlete_routines.exercise_type, team_routines.
+// exercise_type) actually stores — mirrors save_video_job's own CASE mapping
+// (migration 018) exactly, so a completed-but-not-yet-saved job resolves to
+// the SAME key saving it will produce. squat/deadlift/push_up/ab_crunch's
+// raw key already equals their bridged one, so only these two need mapping.
+const RAW_TO_BRIDGED: Record<string, string> = { vertical_jump: 'jump', pull_up: 'pullup' };
+
 // Resolves which exercise a completed video_jobs row actually turned out to
-// be, in the bridged vocabulary above — squat/jump/pullup are bridged from
-// the pipeline's own raw vertical_jump/pull_up keys via legacy_metrics;
-// deadlift/push_up/ab_crunch have no bridge and pass through as-is. Mirrors
-// OverviewScreen's Today's Tasks resolution logic (resolveTaskStatus)
-// exactly, factored out so the Routine feature's completion-matching stays
-// consistent with it without duplicating the two call sites' inline logic.
-export function resolveJobExerciseKey(job: {
-  exerciseType: string | null;
-  analysis: { analyses?: { legacy_metrics?: { legacy_exercise_key?: string } } } | null;
-}): string | null {
-  return job.analysis?.analyses?.legacy_metrics?.legacy_exercise_key ?? job.exerciseType ?? null;
+// be, in the bridged vocabulary above. Mirrors OverviewScreen's Today's
+// Tasks resolution logic (resolveTaskStatus) exactly, factored out so the
+// Routine feature's completion-matching stays consistent with it without
+// duplicating the two call sites' inline logic.
+export function resolveJobExerciseKey(job: { exerciseType: string | null }): string | null {
+  if (!job.exerciseType) return null;
+  return RAW_TO_BRIDGED[job.exerciseType] ?? job.exerciseType;
 }
 
 // Readiness = the average of L/R balance and range of motion when both are

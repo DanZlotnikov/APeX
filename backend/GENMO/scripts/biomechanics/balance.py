@@ -39,10 +39,7 @@ _SEVERITY_RANK = {"ok": 0, "watch": 1, "at_risk": 2}
 
 
 def side_values(frame_joints: np.ndarray, signal_id: str) -> tuple[float, float]:
-    """(left, right) value of a named SIGNAL_SPECS signal at one frame.
-    Public (not underscore-prefixed): legacy_metrics.py reuses this directly
-    rather than re-deriving per-side joint angles a third time.
-    """
+    """(left, right) value of a named SIGNAL_SPECS signal at one frame."""
     kind, l_spec, r_spec = SIGNAL_SPECS[signal_id]
     if kind == "angle":
         la, lb, lc = l_spec
@@ -120,8 +117,7 @@ def analyze_balance(joints_np: np.ndarray, exercise_key: str | None, reps: list[
     """joints_np: (L, 22, 3) world-space SMPL joints for the clip.
     reps: this exercise's rep windows, from exercises.get_exercise_reps().
     fps: unused here, accepted only so every analyzer in analysis.py's
-        _ANALYZERS registry shares one call signature (legacy_metrics.py
-        needs it for its tempo/flight-time calculations).
+        _ANALYZERS registry shares one call signature.
 
     Returns None if there's no balance profile for this exercise or no reps
     to evaluate — analysis.py treats that as "this method doesn't apply

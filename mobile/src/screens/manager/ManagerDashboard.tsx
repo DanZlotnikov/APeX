@@ -2,11 +2,11 @@ import { useFocusEffect } from '@react-navigation/native';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { getTeamAthletes } from '../../api/athletes';
-import { getTeamExercises } from '../../api/exercises';
+import { getTeamRoutine } from '../../api/teamRoutine';
 import { supabase } from '../../api/supabase';
 import { AthleteViewModel, TeamStatsViewModel } from '../../api/types';
 import { colors, spacing } from '../../theme';
-import { EXERCISE_LABELS } from '../../utils/exerciseMetrics';
+import { exerciseLabel } from '../../utils/pipelineExercise';
 import AthleteMonitoringTable, { ExerciseColumn } from './components/AthleteMonitoringTable';
 import ComplianceCard from './components/ComplianceCard';
 import TeamReadinessCard from './components/TeamReadinessCard';
@@ -56,11 +56,11 @@ export default function ManagerDashboard({ teamId, onAthleteSelect }: Props) {
     try {
       const [data, configs] = await Promise.all([
         getTeamAthletes(teamRef.current),
-        getTeamExercises(teamRef.current),
+        getTeamRoutine(teamRef.current),
       ]);
       setAthletes(data);
       setExerciseColumns(
-        configs.filter((c) => c.enabled).map((c) => ({ key: c.exerciseKey, label: EXERCISE_LABELS[c.exerciseKey] })),
+        configs.filter((c) => c.enabled).map((c) => ({ key: c.exerciseType, label: exerciseLabel(c.exerciseType) })),
       );
     } catch (e) {
       console.warn('Failed to load athletes', e);
@@ -73,7 +73,7 @@ export default function ManagerDashboard({ teamId, onAthleteSelect }: Props) {
     void loadAthletes();
 
     // Realtime: refresh on new sessions, and on any change to what's required
-    // per athlete (team-wide toggle in ExercisesScreen, or a per-athlete
+    // per athlete (team-wide toggle in ManagerRoutineScreen, or a per-athlete
     // assignment override) — so a manager ticking an exercise on/off there
     // is reflected here immediately, not just on next mount/session.
     // NOTE: Supabase → Database → Replication must have these tables enabled.
@@ -106,7 +106,7 @@ export default function ManagerDashboard({ teamId, onAthleteSelect }: Props) {
         )
         .on(
           'postgres_changes',
-          { event: '*', schema: 'public', table: 'team_exercises' },
+          { event: '*', schema: 'public', table: 'team_routines' },
           () => { void loadAthletes(); },
         )
         .subscribe();

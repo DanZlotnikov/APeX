@@ -3,11 +3,11 @@ import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } fr
 import LineTrend from '../../../components/charts/LineTrend';
 import { AthleteViewModel } from '../../../api/types';
 import { colors, spacing } from '../../../theme';
-import { ExerciseKey } from '../../../utils/exerciseMetrics';
+import { PipelineExerciseKey } from '../../../utils/pipelineExercise';
 import { readinessColor } from '../../../utils/readiness';
 
 export interface ExerciseColumn {
-  key: ExerciseKey;
+  key: PipelineExerciseKey;
   label: string;
 }
 
@@ -33,7 +33,7 @@ interface Props {
 
 // Only surface a value if that exercise was actually tested today — no
 // falling back to an older session's score.
-function exerciseValue(athlete: AthleteViewModel, key: ExerciseKey): number | null {
+function exerciseValue(athlete: AthleteViewModel, key: PipelineExerciseKey): number | null {
   const e = athlete.perExerciseReadiness.find((ex) => ex.key === key);
   return e?.testedToday ? e.readiness : null;
 }

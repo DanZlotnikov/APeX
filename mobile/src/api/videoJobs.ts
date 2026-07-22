@@ -8,7 +8,7 @@
 import { decode as decodeBase64 } from 'base64-arraybuffer';
 import * as FileSystem from 'expo-file-system/legacy';
 import { Platform } from 'react-native';
-import { ExerciseKey } from '../utils/exerciseMetrics';
+import { PipelineExerciseKey } from '../utils/pipelineExercise';
 import { deleteVideo, readJSON, resolveVideo, saveVideo, writeJSON } from '../utils/storage';
 import { supabase } from './supabase';
 
@@ -84,21 +84,12 @@ export interface RomReport {
   limited_joints: unknown[];
 }
 
-export interface LegacyMetricsReport {
-  legacy_exercise_key: ExerciseKey;
-  readiness_score: number;
-  readiness_label: string;
-  recommendation: string | null;
-  session_metrics: Array<{ metric_key: string; value: number }>;
-}
-
 export interface VideoJobAnalysis {
   exercise: string | null;
   rep_count: number;
   analyses: {
     balance?: BalanceReport;
     rom?: RomReport;
-    legacy_metrics?: LegacyMetricsReport;
   };
 }
 
@@ -109,7 +100,7 @@ export interface VideoJob {
   cancelRequested: boolean;
   rawVideoPath: string;
   resultVideoPath: string | null;
-  targetExerciseKey: ExerciseKey | null;
+  targetExerciseKey: PipelineExerciseKey | null;
   exerciseType: string | null;
   analysis: VideoJobAnalysis | null;
   durationSec: number;
@@ -260,7 +251,7 @@ export async function uploadAndQueueVideoJob(params: {
   athleteId: string;
   localUri: string;
   durationSec: number;
-  targetExerciseKey?: ExerciseKey | null;
+  targetExerciseKey?: PipelineExerciseKey | null;
   jobId?: string;
 }): Promise<VideoJob> {
   const { athleteId, localUri, durationSec, targetExerciseKey } = params;

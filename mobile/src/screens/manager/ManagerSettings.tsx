@@ -1,13 +1,15 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Animated, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { deleteAccount } from '../../api/auth';
 import { getTeamInviteCode, getTeamName, regenerateInviteCode } from '../../api/teams';
 import Toggle from '../../components/Toggle';
 import { useSettings } from '../../state/SettingsContext';
 import { ACCENTS, AccentKey, colors, FontScaleKey, spacing } from '../../theme';
+import { confirmAsync } from '../../utils/confirm';
 
-// Exercise-related team settings (which exercises are tested, min reps, metric
-// thresholds, per-athlete assignment) live on the "Exercises" manager tab
-// (ManagerHome.tsx / ExercisesScreen.tsx), backed by the team_exercises /
+// Exercise-related team settings (which exercises are tested, target reps,
+// per-athlete assignment) live on the "Routine" manager tab (ManagerHome.tsx
+// / ManagerRoutineScreen.tsx), backed by the team_routines /
 // athlete_exercise_assignments tables — not this screen.
 
 const ACCENT_KEYS = Object.keys(ACCENTS) as AccentKey[];
@@ -18,14 +20,16 @@ const WINDOW_OPTS = [7, 14, 30, 90];
 
 interface Props {
   teamId: string;
+  onLogout: () => void;
 }
 
-export default function ManagerSettings({ teamId }: Props) {
+export default function ManagerSettings({ teamId, onLogout }: Props) {
   const { settings, update, accentColor } = useSettings();
 
   const [teamName,     setTeamName]     = useState<string | null>(null);
   const [inviteCode,   setInviteCode]   = useState('');
   const [regenerating, setRegenerating] = useState(false);
+  const [deleting,     setDeleting]     = useState(false);
 
   useEffect(() => {
     getTeamName(teamId)
@@ -45,6 +49,25 @@ export default function ManagerSettings({ teamId }: Props) {
       console.warn('Failed to regenerate invite code', e);
     } finally {
       setRegenerating(false);
+    }
+  }
+
+  async function handleDeleteAccount() {
+    const confirmed = await confirmAsync(
+      'Delete account?',
+      'This permanently deletes your manager account and all of your data. Your team and its athletes are not affected. This cannot be undone.',
+      { destructive: true, confirmLabel: 'Delete' },
+    );
+    if (!confirmed) return;
+
+    setDeleting(true);
+    try {
+      await deleteAccount();
+      onLogout();
+    } catch (e) {
+      console.warn('Failed to delete account', e);
+      setDeleting(false);
+      Alert.alert('Could not delete account', 'Something went wrong. Please try again.');
     }
   }
 
@@ -156,6 +179,21 @@ export default function ManagerSettings({ teamId }: Props) {
               onChange={(k) => update({ windowDays: parseInt(k, 10) })}
               accent={accentColor}
             />
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>ACCOUNT</Text>
+          <View style={styles.card}>
+            <Pressable
+              onPress={() => void handleDeleteAccount()}
+              disabled={deleting}
+              style={({ pressed }) => [styles.dangerRow, pressed && !deleting && { opacity: 0.7 }]}
+            >
+              {deleting
+                ? <ActivityIndicator color={colors.danger} size="small" />
+                : <Text style={styles.dangerText}>Delete Account</Text>}
+            </Pressable>
           </View>
         </View>
 
@@ -289,4 +327,7 @@ const styles = StyleSheet.create({
     minWidth: 44, justifyContent: 'center',
   },
   regenBtnText: { color: colors.muted, fontSize: 10, fontWeight: '700', letterSpacing: 1.5 },
+
+  dangerRow: { paddingVertical: spacing.sm, alignItems: 'center' },
+  dangerText: { color: colors.danger, fontSize: 14, fontWeight: '700' },
 });

@@ -1,7 +1,9 @@
-import { getEffectiveAssignments, getTeamExercises, TeamExerciseConfig } from './exercises';
+import { getEffectiveRoutines, EffectiveRoutineEntry } from './teamRoutine';
+import { getRoutine } from './routine';
 import { supabase } from './supabase';
 import { AthleteProfileData, AthleteStatus, AthleteViewModel, ExerciseReadiness } from './types';
-import { EXERCISE_KEYS, EXERCISE_LABELS, EXERCISE_METRICS, ExerciseKey, passesMetric } from '../utils/exerciseMetrics';
+import { AT_RISK_READINESS_FLOOR } from '../utils/readiness';
+import { exerciseLabel, PIPELINE_EXERCISE_KEYS } from '../utils/pipelineExercise';
 
 export async function getTeamAthletes(teamId: string): Promise<AthleteViewModel[]> {
   const { data: profiles, error: profErr } = await supabase
@@ -15,22 +17,17 @@ export async function getTeamAthletes(teamId: string): Promise<AthleteViewModel[
 
   const athleteIds = profiles.map((p) => p.id);
 
-  const [sessionsRes, teamExercises] = await Promise.all([
+  const [sessionsRes, resolvedRoutines] = await Promise.all([
     supabase
       .from('sessions')
-      .select('id, athlete_id, exercise_type, recorded_at, rep_count, readiness_score, session_metrics(metric_key, value)')
+      .select('id, athlete_id, exercise_type, recorded_at, rep_count, readiness_score')
       .in('athlete_id', athleteIds)
       .order('recorded_at', { ascending: false })
-      .limit(200),
-    getTeamExercises(teamId),
+      .limit(400),
+    getEffectiveRoutines(teamId, athleteIds),
   ]);
 
   if (sessionsRes.error) throw sessionsRes.error;
-
-  // Pass teamExercises through so getEffectiveAssignments doesn't re-fetch
-  // the table it already has — resolveRequiredExercises (in api/exercises.ts)
-  // stays the one place that decides team default vs. per-athlete override.
-  const assignments = await getEffectiveAssignments(teamId, athleteIds, teamExercises);
 
   const sessionsByAthlete = new Map<string, any[]>();
   for (const s of sessionsRes.data ?? []) {
@@ -43,12 +40,18 @@ export async function getTeamAthletes(teamId: string): Promise<AthleteViewModel[
     const aps     = p.athlete_profiles as any;
     const athSess = sessionsByAthlete.get(p.id) ?? [];
     return buildViewModel(
-      p.id, p.full_name, aps, athSess, teamExercises, assignments.get(p.id) ?? new Set(),
+      p.id, p.full_name, aps, athSess, resolvedRoutines.get(p.id) ?? [],
       p.injured, p.injury_started_at, p.stats_reset_at,
     );
   });
 }
 
+// Works for both a team athlete (resolved from their manager's team routine
+// + any per-athlete override — migration 018) and an individual athlete
+// (resolved from their own athlete_routines, exactly what they see/edit on
+// their own Routine screen) — same buildViewModel either way, so "the
+// readiness assessment" is identical in shape for every athlete regardless
+// of team membership (see MANAGER_MODULE_AUDIT.md section 2).
 export async function getAthleteById(athleteId: string): Promise<AthleteViewModel | null> {
   const { data: profile } = await supabase
     .from('profiles')
@@ -58,16 +61,18 @@ export async function getAthleteById(athleteId: string): Promise<AthleteViewMode
 
   if (!profile) return null;
 
-  const [sessionsRes, teamExercises] = await Promise.all([
+  const [sessionsRes, routine] = await Promise.all([
     supabase
       .from('sessions')
-      .select('id, exercise_type, recorded_at, rep_count, readiness_score, session_metrics(metric_key, value)')
+      .select('exercise_type, recorded_at, rep_count, readiness_score')
       .eq('athlete_id', athleteId)
       .order('recorded_at', { ascending: false })
-      .limit(100),
-    getTeamExercises(profile.team_id),
+      .limit(200),
+    profile.team_id
+      ? getEffectiveRoutines(profile.team_id, [athleteId]).then((m) => m.get(athleteId) ?? [])
+      : getRoutine(athleteId, null),
   ]);
-  const assignments = await getEffectiveAssignments(profile.team_id, [athleteId], teamExercises);
+  if (sessionsRes.error) throw sessionsRes.error;
 
   const ap = profile.athlete_profiles as any;
   return buildViewModel(
@@ -75,8 +80,7 @@ export async function getAthleteById(athleteId: string): Promise<AthleteViewMode
     profile.full_name,
     ap,
     sessionsRes.data ?? [],
-    teamExercises,
-    assignments.get(athleteId) ?? new Set(),
+    routine,
     profile.injured,
     profile.injury_started_at,
     profile.stats_reset_at,
@@ -106,8 +110,7 @@ function buildViewModel(
   fullName: string,
   ap: any,
   allSessions: any[], // ordered newest → oldest (recorded_at descending)
-  teamExercises: TeamExerciseConfig[],
-  assignedKeys: Set<ExerciseKey>,
+  routine: EffectiveRoutineEntry[], // this athlete's resolved routine — up to 6 entries
   injured: boolean,
   injuryStartedAt: string | null,
   statsResetAt: string | null,
@@ -132,52 +135,49 @@ function buildViewModel(
     .reverse()
     .map((s) => s.readiness_score ?? 0);
 
-  // Latest session per exercise type — sessions is already newest → oldest.
-  const latestByExercise = new Map<ExerciseKey, any>();
-  for (const s of sessions) {
-    const key = s.exercise_type as ExerciseKey;
-    if (!latestByExercise.has(key)) latestByExercise.set(key, s);
-  }
-
-  // assignedKeys (from getEffectiveAssignments → resolveRequiredExercises in
-  // api/exercises.ts) is ALREADY the fully-resolved required-exercise set for
-  // this athlete — team default, overridden per-athlete where applicable.
-  // Do not re-intersect it with the team-wide `enabled` flag here: that would
-  // silently ignore a per-athlete override that turns an exercise ON while
-  // the team default is off, defeating the whole point of the override.
-  const configByKey = new Map(teamExercises.map((c) => [c.exerciseKey, c]));
-  const activeExercises = EXERCISE_KEYS.filter((k) => assignedKeys.has(k));
+  const routineByKey = new Map(routine.map((r) => [r.exerciseType, r]));
+  const activeExercises = PIPELINE_EXERCISE_KEYS.filter((k) => routineByKey.get(k)?.enabled);
 
   const perExerciseReadiness: ExerciseReadiness[] = activeExercises.map((key) => {
-    const session = latestByExercise.get(key);
-    const cfg = configByKey.get(key)!;
+    const cfg = routineByKey.get(key)!;
+    // sessions is newest → oldest, so the first match for this exercise is
+    // the most recent one, whenever it was recorded.
+    const sessionsForKey = sessions.filter((s) => s.exercise_type === key);
+    const latestSession  = sessionsForKey[0] ?? null;
+    const testedToday    = !!latestSession && (latestSession.recorded_at as string).startsWith(today);
 
-    if (!session) {
-      return { key, label: EXERCISE_LABELS[key], readiness: null, testedToday: false, passed: null };
+    if (!latestSession) {
+      return { key, label: exerciseLabel(key), readiness: null, testedToday: false, passed: null };
     }
 
-    const repsOk = session.rep_count >= cfg.minReps;
-    const metricsOk = EXERCISE_METRICS[key].every((m) => {
-      const row = (session.session_metrics ?? []).find((sm: any) => sm.metric_key === `${key}_${m.id}`);
-      if (!row) return true; // metric wasn't recorded on this (possibly older) session — don't fail on missing data
-      const threshold = cfg.thresholds[m.id] ?? m.defaultThreshold;
-      return passesMetric(m.direction, row.value, threshold);
-    });
+    // Every attempt today is its own separate session row (migration 017,
+    // same fix mobile/src/utils/routineProgress.ts already applies on the
+    // athlete-facing side) — sum today's reps across ALL of them rather than
+    // just the latest attempt, so an athlete who split their reps across two
+    // clips isn't marked as having failed the requirement.
+    const repsForCheck = testedToday
+      ? sessionsForKey
+          .filter((s) => (s.recorded_at as string).startsWith(today))
+          .reduce((sum, s) => sum + (s.rep_count ?? 0), 0)
+      : latestSession.rep_count ?? 0;
 
-    return {
-      key,
-      label: EXERCISE_LABELS[key],
-      readiness: session.readiness_score ?? 0,
-      testedToday: (session.recorded_at as string).startsWith(today),
-      passed: repsOk && metricsOk,
-    };
+    const readiness    = latestSession.readiness_score ?? null;
+    const repsOk        = repsForCheck >= cfg.targetReps;
+    // Readiness is sessions.readiness_score directly — the same balance+ROM
+    // average an individual athlete sees, not a manager-tunable per-metric
+    // threshold (see migration 018 / MANAGER_MODULE_AUDIT.md sections 2, 3,
+    // 6). "Passed" means today's reading isn't in the "at risk" band, using
+    // the exact same bands readinessColor renders everywhere else.
+    const readinessOk   = readiness == null || readiness >= AT_RISK_READINESS_FLOOR;
+
+    return { key, label: exerciseLabel(key), readiness, testedToday, passed: repsOk && readinessOk };
   });
 
-  // Overall readiness is an average across every active (assigned + enabled)
-  // exercise, not just the ones actually tested — an exercise that's missing
-  // or wasn't tested today contributes 0 rather than being dropped from the
-  // average, so a single good test can't read as a perfect overall score
-  // while other required exercises are outstanding.
+  // Overall readiness is an average across every active (required) exercise,
+  // not just the ones actually tested — an exercise that's missing or wasn't
+  // tested today contributes 0 rather than being dropped from the average,
+  // so a single good test can't read as a perfect overall score while other
+  // required exercises are outstanding.
   const readiness = activeExercises.length
     ? Math.round(
         perExerciseReadiness.reduce((sum, e) => sum + (e.testedToday ? e.readiness ?? 0 : 0), 0) / activeExercises.length,
@@ -191,14 +191,12 @@ function buildViewModel(
     ? new Date(latest.recorded_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
     : null;
 
-  // Missing today: active (assigned + enabled) exercises with no session recorded today
-  const missingTests = activeExercises.filter((key) => {
-    const session = latestByExercise.get(key);
-    return !session || !(session.recorded_at as string).startsWith(today);
-  }).length;
+  // Missing today: active (required) exercises with no session recorded today
+  const missingTests = perExerciseReadiness.filter((e) => !e.testedToday).length;
 
-  // Status: REVIEW if no history yet or any assigned exercise fails its thresholds;
-  // WATCH if everything so far passes but today's tests aren't all done; else READY.
+  // Status: REVIEW if no history yet or any required exercise's most recent
+  // attempt failed (reps/readiness); WATCH if everything so far passes but
+  // today's tests aren't all done; else READY.
   const anyFailed = perExerciseReadiness.some((e) => e.passed === false);
   let status: AthleteStatus = 'green';
   if (sessions.length === 0 || anyFailed) status = 'red';

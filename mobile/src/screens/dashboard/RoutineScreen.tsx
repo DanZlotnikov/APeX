@@ -31,7 +31,7 @@ export default function RoutineScreen({ userId, teamId }: Props) {
     useCallback(() => {
       let active = true;
       if (userId) {
-        getRoutine(userId)
+        getRoutine(userId, teamId ?? null)
           .then((rows) => {
             if (!active) return;
             const map: Partial<Record<PipelineExerciseKey, RoutineSetting>> = {};
@@ -44,7 +44,7 @@ export default function RoutineScreen({ userId, teamId }: Props) {
         setLoading(false);
       }
       return () => { active = false; };
-    }, [userId]),
+    }, [userId, teamId]),
   );
 
   async function updateSetting(key: PipelineExerciseKey, patch: Partial<Pick<RoutineSetting, 'enabled' | 'targetReps'>>) {

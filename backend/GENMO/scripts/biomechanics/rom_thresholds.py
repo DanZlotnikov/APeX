@@ -76,9 +76,7 @@ register_rom(ExerciseRomProfile(
             signal="knee_angle", start_selector="start", end_selector="bottom",
             target_rom_deg=90.0, watch_threshold_pct=80.0, at_risk_threshold_pct=60.0,
             research=(
-                "IJSPT 2021 / NSCA — parallel (~90deg knee flexion) squat-depth benchmark "
-                "(same figure already used for readiness in exerciseMetrics.ts / "
-                "legacy_metrics.py's squat_depth)",
+                "IJSPT 2021 / NSCA — parallel (~90deg knee flexion) squat-depth benchmark",
                 "PMC7276781 — deep-squat knee ROM studies report 75-135deg across "
                 "differing depth definitions; 90deg (parallel) sits centrally in that band",
             ),

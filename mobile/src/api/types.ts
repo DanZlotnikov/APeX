@@ -1,3 +1,5 @@
+import { PipelineExerciseKey } from '../utils/pipelineExercise';
+
 // ── DB row types (mirror the PostgreSQL schema) ────────────────────────────────
 
 export interface DbProfile {
@@ -22,7 +24,7 @@ export interface DbAthleteProfile {
 export interface DbSession {
   id: string;
   athlete_id: string;
-  exercise_type: 'squat' | 'jump' | 'pullup';
+  exercise_type: PipelineExerciseKey;
   recorded_at: string;
   rep_count: number;
   readiness_score: number | null;
@@ -47,25 +49,9 @@ export interface DbNotification {
   created_at: string;
 }
 
-export interface DbTeamSettings {
-  team_id: string;
-  readiness_threshold: number;
-  updated_at: string;
-}
-
-export interface DbTeamExercise {
-  id: string;
-  team_id: string;
-  exercise_key: 'squat' | 'jump' | 'pullup';
-  enabled: boolean;
-  min_reps: number;
-  thresholds: Record<string, number>;
-  sort_order: number;
-}
-
 export interface DbAthleteExerciseAssignment {
   athlete_id: string;
-  exercise_key: 'squat' | 'jump' | 'pullup';
+  exercise_type: PipelineExerciseKey;
   assigned: boolean;
 }
 
@@ -89,11 +75,11 @@ export interface NotificationViewModel {
 }
 
 export interface ExerciseReadiness {
-  key: 'squat' | 'jump' | 'pullup';
+  key: PipelineExerciseKey;
   label: string;
-  readiness: number | null; // null = no session yet for this exercise
-  testedToday: boolean;     // whether the latest session for this exercise was recorded today
-  passed: boolean | null;   // null = no session yet to judge; else meets min reps + all metric thresholds
+  readiness: number | null; // most recent session's readiness_score for this exercise (any day)
+  testedToday: boolean;     // whether at least one session for this exercise was recorded today
+  passed: boolean | null;   // null = never tested; else today's summed reps meet target AND readiness isn't in the "at risk" band (or, if not tested today, the most recent reading isn't)
 }
 
 // A required task the athlete tapped on the dashboard, carried through
@@ -103,9 +89,9 @@ export interface ExerciseReadiness {
 // mismatch (e.g. jump instead of squat) can still be checked against ITS
 // own requirement — see AnalysisScreen's target-vs-actual resolution.
 export interface TargetExercise {
-  key: 'squat' | 'jump' | 'pullup';
+  key: PipelineExerciseKey;
   label: string;
-  requiredRepsByKey: Partial<Record<'squat' | 'jump' | 'pullup', number>>;
+  requiredRepsByKey: Partial<Record<PipelineExerciseKey, number>>;
 }
 
 export interface AthleteViewModel {

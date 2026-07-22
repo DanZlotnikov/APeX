@@ -1,9 +1,16 @@
 /**
  * Athlete daily routine — see supabase/migrations/014_athlete_routines.sql.
- * An athlete with a team can only read this (RLS blocks writes); an
- * individual (teamless) athlete can also write, enforced server-side, not
- * just by RoutineScreen hiding its controls.
+ * An individual (teamless) athlete edits their own athlete_routines rows
+ * directly (RLS-enforced, not just RoutineScreen hiding its controls). A
+ * team athlete's routine is instead resolved from their manager's team-wide
+ * default plus any per-athlete override (migration 018,
+ * mobile/src/api/teamRoutine.ts) — that athlete's own athlete_routines rows
+ * are never read or written, since editing is manager-only for team
+ * athletes. Either way this returns the SAME RoutineSetting[] shape, so
+ * every caller (RoutineScreen, OverviewScreen, routineProgress.ts) works
+ * unchanged regardless of which source the data came from.
  */
+import { getEffectiveRoutines } from './teamRoutine';
 import { PipelineExerciseKey, PIPELINE_EXERCISE_KEYS } from '../utils/pipelineExercise';
 import { supabase } from './supabase';
 
@@ -20,10 +27,19 @@ function defaultSetting(exerciseType: PipelineExerciseKey): RoutineSetting {
 }
 
 // Always returns exactly one entry per PIPELINE_EXERCISE_KEYS, in that
-// order. An exercise the athlete has never touched simply has no DB row yet
-// (see setRoutineExercise) and falls back to off/5 here, rather than every
-// athlete needing 6 pre-seeded rows up front.
-export async function getRoutine(athleteId: string): Promise<RoutineSetting[]> {
+// order. An exercise nobody has touched yet simply has no DB row and falls
+// back to off/5 here, rather than every athlete/team needing 6 pre-seeded
+// rows up front.
+export async function getRoutine(athleteId: string, teamId: string | null): Promise<RoutineSetting[]> {
+  if (teamId) {
+    const resolved = await getEffectiveRoutines(teamId, [athleteId]);
+    return (resolved.get(athleteId) ?? []).map((r) => ({
+      exerciseType: r.exerciseType,
+      enabled: r.enabled,
+      targetReps: r.targetReps,
+    }));
+  }
+
   const { data, error } = await supabase
     .from('athlete_routines')
     .select('exercise_type, enabled, target_reps')

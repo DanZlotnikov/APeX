@@ -158,7 +158,12 @@ export default function AnalysisScreen({
   // one is a rare edge case we don't try to split into separate sessions).
   const actual        = assessment?.perExercise[0] ?? null;
   const actualKey: ExerciseKey | null = actual?.key ?? null;
-  const effectiveKey: ExerciseKey | null = actualKey ?? targetExercise?.key ?? null;
+  // targetExercise.key is now the 6-exercise pipeline vocabulary (see
+  // api/types.ts); this screen is unreachable from any navigation path
+  // (see MANAGER_MODULE_AUDIT.md section 5) and only ever dealt with the
+  // retired on-device analyzer's 3, so the cast is safe — kept only so this
+  // dead code still compiles.
+  const effectiveKey: ExerciseKey | null = actualKey ?? (targetExercise?.key as ExerciseKey | undefined) ?? null;
   const mismatched     = !!(targetExercise && actualKey && actualKey !== targetExercise.key);
   const requiredReps   = targetExercise && effectiveKey ? targetExercise.requiredRepsByKey[effectiveKey] : undefined;
   const completedReps  = actual?.reps ?? 0;

@@ -80,6 +80,16 @@ export async function logout() {
   await supabase.auth.signOut();
 }
 
+// Full, irreversible deletion of the caller's own account and all their data
+// (profile, sessions, videos, storage files) — see delete-account Edge
+// Function and APP_STORE_SUBMISSION_PLAN.md section 1.1. supabase-js attaches
+// the caller's current session as the Authorization header automatically, so
+// the Edge Function always deletes the calling user, never anyone else.
+export async function deleteAccount() {
+  const { error } = await supabase.functions.invoke('delete-account');
+  if (error) throw error;
+}
+
 export async function getSession() {
   const { data } = await supabase.auth.getSession();
   return data.session;

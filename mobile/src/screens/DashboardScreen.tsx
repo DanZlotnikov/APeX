@@ -105,7 +105,7 @@ export default function DashboardScreen({ userId, teamId, onRecord, onUpload, on
             underneath survives opening/closing it. */}
         {settingsOpen && (
           <View style={styles.settingsOverlay}>
-            <SettingsScreen />
+            <SettingsScreen onLogout={onLogout} />
           </View>
         )}
       </View>

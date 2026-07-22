@@ -6,13 +6,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AthleteViewModel } from '../../api/types';
 import { useSettings } from '../../state/SettingsContext';
 import { colors } from '../../theme';
-import ExercisesScreen from './ExercisesScreen';
+import ManagerRoutineScreen from './ManagerRoutineScreen';
 import ManagerDashboard from './ManagerDashboard';
 
 const Tab = createBottomTabNavigator();
 
 // ︎ = variation selector-15: forces text rendering, prevents iOS emoji substitution
-const GLYPH: Record<string, string> = { Athletes: '◉︎', Exercises: '▤︎' };
+const GLYPH: Record<string, string> = { Athletes: '◉︎', Routine: '☑︎' };
 
 const navTheme = {
   ...DarkTheme,
@@ -49,8 +49,8 @@ export default function ManagerHome({ teamId, onAthleteSelect }: Props) {
         <Tab.Screen name="Athletes">
           {() => <ManagerDashboard teamId={teamId} onAthleteSelect={onAthleteSelect} />}
         </Tab.Screen>
-        <Tab.Screen name="Exercises">
-          {() => <ExercisesScreen teamId={teamId} />}
+        <Tab.Screen name="Routine">
+          {() => <ManagerRoutineScreen teamId={teamId} />}
         </Tab.Screen>
       </Tab.Navigator>
     </NavigationContainer>

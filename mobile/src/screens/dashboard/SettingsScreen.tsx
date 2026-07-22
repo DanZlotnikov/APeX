@@ -1,8 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Animated, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { deleteAccount } from '../../api/auth';
 import Toggle from '../../components/Toggle';
 import { useSettings } from '../../state/SettingsContext';
 import { ACCENTS, AccentKey, colors, FontScaleKey, spacing } from '../../theme';
+import { confirmAsync } from '../../utils/confirm';
 import { heightInputToCm, weightInputToKg } from '../../utils/units';
 
 const ACCENT_KEYS = Object.keys(ACCENTS) as AccentKey[];
@@ -11,12 +13,36 @@ const FONT_OPTS: { key: FontScaleKey; label: string }[] = [
 ];
 const WINDOW_OPTS = [7, 14, 30, 90];
 
-export default function SettingsScreen() {
+interface Props {
+  onLogout: () => void;
+}
+
+export default function SettingsScreen({ onLogout }: Props) {
   const { settings, profile, update, updateProfile, accentColor, fontScale } = useSettings();
 
   const [name, setName] = useState(profile.name);
   const [height, setHeight] = useState('');
   const [weight, setWeight] = useState('');
+  const [deleting, setDeleting] = useState(false);
+
+  async function handleDeleteAccount() {
+    const confirmed = await confirmAsync(
+      'Delete account?',
+      'This permanently deletes your account and all of your data, including videos and session history. This cannot be undone.',
+      { destructive: true, confirmLabel: 'Delete' },
+    );
+    if (!confirmed) return;
+
+    setDeleting(true);
+    try {
+      await deleteAccount();
+      onLogout();
+    } catch (e) {
+      console.warn('Failed to delete account', e);
+      setDeleting(false);
+      Alert.alert('Could not delete account', 'Something went wrong. Please try again.');
+    }
+  }
 
   useEffect(() => {
     setName(profile.name);
@@ -122,6 +148,20 @@ export default function SettingsScreen() {
             onChange={(k) => update({ windowDays: parseInt(k, 10) })}
             accent={accentColor}
           />
+        </View>
+
+        {/* ── Account ── */}
+        <Section title="ACCOUNT" fontScale={fontScale} />
+        <View style={styles.card}>
+          <Pressable
+            onPress={() => void handleDeleteAccount()}
+            disabled={deleting}
+            style={({ pressed }) => [styles.dangerRow, pressed && !deleting && { opacity: 0.7 }]}
+          >
+            {deleting
+              ? <ActivityIndicator color={colors.danger} size="small" />
+              : <Text style={styles.dangerText}>Delete Account</Text>}
+          </Pressable>
         </View>
 
       </ScrollView>
@@ -239,4 +279,7 @@ const styles = StyleSheet.create({
   segItem: { flex: 1, alignItems: 'center', paddingVertical: 8, borderRadius: 8 },
   segText: { color: colors.muted, fontSize: 12, fontWeight: '700' },
   segTextOn: { color: colors.bg },
+
+  dangerRow: { paddingVertical: spacing.sm, alignItems: 'center' },
+  dangerText: { color: colors.danger, fontSize: 14, fontWeight: '700' },
 });
