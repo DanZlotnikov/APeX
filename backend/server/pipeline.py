@@ -6,7 +6,8 @@ preprocessing, GEM inference, exercise counting, biomechanical analysis,
 skeleton rendering) via backend/GENMO/scripts/worker.py — this file only
 adds the server-specific final rendering step: a side-by-side video with
 the original clip (cropped to the athlete's full range of motion, no
-overlay) on the left, and the skeleton+counter render on the right.
+overlay, bounded to a sane on-screen aspect ratio — see MAX_PANEL_ASPECT)
+on the left, and the skeleton+counter render on the right.
 
 Importing `worker` (below) has a side effect worth knowing about: it chdir's
 the process into backend/GENMO/ and adds backend/GENMO/scripts/demo/ to
@@ -32,7 +33,28 @@ from exercises import stabilize_grip_point  # noqa: E402
 from skeleton_renderer import render_skeleton_frames  # noqa: E402
 
 PANEL_HEIGHT = 720
-CROP_PAD_FRAC = 0.25  # 25% padding around the athlete's full range-of-motion bbox
+CROP_PAD_FRAC = 0.18  # padding around the athlete's full range-of-motion bbox
+# Each panel's own width:height is capped at this ratio (e.g. 0.6 = a panel
+# is never wider than 60% of its own height). Two panels side by side means
+# the combined video's width is naturally double a single panel's — for a
+# person recorded portrait (phone-camera default, the app's primary case),
+# an unconstrained crop can come out close to the *source* clip's own
+# aspect, which for a full-ROM exercise (arms swinging, a wide stance, ...)
+# can end up nearly square or even landscape per panel. Doubled side by
+# side, that becomes a noticeably wide, short composite that reads poorly
+# in a portrait phone card (see mobile's VideoPlayer.fitContainer, which
+# sizes the card to whatever aspect ratio the video itself has — it can't
+# fix an awkwardly-shaped source video, it just faithfully reproduces it).
+# This caps how far a natural crop's own shape is allowed to push the
+# output — see clamp_box_aspect below, applied by tightening the crop
+# HORIZONTALLY (never vertically, since vertical range is usually the
+# athlete's actual rep motion, e.g. squat depth — cropping that would cut
+# off the movement itself). 0.6 keeps the combined two-panel composite at
+# or below ~1.2:1 (near-square, leaning landscape) — a bounded, predictable
+# shape regardless of the source clip, prioritizing "fits the screen"
+# (a hard guarantee) over a maximally tight per-panel crop (best-effort,
+# only overridden when the natural crop would otherwise exceed this).
+MAX_PANEL_ASPECT = 0.6
 
 
 def compute_union_crop_box(bbx_xys, W: int, H: int, pad_frac: float = CROP_PAD_FRAC) -> tuple[int, int, int, int]:
@@ -61,6 +83,23 @@ def compute_union_crop_box(bbx_xys, W: int, H: int, pad_frac: float = CROP_PAD_F
     x1 = min(W, int(x1))
     y1 = min(H, int(y1))
     return x0, y0, x1, y1
+
+
+def clamp_box_aspect(box: tuple[int, int, int, int], max_aspect: float = MAX_PANEL_ASPECT) -> tuple[int, int, int, int]:
+    """If `box` is wider (relative to its height) than max_aspect allows,
+    tighten it horizontally around its own center until it isn't. Only ever
+    NARROWS the box — never widens it and never touches its height — so
+    this can only crop away more background, never include less of the
+    athlete's actual (vertical) range of motion than compute_union_crop_box
+    already decided was needed.
+    """
+    x0, y0, x1, y1 = box
+    w, h = x1 - x0, y1 - y0
+    if h <= 0 or w / h <= max_aspect:
+        return box
+    target_w = h * max_aspect
+    cx = (x0 + x1) / 2.0
+    return int(round(cx - target_w / 2)), y0, int(round(cx + target_w / 2)), y1
 
 
 def crop_and_resize_original(frames: np.ndarray, box: tuple[int, int, int, int], target_h: int = PANEL_HEIGHT) -> np.ndarray:
@@ -118,8 +157,9 @@ def process_video_two_panel(
     r = worker.run_core_pipeline(models, video_path, preprocess_dir, log_prefix="[server]", cancel_check=cancel_check)
 
     # Left panel: original frames, no overlay, cropped to the athlete's full
-    # range of motion across the whole clip (see compute_union_crop_box).
-    box = compute_union_crop_box(r["bbx_xys"], r["W"], r["H"])
+    # range of motion across the whole clip (see compute_union_crop_box),
+    # then bounded to a sane on-screen shape (see clamp_box_aspect / MAX_PANEL_ASPECT).
+    box = clamp_box_aspect(compute_union_crop_box(r["bbx_xys"], r["W"], r["H"]))
     orig_frames = read_video_np(str(video_path))
     left_panel = crop_and_resize_original(orig_frames, box, target_h=PANEL_HEIGHT)
     del orig_frames

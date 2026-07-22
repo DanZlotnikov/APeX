@@ -54,16 +54,21 @@ class SkeletonCamera:
         extent = max(extent, 0.5)
 
         azimuth, elevation = np.radians(35), np.radians(18)
-        # 0.9x the joints' own extent, not a looser 1.6x — tightened to read
-        # visually closer to the real-video panel's crop padding (25% around
-        # the athlete's 2D bbox, see pipeline.py's CROP_PAD_FRAC) instead of
-        # an independently-tuned, uncoordinated "zoom out" heuristic that
-        # left noticeably more empty grid space around the skeleton than the
-        # tight athlete crop on the other panel. Tuned empirically against
-        # real footage (a 2D crop's padding and a 3D perspective camera's
-        # framing aren't analytically equivalent) — re-check visually if
-        # this ever needs adjusting again.
-        dist = extent * 0.9
+        # 0.65x the joints' own extent, not a looser 1.6x — tightened to
+        # read visually closer to the real-video panel's crop padding (18%
+        # around the athlete's 2D bbox, see pipeline.py's CROP_PAD_FRAC)
+        # instead of an independently-tuned, uncoordinated "zoom out"
+        # heuristic that left noticeably more empty grid space around the
+        # skeleton than the tight athlete crop on the other panel. Tuned
+        # empirically against real footage (a 2D crop's padding and a 3D
+        # perspective camera's framing aren't analytically equivalent) — the
+        # 0.9 -> 0.65 change here is a proportional estimate matching
+        # CROP_PAD_FRAC's own 0.25 -> 0.18 tightening, not a fresh empirical
+        # pass (no live render was available when this was last touched) —
+        # re-check visually against a real render and adjust if the skeleton
+        # panel reads noticeably tighter/looser than the athlete-crop panel
+        # next to it.
+        dist = extent * 0.65
         offset = dist * np.array([
             np.cos(elevation) * np.sin(azimuth),
             np.sin(elevation),
