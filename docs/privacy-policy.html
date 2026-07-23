@@ -138,8 +138,41 @@
     gap: 2rem;
     flex-wrap: wrap;
   }
-  .brand { display: flex; align-items: center; gap: 0.85rem; }
-  .brand svg { width: 40px; height: 40px; flex-shrink: 0; }
+  .brand { display: flex; align-items: center; gap: 0.9rem; }
+  .brand-badge {
+    position: relative;
+    width: 56px;
+    height: 56px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .brand-badge::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    border: 1.5px solid var(--accent);
+    opacity: 0.55;
+  }
+  .brand-badge-inner {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: #111B2C;
+    border: 1px solid #24344A;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .brand-badge-text {
+    font-family: 'Bahnschrift', sans-serif;
+    font-weight: 900;
+    font-size: 12.5px;
+    letter-spacing: 0.03em;
+    color: var(--accent);
+  }
   .brand-text { display: flex; flex-direction: column; gap: 0.15rem; }
   .brand-name {
     font-family: 'Bahnschrift', sans-serif;
@@ -388,14 +421,14 @@
 <header class="masthead">
   <div class="masthead-inner">
     <div class="brand">
-      <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-        <rect width="100" height="100" rx="22" fill="#0B1220"/>
-        <path d="M20 68 L50 24 L80 68" stroke="#00D4BC" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
-        <rect x="24" y="74" width="52" height="6" rx="3" fill="#00D4BC"/>
-      </svg>
+      <div class="brand-badge" aria-hidden="true">
+        <div class="brand-badge-inner">
+          <span class="brand-badge-text">APeX</span>
+        </div>
+      </div>
       <div class="brand-text">
         <span class="brand-name">APeX</span>
-        <span class="brand-tag">Athlete Performance</span>
+        <span class="brand-tag">Athlete Performance Excellence</span>
       </div>
     </div>
     <div class="masthead-meta">

@@ -16,7 +16,7 @@ underneath stale tags.
 | 1.1 | In-app account deletion | ✅ Done — Edge Function deployed, UI live in both Settings screens |
 | 1.2 | Service-role key isolation | ✅ Done — re-verified against the actual built bundle, not just source |
 | 1.3 | `app.json` / `eas.json` fields | ✅ Done — bundle IDs, icon, version strategy all set |
-| 1.4 | Privacy Policy | ✅ Done — hosted via GitHub Pages (`docs/`), linked from signup + both Settings screens; legal review still recommended |
+| 1.4 | Privacy Policy | ✅ Done — live at danzlotnikov.github.io/APeX/privacy-policy.html, linked from signup + both Settings screens; legal review still recommended |
 | 2.1 | Worker cadence during review | 🔴 Not started — still manual 1-2x/day, still the single biggest risk |
 | 2.2 | Health/fitness risk framing | ✅ Done — risk wording removed app-wide, disclaimer added at signup and in both Settings screens |
 | 2.3 | Sign in with Apple | ✅ N/A — confirmed still not required, no change needed |
@@ -24,10 +24,9 @@ underneath stale tags.
 | 2.5 | `userInterfaceStyle` light/dark mismatch | ✅ Done — set to `"dark"` |
 | Phase C/D/E | Build, TestFlight, metadata, submit | 🔴 Not started |
 
-**The one thing standing between here and Phase C:** enable GitHub Pages for this repo
-(**Settings → Pages → Source: "Deploy from a branch" → `main` / `/docs`** — a few clicks only
-your GitHub account can do, see §1.4), then decide the worker-cadence approach (§2.1 — a product
-decision, not code, and the single biggest remaining risk in this whole plan).
+**The one thing standing between here and Phase C:** decide the worker-cadence approach (§2.1 —
+a product decision, not code, and the single biggest remaining risk in this whole plan). §1.4's
+Privacy Policy is now fully live, nothing left there.
 
 ---
 
@@ -138,11 +137,12 @@ mechanism from §1.1, and a 13+ children's-privacy clause matching how signup ac
 - **Contact info** (Section 11): `danzlotnikov+apex@gmail.com` (a Gmail `+` alias — lands in the
   existing inbox, gives a distinct public-facing address without a new account to check) and
   developer name, both filled in.
-- **Hosted at a public URL**: `docs/privacy-policy.html` (the same branded HTML built for the
-  Artifact — dark/light themes, section-jump nav) is committed to the repo; GitHub Pages serves
-  it at `https://danzlotnikov.github.io/APeX/privacy-policy.html` once Pages is enabled for this
-  repo (**Settings → Pages → Source: "Deploy from a branch" → Branch: `main`, folder: `/docs`** —
-  the one step only your GitHub account can do; propagates within a minute or two of saving).
+- **Hosted at a public URL, confirmed live**: `https://danzlotnikov.github.io/APeX/privacy-policy.html`
+  (GitHub Pages, `docs/privacy-policy.html`) — verified rendering correctly, dark theme, section
+  nav working. Before enabling Pages, audited `docs/` for anything secret-shaped (grepped the
+  file for Supabase URLs/keys/JWTs/tokens — the only match was the intentional contact email);
+  `docs/` contains exactly this one file, and GitHub Pages only ever publishes that folder, not
+  the rest of the (private) repo.
 - **Linked from the app**: `SignUpScreen.tsx` (a "Privacy Policy" link next to the disclaimer,
   above the submit button) and both Settings screens' "ABOUT" section — all three point at the
   same GitHub Pages URL above.
