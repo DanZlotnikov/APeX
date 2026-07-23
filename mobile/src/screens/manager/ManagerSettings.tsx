@@ -1,11 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Animated, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Animated, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { deleteAccount } from '../../api/auth';
 import { getTeamInviteCode, getTeamName, regenerateInviteCode } from '../../api/teams';
 import Toggle from '../../components/Toggle';
 import { useSettings } from '../../state/SettingsContext';
 import { ACCENTS, AccentKey, colors, FontScaleKey, spacing } from '../../theme';
 import { confirmAsync } from '../../utils/confirm';
+
+const PRIVACY_POLICY_URL = 'https://danzlotnikov.github.io/APeX/privacy-policy.html';
 
 // Exercise-related team settings (which exercises are tested, target reps,
 // per-athlete assignment) live on the "Routine" manager tab (ManagerHome.tsx
@@ -183,6 +185,21 @@ export default function ManagerSettings({ teamId, onLogout }: Props) {
         </View>
 
         <View style={styles.section}>
+          <Text style={styles.sectionTitle}>ABOUT</Text>
+          <View style={styles.card}>
+            <Text style={styles.aboutText}>
+              APeX provides training feedback based on computer-vision movement analysis — pose
+              estimation, balance, and range of motion. It is not a medical device, is not a
+              diagnostic tool, and is not a substitute for professional medical advice. Athletes
+              should consult a physician before beginning any exercise program.
+            </Text>
+            <Pressable onPress={() => void Linking.openURL(PRIVACY_POLICY_URL)} style={styles.aboutLinkRow}>
+              <Text style={styles.aboutLink}>Privacy Policy</Text>
+            </Pressable>
+          </View>
+        </View>
+
+        <View style={styles.section}>
           <Text style={styles.sectionTitle}>ACCOUNT</Text>
           <View style={styles.card}>
             <Pressable
@@ -330,4 +347,8 @@ const styles = StyleSheet.create({
 
   dangerRow: { paddingVertical: spacing.sm, alignItems: 'center' },
   dangerText: { color: colors.danger, fontSize: 14, fontWeight: '700' },
+
+  aboutText: { color: colors.muted, fontSize: 12, lineHeight: 18 },
+  aboutLinkRow: { borderTopWidth: 1, borderTopColor: colors.border, paddingVertical: spacing.sm, marginTop: spacing.xs },
+  aboutLink: { color: colors.primary, fontSize: 13, fontWeight: '700' },
 });

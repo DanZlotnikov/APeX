@@ -18,16 +18,16 @@ function severityStatus(s: 'ok' | 'watch' | 'at_risk'): 'green' | 'yellow' | 're
 // Readiness decision (see migration 016): averages L/R balance and range of
 // motion when both are present for this exercise — an athlete who's
 // perfectly symmetric but barely dipping (poor ROM), or vice versa,
-// shouldn't read as "Ready" on one score alone. Computed the same way
+// shouldn't read as "Good" on one score alone. Computed the same way
 // client-side here as save_video_job computes it server-side, so a
 // completed-but-not-yet-saved job (this component's data straight from
 // video_jobs.analysis_json) shows the identical number it'll have once
 // saved into sessions.readiness_score — never a value that changes the
 // moment Save is tapped. Falls back to whichever single score is present
-// if only one analyzer produced a result (e.g. 0 reps). Same Ready/Caution/
-// High Risk bands ReadinessGauge already uses for its color (>=80/>=55/below).
+// if only one analyzer produced a result (e.g. 0 reps). Same Good/Fair/Low
+// bands ReadinessGauge already uses for its color (>=80/>=55/below).
 function readinessLabelFor(pct: number): string {
-  return pct >= 80 ? 'Ready' : pct >= 55 ? 'Caution' : 'High Risk';
+  return pct >= 80 ? 'Good' : pct >= 55 ? 'Fair' : 'Low';
 }
 
 /**

@@ -86,7 +86,7 @@ export default function LoginScreen({ onLogin, onSignUp }: Props) {
           <Text style={styles.wordmark}>APeX</Text>
           <Text style={styles.tagline}>ATHLETIC PERFORMANCE EXCELLENCE</Text>
           <View style={styles.divider} />
-          <Text style={styles.sub}>Movement analysis · Readiness tracking · Injury prevention</Text>
+          <Text style={styles.sub}>Movement analysis · Readiness tracking · Balance and range insights</Text>
         </Animated.View>
 
         {/* ── Login form ────────────────────────────────────────── */}

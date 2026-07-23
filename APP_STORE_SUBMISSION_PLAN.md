@@ -1,11 +1,13 @@
 # APeX · App Store Submission Plan
 
-Status: **in progress — most of §1 (hard blockers) is now implemented.** Originally written as
-planning-only; updated after several follow-up sessions that implemented account deletion,
-`app.json`/`eas.json`, the Privacy Policy draft, and the microphone-permission removal. Every
-item below is now tagged ✅ **Done**, 🟡 **Partial / needs a decision**, or 🔴 **Not started** so
-this doc stays a reliable single source of truth for what's actually left — update the tag
-whenever you change something, don't just add new prose underneath stale tags.
+Status: **in progress — §1 and §2 are fully done except the worker-cadence decision (§2.1).**
+Originally written as planning-only; updated after several follow-up sessions that implemented
+account deletion, `app.json`/`eas.json`, the Privacy Policy (drafted, hosted, and linked from the
+app), the microphone-permission removal, the health/fitness disclaimer + risk-framing wording
+pass, and the `userInterfaceStyle` fix. Every item below is tagged ✅ **Done**, 🟡 **Partial /
+needs a decision**, or 🔴 **Not started** so this doc stays a reliable single source of truth for
+what's actually left — update the tag whenever you change something, don't just add new prose
+underneath stale tags.
 
 ## Current status at a glance
 
@@ -14,18 +16,18 @@ whenever you change something, don't just add new prose underneath stale tags.
 | 1.1 | In-app account deletion | ✅ Done — Edge Function deployed, UI live in both Settings screens |
 | 1.2 | Service-role key isolation | ✅ Done — re-verified against the actual built bundle, not just source |
 | 1.3 | `app.json` / `eas.json` fields | ✅ Done — bundle IDs, icon, version strategy all set |
-| 1.4 | Privacy Policy | 🟡 Partial — drafted and accurate, **not yet hosted at a public URL**, 2 fields still unfilled |
+| 1.4 | Privacy Policy | ✅ Done — hosted via GitHub Pages (`docs/`), linked from signup + both Settings screens; legal review still recommended |
 | 2.1 | Worker cadence during review | 🔴 Not started — still manual 1-2x/day, still the single biggest risk |
-| 2.2 | Health/fitness disclaimer copy | 🔴 Not started — no in-app disclaimer exists yet |
+| 2.2 | Health/fitness risk framing | ✅ Done — risk wording removed app-wide, disclaimer added at signup and in both Settings screens |
 | 2.3 | Sign in with Apple | ✅ N/A — confirmed still not required, no change needed |
 | 2.4 | Unnecessary microphone permission | ✅ Done — removed at every layer, including one not originally anticipated |
-| 2.5 | `userInterfaceStyle` light/dark mismatch | 🔴 Not started — still a one-line fix sitting untouched |
+| 2.5 | `userInterfaceStyle` light/dark mismatch | ✅ Done — set to `"dark"` |
 | Phase C/D/E | Build, TestFlight, metadata, submit | 🔴 Not started |
 
-**The three things standing between here and submission, in order:** finish the Privacy Policy
-(host it, fill in contact info — 30 minutes of your own time, nothing left for me to do), decide
-the worker-cadence approach (§2.1 — this is a product decision, not code), then knock out the two
-remaining one-line/one-paragraph fixes (§2.2, §2.5) before starting Phase C.
+**The one thing standing between here and Phase C:** enable GitHub Pages for this repo
+(**Settings → Pages → Source: "Deploy from a branch" → `main` / `/docs`** — a few clicks only
+your GitHub account can do, see §1.4), then decide the worker-cadence approach (§2.1 — a product
+decision, not code, and the single biggest remaining risk in this whole plan).
 
 ---
 
@@ -123,7 +125,7 @@ are the only two places that should ever see it.
 account (Certificates, Identifiers & Profiles) before your first EAS build — that step can only
 happen through Apple's own site.
 
-### 1.4 Privacy Policy — 🟡 **Drafted, not yet publishable as-is**
+### 1.4 Privacy Policy — ✅ **Done** (pending a legal review, which is yours to schedule)
 
 `PRIVACY_POLICY.md` is written and accurate to the app's real behavior (verified against actual
 code, not assumed): what's collected (account info, optional profile fields, muted video-only
@@ -131,19 +133,23 @@ recordings, derived readiness/balance/ROM data, injury status, push tokens), tha
 are named sub-processors, that a coach/manager can see their team athletes' data (and an
 individual athlete's data is visible to no one else), retention and the real account-deletion
 mechanism from §1.1, and a 13+ children's-privacy clause matching how signup actually works
-(direct self-registration, no age gate). Also published as a shareable Artifact with a design
-pass (branded, both light/dark themes, section-jump navigation) for easy review.
+(direct self-registration, no age gate).
 
-**Two things you still need to do before this can go live**:
-1. Fill in Section 11 ("Contact Us") — a real support/privacy email and your developer/legal
-   entity name. Left as visibly-flagged placeholders rather than guessed, since fabricating
-   contact info in a legal document is worse than an obvious blank.
-2. **Host it at a public URL** — App Store Connect requires a Privacy Policy *URL* in metadata,
-   not just a document. The Artifact link is private by default (shareable from its own page, or
-   you can host the Markdown/HTML anywhere else you prefer — GitHub Pages, your own site, etc.).
+- **Contact info** (Section 11): `danzlotnikov+apex@gmail.com` (a Gmail `+` alias — lands in the
+  existing inbox, gives a distinct public-facing address without a new account to check) and
+  developer name, both filled in.
+- **Hosted at a public URL**: `docs/privacy-policy.html` (the same branded HTML built for the
+  Artifact — dark/light themes, section-jump nav) is committed to the repo; GitHub Pages serves
+  it at `https://danzlotnikov.github.io/APeX/privacy-policy.html` once Pages is enabled for this
+  repo (**Settings → Pages → Source: "Deploy from a branch" → Branch: `main`, folder: `/docs`** —
+  the one step only your GitHub account can do; propagates within a minute or two of saving).
+- **Linked from the app**: `SignUpScreen.tsx` (a "Privacy Policy" link next to the disclaimer,
+  above the submit button) and both Settings screens' "ABOUT" section — all three point at the
+  same GitHub Pages URL above.
 
-Also recommended, stated in the document itself: have a lawyer review it before publishing,
-especially for GDPR/CCPA-specific language if you'll operate in the EU/UK or California.
+**Still open, not code**: have a lawyer review it before publishing, especially for GDPR/CCPA-
+specific language if you'll operate in the EU/UK or California — the document says so itself in
+its closing note.
 
 ---
 
@@ -192,31 +198,58 @@ move to something always-on or have evidence that occasional processing windows 
 to your actual users. This is a recommendation, not something I've assumed you'll do — it's your
 call, but it's the highest-leverage single decision in this whole plan.
 
-### 2.2 Health/fitness "risk" framing may draw enhanced scrutiny (Guideline 1.4.1 / 5.1.3) — 🔴 **Not started**
+### 2.2 Health/fitness "risk" framing may draw enhanced scrutiny (Guideline 1.4.1 / 5.1.3) — ✅ **Done**
 
-No in-app disclaimer exists yet — the Privacy Policy (§1.4) touches on it briefly for the injury
-flag specifically ("does not constitute medical advice or a diagnosis"), but that's not the same
-as the dedicated, reachable-from-the-main-flow disclaimer this section recommends. Still open.
+Researched Apple's actual guidance before writing the disclaimer (see sources at the end of this
+entry) — the consistent takeaway: a disclaimer alone doesn't reclassify a health-adjacent app,
+but it's still standard, expected practice, and combined with removing risk-framed wording (below)
+it substantially lowers the odds of enhanced-scrutiny follow-up. One cautionary data point from
+developer forums: at least one developer's "wellness-only" disclaimer wasn't enough to avoid a
+1.4.1 flag on its own — so this mitigates, it doesn't guarantee.
 
-Your own biomechanics code — confirmed by reading `backend/GENMO/scripts/biomechanics/` — is
-explicitly framed around clinical/injury-risk literature: `at_risk` joint-check severity,
-research citations like *"ACL return-to-sport... >10-15% deficit = elevated re-injury risk,"*
-and a "READINESS" score presented to the athlete as Ready/Caution/High Risk. That's legitimate,
-well-researched sports-science work — but to Apple's review process, it reads as exactly the
-kind of health-measurement/injury-risk claim that Guideline 1.4.1 says must "clearly disclose
-data and methodology" and that gets "enhanced review scrutiny" once an app is categorized as
-Health & Fitness.
+**Disclaimer added in two places**, matching the standard pattern for fitness apps (visible
+before/at account creation, plus persistently reachable afterward — not a hard gate/checkbox,
+since Apple's own language is about "reminding" users, not requiring explicit consent for a
+non-diagnostic wellness app):
+- `SignUpScreen.tsx` — a condensed version shown directly above the submit button, the same
+  placement convention as a "by continuing you agree to..." terms line.
+- `SettingsScreen.tsx` (athlete) and `ManagerSettings.tsx` (manager) — a new "ABOUT" section
+  with the full disclaimer text, permanently reachable, not just seen once at signup.
 
-This is very unlikely to be an outright rejection on its own, but it raises your odds of a
-reviewer asking follow-up questions or requesting substantiation. Mitigate with:
-- A clear, visible disclaimer somewhere reachable from the main flow (e.g., Settings/About, and
-  ideally a one-time acknowledgment at signup): *"APeX provides training feedback based on
-  computer-vision movement analysis. It is not a medical device, is not a diagnostic tool, and
-  is not a substitute for professional medical advice. Consult a physician before beginning any
-  exercise program."*
-- Keep this disclaimer's existence in mind, not necessarily its exact wording — get real legal
-  language if this app is going to be marketed with health claims at all, this is not legal
-  advice.
+Full text used in Settings: *"APeX provides training feedback based on computer-vision movement
+analysis — pose estimation, balance, and range of motion. It is not a medical device, is not a
+diagnostic tool, and is not a substitute for professional medical advice. Consult a physician
+before beginning any exercise program."*
+
+Also **done previously** in this same effort: reworded every user-facing string that framed the app as medical/diagnostic or
+injury-risk-assessing, across both analysis pipelines (the live on-device path and the
+server-rendered biomechanics report), found via a full audit rather than a spot-check:
+- Login screen tagline: "Injury prevention" → "Balance and range insights".
+- Readiness bands (shown on the gauge in both `exerciseAnalyzer.ts` and
+  `BiomechanicsReport.tsx`): "Ready" / "Caution" / "High Risk" → "Good" / "Fair" / "Low" — same
+  numeric thresholds and color logic, purely relabeled to describe the *number*, not assess risk.
+- Per-factor status pill (`RiskFactorRow.tsx`): "RISK" → "LOW".
+- Corrective-exercise card (`PhysioCard.tsx`) header: "RECOMMENDED CORRECTIVE" → "SUGGESTED
+  DRILL".
+- Exercise rationale copy (`physioLibrary.ts`): removed "re-injury risk," "ACL strain," and
+  "injury risk" phrasing from the two entries that had it, replaced with plain mechanical
+  descriptions (uneven load-sharing, impact force through the joint) — the underlying coaching
+  content and thresholds are unchanged, only the framing.
+- Confirmed backend Python (`backend/GENMO/scripts/biomechanics/*.py`) never sends its
+  research-citation/clinical-language fields (`research`, `description`) to the client at all —
+  those only exist in code-level dataclasses, never serialized into `analysis_json` — so no
+  backend change was needed there.
+
+**Still worth doing, not code**: get real legal language reviewed if this app is ever marketed
+with explicit health claims — the disclaimer text above is not legal advice. Also worth adding
+the same disclaimer language to the App Store Connect app description itself (Phase D, item 19)
+once you're writing that copy, since Apple's guidance specifically calls out the description as a
+place this reminder should live, not just in-app.
+
+Sources consulted: [Apple App Store Requirements For Health Apps](https://blog.dashsdk.com/app-store-requirements-for-health-apps/),
+[Guideline 1.4.1 — Safety - Physical Harm (Apple Developer Forums)](https://developer.apple.com/forums/thread/779857),
+[Clarification needed: wellness-only app still flagged as medical (Apple Developer Forums)](https://developer.apple.com/forums/thread/807508),
+[App Review Guidelines (Apple Developer)](https://developer.apple.com/app-store/review/guidelines/).
 
 ### 2.3 Sign in with Apple — ✅ **N/A, confirmed not required** — worth stating explicitly so it doesn't get "fixed" unnecessarily later
 
@@ -245,10 +278,9 @@ that actually contributed it:
   (`{"microphonePermission": false}`). Re-verified against a fresh `expo prebuild` output that
   the permission is actually gone from the generated manifest, not just from `app.json`.
 
-### 2.5 `userInterfaceStyle: "light"` on an app that's entirely dark-navy-themed — 🔴 **Not started**
+### 2.5 `userInterfaceStyle: "light"` on an app that's entirely dark-navy-themed — ✅ **Done**
 
-Still exactly as originally described — a one-line fix (`"dark"` instead of `"light"` in
-`app.json`) that hasn't been made yet. Cheap to do whenever; low severity, pure polish.
+Changed to `"dark"` in `app.json`, matching what the app actually always looks like.
 
 ---
 
@@ -271,14 +303,15 @@ Still exactly as originally described — a one-line fix (`"dark"` instead of `"
 4. ✅ Implement account deletion end-to-end (§1.1) — done, deployed, verified.
 5. ✅ Fill in `app.json` + `eas.json` (§1.3) — done.
 6. ✅ Mic-permission removal (§2.4) — done, including the native-manifest layer.
-7. 🔴 Fix `userInterfaceStyle` (§2.5) — one-line change, still not done.
-8. 🟡 Privacy Policy (§1.4) — drafted and accurate; still needs hosting at a public URL and the
-   two contact-info fields filled in. Also still worth linking from the sign-up screen once
-   hosted (not yet done).
-9. 🔴 Add the health-disclaimer copy (§2.2) somewhere reachable in the app — not started.
+7. ✅ Fix `userInterfaceStyle` (§2.5) — done.
+8. ✅ Privacy Policy (§1.4) — drafted, contact info filled, hosted via GitHub Pages, linked from
+   signup + both Settings screens. Only remaining piece is enabling Pages itself (your GitHub
+   account) and an optional lawyer review.
+9. ✅ Health/fitness risk framing (§2.2) — risky wording removed app-wide, disclaimer added at
+   signup and in both Settings screens.
 10. 🔴 Decide your worker-cadence approach for launch (§2.1) and, if changing it from manual
     1-2x/day, build whatever minimal automation you land on — not started, still the biggest
-    open risk in this whole plan.
+    open risk in this whole plan, and now the **only** unstarted item in Phase B.
 
 ### Phase C — Build & internal testing — 🔴 not started
 
@@ -320,7 +353,8 @@ Still exactly as originally described — a one-line fix (`"dark"` instead of `"
     time, this changes periodically).
 19. App description, keywords, support URL, marketing URL (support URL is mandatory; marketing
     URL is optional).
-20. Privacy Policy URL — ready to fill in once §1.4's two remaining items are done.
+20. Privacy Policy URL — `https://danzlotnikov.github.io/APeX/privacy-policy.html`, live once
+    GitHub Pages is enabled (§1.4).
 21. "App Review Information": demo account credentials + the reviewer notes from §2.1 option 3.
 
 ### Phase E — Submit — 🔴 not started
@@ -364,17 +398,21 @@ Worth stating plainly so nothing gets "fixed" that isn't broken:
 - Realtime/Storage/RLS design generally — this session's extensive bug-fixing work already
   brought this to a solid, production-plausible state; this plan is about *App Store* readiness
   specifically, not a re-litigation of the whole architecture.
-- Account deletion (§1.1), `app.json`/`eas.json` (§1.3), and the microphone permission (§2.4) —
-  all done and verified; don't re-open these unless something actually regresses.
+- Account deletion (§1.1), `app.json`/`eas.json` (§1.3), the Privacy Policy (§1.4), the
+  microphone permission (§2.4), the health/fitness disclaimer and risk-framing wording (§2.2),
+  and `userInterfaceStyle` (§2.5) — all done and verified; don't re-open these unless something
+  actually regresses.
 
 ## 6. What's left, in the order it actually needs to happen
 
-1. **You**: fill in Privacy Policy contact info + host it publicly (§1.4) — the only remaining
-   piece of that item, nothing left for me to draft.
-2. **You**: decide the worker-cadence approach for launch (§2.1) — a product call, not code; tell
-   me what you land on and I can help build whatever automation it needs.
-3. **Either of us, quick**: `userInterfaceStyle` fix (§2.5) and the health-disclaimer copy (§2.2)
-   — both small, both still open.
-4. **You**: Apple Developer Program enrollment + registering the bundle ID (Phase A) — gates
-   everything after it, has the least predictable timeline, worth starting in parallel with 1-3.
-5. Then Phase C onward (build, TestFlight, metadata, submit) — none of it started yet.
+All of Phase B is done except one item — everything left below is either yours to decide/do, or
+Phase C onward.
+
+1. **You**: enable GitHub Pages for the repo (§1.4) — one settings change, the last piece of the
+   Privacy Policy item; nothing left for me to draft or code.
+2. **You**: decide the worker-cadence approach for launch (§2.1) — a product call, not code, and
+   now the last open item blocking Phase C; tell me what you land on and I can help build
+   whatever automation it needs.
+3. **You**: Apple Developer Program enrollment + registering the bundle ID (Phase A) — gates
+   everything after it, has the least predictable timeline, worth starting in parallel with 1-2.
+4. Then Phase C onward (build, TestFlight, metadata, submit) — none of it started yet.

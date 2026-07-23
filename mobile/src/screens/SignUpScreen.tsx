@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Animated,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -15,6 +16,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { lookupTeamByCode, signUpAthlete, signUpManager } from '../api/auth';
 import { getProfile } from '../api/auth';
 import { colors, spacing } from '../theme';
+
+const PRIVACY_POLICY_URL = 'https://danzlotnikov.github.io/APeX/privacy-policy.html';
 
 interface Props {
   onSuccess: (userId: string, teamId: string | null, role: 'athlete' | 'manager', name: string) => void;
@@ -193,6 +196,18 @@ export default function SignUpScreen({ onSuccess, onBack }: Props) {
 
               {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
+              <Text style={styles.disclaimer}>
+                APeX provides training feedback from computer-vision movement analysis — it is
+                not a medical device and does not diagnose or treat any condition. Consult a
+                physician before starting a new exercise program.
+              </Text>
+              <Text style={styles.disclaimer}>
+                By creating an account, you agree to our{' '}
+                <Text style={styles.disclaimerLink} onPress={() => void Linking.openURL(PRIVACY_POLICY_URL)}>
+                  Privacy Policy
+                </Text>.
+              </Text>
+
               <Pressable
                 onPress={handleSubmit}
                 disabled={loading}
@@ -340,6 +355,8 @@ const styles = StyleSheet.create({
   codeNote:    { color: colors.muted, fontSize: 10, fontWeight: '500', fontStyle: 'italic' },
 
   errorText: { color: '#FF3B30', fontSize: 12, fontWeight: '600', textAlign: 'center' },
+  disclaimer: { color: colors.muted, fontSize: 10.5, fontWeight: '500', lineHeight: 15, textAlign: 'center', marginTop: spacing.xs },
+  disclaimerLink: { color: colors.primary, fontWeight: '700', textDecorationLine: 'underline' },
 
   submitBtn: {
     borderRadius: 12,

@@ -4,7 +4,7 @@ import { colors, spacing } from '../theme';
 
 interface Props {
   readiness: number;   // 0-100
-  label: string;       // 'Ready' | 'Caution' | 'High Risk'
+  label: string;       // 'Good' | 'Fair' | 'Low'
 }
 
 const SEGMENTS = 20;

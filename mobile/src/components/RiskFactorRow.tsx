@@ -16,7 +16,7 @@ interface Props {
  */
 export default function RiskFactorRow({ factor, delta }: Props) {
   const color = riskColor(factor.status);
-  const pill = factor.status === 'green' ? 'GOOD' : factor.status === 'yellow' ? 'WATCH' : 'RISK';
+  const pill = factor.status === 'green' ? 'GOOD' : factor.status === 'yellow' ? 'WATCH' : 'LOW';
 
   return (
     <View style={styles.row}>

@@ -4,7 +4,7 @@
     "slug": "apex-athlete-performance",
     "version": "0.1.0",
     "orientation": "portrait",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
     "icon": "./assets/icon.png",
     "splash": {
       "resizeMode": "contain",

@@ -863,7 +863,7 @@ function computeAssessment(history, times, counts) {
   var wsum = 0, wtot = 0;
   for (var i = 0; i < allScores.length; i++) { wsum += allScores[i] * allWeights[i]; wtot += allWeights[i]; }
   var readiness = wtot ? Math.round(wsum / wtot) : 100;
-  var readinessLabel = readiness >= 80 ? 'Ready' : (readiness >= 55 ? 'Caution' : 'High Risk');
+  var readinessLabel = readiness >= 80 ? 'Good' : (readiness >= 55 ? 'Fair' : 'Low');
 
   return {
     perExercise: perExercise,

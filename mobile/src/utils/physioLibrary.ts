@@ -31,8 +31,8 @@ export const PHYSIO_LIBRARY: Record<RecommendationKey, PhysioExercise> = {
     name: 'Lateral Band Walk + Single-Leg Glute Bridge',
     target: 'Left/right imbalance & knee control',
     why:
-      'Left/right asymmetry over ~10–15% raises re-injury risk. Strengthening the ' +
-      'gluteus medius evens out how the legs share load and controls inward knee collapse.',
+      'Left/right asymmetry over ~10–15% signals uneven load-sharing between legs. ' +
+      'Strengthening the gluteus medius evens out how the legs share load and controls inward knee collapse.',
     steps: [
       'Loop a band just above the knees, feet hip-width, athletic quarter-squat.',
       'Step sideways, keeping knees pushed out over the toes and trunk upright.',
@@ -65,8 +65,8 @@ export const PHYSIO_LIBRARY: Record<RecommendationKey, PhysioExercise> = {
     name: 'Soft Drop-Landing Drill',
     target: 'Stiff landings (impact absorption)',
     why:
-      'Landing with stiff, extended knees spikes impact force and ACL strain. ' +
-      'Retraining a soft, bent-knee landing lowers peak forces and injury risk.',
+      'Landing with stiff, extended knees spikes impact force through the joint. ' +
+      'Retraining a soft, bent-knee landing lowers peak forces and improves landing control.',
     steps: [
       'Stand on a low step or box (15–30 cm).',
       'Step off and land on both feet at once — do not jump up.',

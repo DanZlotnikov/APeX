@@ -10,8 +10,8 @@ interface Props {
 }
 
 /**
- * Corrective-exercise recommendation shown when the assessment finds real injury
- * risk. Header + exercise name, a looping demo animation, the rationale,
+ * Suggested drill shown when the assessment flags a movement-quality factor as
+ * low. Header + exercise name, a looping demo animation, the rationale,
  * step-by-step instructions, and dosage chips (frequency / duration / timeline).
  */
 export default function PhysioCard({ recKey }: Props) {
@@ -22,7 +22,7 @@ export default function PhysioCard({ recKey }: Props) {
     <View style={styles.card}>
       <View style={styles.accent} />
 
-      <Text style={styles.kicker}>RECOMMENDED CORRECTIVE</Text>
+      <Text style={styles.kicker}>SUGGESTED DRILL</Text>
       <Text style={styles.name}>{ex.name}</Text>
       <Text style={styles.target}>{ex.target}</Text>
 

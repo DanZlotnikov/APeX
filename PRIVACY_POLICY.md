@@ -241,7 +241,7 @@ accept the revised Policy.
 
 Questions, requests, or concerns about this Privacy Policy or your data:
 
-**Email:** [FILL IN — e.g., a dedicated privacy@ or support@ address]
+**Email:** danzlotnikov+apex@gmail.com
 **Developer:** Dan Zlotnikov
 
 ---
