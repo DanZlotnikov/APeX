@@ -36,6 +36,7 @@ Usage:
 """
 from __future__ import annotations
 
+import re
 import shutil
 import tempfile
 import time
@@ -55,6 +56,21 @@ JOBS_PER_POLL = 5
 # message). Catching this before handing the file to the pipeline turns that
 # into an immediate, readable error_message instead of a stack trace.
 MIN_VIDEO_BYTES = 1024
+
+# Defense-in-depth alongside the DB-level CHECK constraint (see migration
+# 019_security_hardening.sql): raw_video_path is client-supplied at INSERT
+# time and gets interpolated directly into a Storage URL fetched with the
+# SERVICE ROLE key (supabase_client.download_object/delete_object). Without
+# this check, a crafted path could read/delete another athlete's video (IDOR)
+# or, via URL dot-segment normalization, escape the Storage API entirely and
+# hit arbitrary REST/Storage/Auth-admin endpoints with an admin credential.
+# The DB constraint is the authoritative fix (protects every INSERT path,
+# present and future); this is a second, independent check specifically so
+# the worker never even attempts the request if the constraint is somehow
+# missing (e.g. migration 019 not yet applied) or ever weakened by accident.
+def _validate_raw_path(athlete_id: str, raw_path: str) -> bool:
+    pattern = rf"^raw/{re.escape(athlete_id)}/[A-Za-z0-9_-]+\.[A-Za-z0-9]{{2,5}}$"
+    return re.match(pattern, raw_path) is not None
 
 
 def _result_storage_path(athlete_id: str, job_id: str) -> str:
@@ -79,6 +95,15 @@ def handle_job(models: "pipeline.worker.Models", job: dict) -> None:
     athlete_id = job["athlete_id"]
     raw_path = job["raw_video_path"]
 
+    if not _validate_raw_path(athlete_id, raw_path):
+        # Never touch Storage with this value — see _validate_raw_path's
+        # docstring. This should be unreachable once migration 019's CHECK
+        # constraint is applied (the INSERT itself would be rejected), but
+        # the worker must not trust that alone.
+        print(f"[supabase-worker] {job_id}: rejected malformed raw_video_path (not touching Storage): {raw_path!r}")
+        supabase_client.mark_failed(job_id, "Upload could not be verified. Please try recording again.")
+        return
+
     if supabase_client.is_cancel_requested(job_id):
         print(f"[supabase-worker] {job_id}: cancelled before starting")
         _delete_raw_object_best_effort(job_id, raw_path)
@@ -91,7 +116,12 @@ def handle_job(models: "pipeline.worker.Models", job: dict) -> None:
         try:
             supabase_client.download_object(raw_path, local_video)
         except Exception as e:  # noqa: BLE001
-            supabase_client.mark_failed(job_id, f"download failed: {e}")
+            # Full detail server-side only — str(e) can include internal
+            # paths/library internals and must never reach the athlete's
+            # screen (video_jobs.error_message is rendered verbatim by
+            # ProcessingScreen.tsx).
+            print(f"[supabase-worker] {job_id}: download failed: {e}")
+            supabase_client.mark_failed(job_id, "Could not download the uploaded video. Please try again.")
             return
 
         size = local_video.stat().st_size if local_video.exists() else 0
@@ -113,7 +143,7 @@ def handle_job(models: "pipeline.worker.Models", job: dict) -> None:
             return
         except Exception as e:  # noqa: BLE001
             traceback.print_exc()
-            supabase_client.mark_failed(job_id, f"processing failed: {e}")
+            supabase_client.mark_failed(job_id, "Processing this video failed. Please try recording again.")
             return
 
         if supabase_client.is_cancel_requested(job_id):
@@ -126,7 +156,8 @@ def handle_job(models: "pipeline.worker.Models", job: dict) -> None:
         try:
             supabase_client.upload_object(Path(result["output_path"]), result_path, "video/mp4")
         except Exception as e:  # noqa: BLE001
-            supabase_client.mark_failed(job_id, f"result upload failed: {e}")
+            print(f"[supabase-worker] {job_id}: result upload failed: {e}")
+            supabase_client.mark_failed(job_id, "Could not save the processed video. Please try again.")
             return
 
         supabase_client.mark_completed(job_id, result_path, result["analysis"], result["active_exercise"])
@@ -156,10 +187,10 @@ def main() -> None:
                 continue  # claimed/removed by something else since fetch_queued_jobs
             try:
                 handle_job(models, job)
-            except Exception as e:  # noqa: BLE001
+            except Exception:  # noqa: BLE001
                 traceback.print_exc()
                 try:
-                    supabase_client.mark_failed(job["id"], str(e))
+                    supabase_client.mark_failed(job["id"], "Something went wrong processing this video. Please try again.")
                 except Exception:  # noqa: BLE001
                     pass
 

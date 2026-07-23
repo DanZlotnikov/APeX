@@ -145,20 +145,30 @@ export default function LoginScreen({ onLogin, onSignUp }: Props) {
         </Animated.View>
 
         {/* ── Dev section ───────────────────────────────────────── */}
-        <Animated.View style={[styles.devSection, { opacity: fade }]}>
-          <Pressable onPress={() => setDevOpen((v) => !v)} style={styles.devToggle}>
-            <View style={styles.devLine} />
-            <Text style={styles.devToggleText}>DEV  {devOpen ? '▲' : '▼'}</Text>
-            <View style={styles.devLine} />
-          </Pressable>
+        {/* __DEV__ is a React Native global that's statically `false` in
+            any release build (EAS preview/production, TestFlight, App
+            Store) — Metro's minifier dead-code-eliminates this whole
+            branch there, so neither the UI nor the DEV_CREDENTIALS string
+            literals ship in a production bundle. Never remove this gate;
+            a hardcoded-credential login bypass shipping live is both a
+            real account-takeover vector and a near-certain App Review
+            rejection if a reviewer finds it. */}
+        {__DEV__ && (
+          <Animated.View style={[styles.devSection, { opacity: fade }]}>
+            <Pressable onPress={() => setDevOpen((v) => !v)} style={styles.devToggle}>
+              <View style={styles.devLine} />
+              <Text style={styles.devToggleText}>DEV  {devOpen ? '▲' : '▼'}</Text>
+              <View style={styles.devLine} />
+            </Pressable>
 
-          {devOpen && (
-            <View style={styles.devButtons}>
-              <DevBtn label="ATHLETE" sub="daniel.cohen@apex.dev" color={colors.primary} onPress={() => void handleDevLogin('athlete')} />
-              <DevBtn label="MANAGER" sub="coach@apex.dev"         color="#B794F6"       onPress={() => void handleDevLogin('manager')} />
-            </View>
-          )}
-        </Animated.View>
+            {devOpen && (
+              <View style={styles.devButtons}>
+                <DevBtn label="ATHLETE" sub="daniel.cohen@apex.dev" color={colors.primary} onPress={() => void handleDevLogin('athlete')} />
+                <DevBtn label="MANAGER" sub="coach@apex.dev"         color="#B794F6"       onPress={() => void handleDevLogin('manager')} />
+              </View>
+            )}
+          </Animated.View>
+        )}
       </ScrollView>
     </KeyboardAvoidingView>
   );

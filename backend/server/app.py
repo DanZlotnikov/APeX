@@ -11,10 +11,20 @@ alongside the biomechanical analysis report as JSON.
 
 Usage:
     cd backend/server && source ../GENMO/.venv/bin/activate
-    python -m uvicorn app:app --host 0.0.0.0 --port 8000
+    python -m uvicorn app:app --host 127.0.0.1 --port 8000
 
 Model loading (~90s) happens once at server startup, not per-request — see
 pipeline.py / worker.load_all_models() for why that matters.
+
+SECURITY: this endpoint has no auth and accepts any absolute local
+filesystem path (see ProcessRequest below) — it will read and process
+whatever `video_path` names, no allowlist. That's fine for the same-machine
+dev-testing it's meant for, but --host 127.0.0.1 (not 0.0.0.0) is
+deliberate: never bind this to a network-reachable interface, since doing
+so turns it into an unauthenticated arbitrary-local-file-read/processing
+endpoint for anyone who can reach that port. The production path
+(supabase_worker.py) doesn't expose this — it's a pure outbound poller
+with no listening port at all.
 """
 from __future__ import annotations
 

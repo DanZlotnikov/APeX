@@ -1,13 +1,13 @@
 # APeX · App Store Submission Plan
 
-Status: **in progress — §1 and §2 are fully done except the worker-cadence decision (§2.1).**
+Status: **in progress — §1 and §2 are fully done or decided; ready for Phase C.**
 Originally written as planning-only; updated after several follow-up sessions that implemented
 account deletion, `app.json`/`eas.json`, the Privacy Policy (drafted, hosted, and linked from the
 app), the microphone-permission removal, the health/fitness disclaimer + risk-framing wording
-pass, and the `userInterfaceStyle` fix. Every item below is tagged ✅ **Done**, 🟡 **Partial /
-needs a decision**, or 🔴 **Not started** so this doc stays a reliable single source of truth for
-what's actually left — update the tag whenever you change something, don't just add new prose
-underneath stale tags.
+pass, the `userInterfaceStyle` fix, and the worker-cadence decision for beta. Every item below is
+tagged ✅ **Done**, 🟡 **Partial / needs a decision**, or 🔴 **Not started** so this doc stays a
+reliable single source of truth for what's actually left — update the tag whenever you change
+something, don't just add new prose underneath stale tags.
 
 ## Current status at a glance
 
@@ -17,16 +17,16 @@ underneath stale tags.
 | 1.2 | Service-role key isolation | ✅ Done — re-verified against the actual built bundle, not just source |
 | 1.3 | `app.json` / `eas.json` fields | ✅ Done — bundle IDs, icon, version strategy all set |
 | 1.4 | Privacy Policy | ✅ Done — live at danzlotnikov.github.io/APeX/privacy-policy.html, linked from signup + both Settings screens; legal review still recommended |
-| 2.1 | Worker cadence during review | 🔴 Not started — still manual 1-2x/day, still the single biggest risk |
+| 2.1 | Worker cadence during review | 🟡 Decided for beta — local PC, every 30 min via Task Scheduler; revisit before full App Store Review |
 | 2.2 | Health/fitness risk framing | ✅ Done — risk wording removed app-wide, disclaimer added at signup and in both Settings screens |
 | 2.3 | Sign in with Apple | ✅ N/A — confirmed still not required, no change needed |
 | 2.4 | Unnecessary microphone permission | ✅ Done — removed at every layer, including one not originally anticipated |
 | 2.5 | `userInterfaceStyle` light/dark mismatch | ✅ Done — set to `"dark"` |
 | Phase C/D/E | Build, TestFlight, metadata, submit | 🔴 Not started |
 
-**The one thing standing between here and Phase C:** decide the worker-cadence approach (§2.1 —
-a product decision, not code, and the single biggest remaining risk in this whole plan). §1.4's
-Privacy Policy is now fully live, nothing left there.
+**Nothing left blocking Phase C.** §2.1's worker cadence is decided for beta (30-min scheduled
+task on the local PC); revisit it specifically before submitting for full App Store Review, not
+before starting Phase C/TestFlight.
 
 ---
 
@@ -155,7 +155,31 @@ its closing note.
 
 ## 2. Serious risks — not automatic rejections, but genuinely likely to cause one
 
-### 2.1 Manually running the backend 1-2x/day, during App Review — 🔴 **Not started — still the single biggest risk here**
+### 2.1 Manually running the backend 1-2x/day, during App Review — 🟡 **Decided for beta; revisit before full App Store Review**
+
+**Decision made**: stay on the local PC, but move from manual 1-2x/day to a scheduled task that
+runs every 30 minutes and drains whatever's queued (Windows Task Scheduler — set "Run whether
+user is logged on or not" and "Wake the computer to run this task" so it survives sleep/lock;
+add a restart-on-failure rule, since a personal PC is far more likely to silently stop processing
+than a managed server). Free cloud-hosting alternatives (Modal, an on-demand GPU VM) were
+researched and are viable later, but not needed for this phase — see the research/decision
+context preserved below.
+
+This cadence is **sufficient for beta** (internal TestFlight has no Apple review at all; external
+TestFlight's Beta App Review is meaningfully looser than full review and unlikely to scrutinize a
+30-min processing window) — the app's own Processing-tab/push-notification UX already makes
+"check back later" read as intentional, not broken. Just tell beta testers up front (release
+notes or the beta description) that analysis can take up to ~30 minutes.
+
+**Still open**: this decision does **not** extend to full App Store Review (the stricter,
+one-sitting-completeness gate below) — revisit then, most likely by pairing the 30-min cadence
+with the demo-account + reviewer-notes approach (options 2/3 below) rather than relying on the
+cadence alone during a reviewer's live test.
+
+---
+
+<details>
+<summary>Original research and full reasoning (kept for the full-review decision later)</summary>
 
 This is worth being blunt about, since it's the part of your plan most likely to actually sink a
 submission.
@@ -197,6 +221,8 @@ minutes' sleep, kicked off when your PC is on) until you have a sense of real de
 move to something always-on or have evidence that occasional processing windows are acceptable
 to your actual users. This is a recommendation, not something I've assumed you'll do — it's your
 call, but it's the highest-leverage single decision in this whole plan.
+
+</details>
 
 ### 2.2 Health/fitness "risk" framing may draw enhanced scrutiny (Guideline 1.4.1 / 5.1.3) — ✅ **Done**
 
@@ -309,9 +335,10 @@ Changed to `"dark"` in `app.json`, matching what the app actually always looks l
    account) and an optional lawyer review.
 9. ✅ Health/fitness risk framing (§2.2) — risky wording removed app-wide, disclaimer added at
    signup and in both Settings screens.
-10. 🔴 Decide your worker-cadence approach for launch (§2.1) and, if changing it from manual
-    1-2x/day, build whatever minimal automation you land on — not started, still the biggest
-    open risk in this whole plan, and now the **only** unstarted item in Phase B.
+10. 🟡 Worker cadence (§2.1) — decided for beta: local PC, Windows Task Scheduler every 30 min,
+    draining whatever's queued. Sufficient for internal/external TestFlight; revisit before full
+    App Store Review (stricter one-sitting-completeness bar). **Not yet set up** — the Task
+    Scheduler job itself still needs to be created.
 
 ### Phase C — Build & internal testing — 🔴 not started
 
@@ -370,13 +397,13 @@ Changed to `"dark"` in `app.json`, matching what the app actually always looks l
 
 ## 4. Supabase/backend-specific items not covered above
 
-- **RLS is now your entire security boundary** for a production, public app — it already looks
-  well-built from this session's work (every table's policies were built and iterated on
-  deliberately, and the new `team_routines`/`athlete_exercise_assignments` tables added since this
-  plan was written follow the same established manager/athlete visibility pattern as everything
-  else), but this is worth one dedicated pass specifically framed as "assume a hostile client with
-  only the anon key" before launch, not just "does the happy path work." Still not done as a
-  distinct pass.
+- **RLS is now your entire security boundary** for a production, public app — the "assume a
+  hostile client" pass this item called for is ✅ **done**: see `SECURITY_APP_STORE_AUDIT.md` at
+  the repo root for the full write-up. Found and fixed a critical privilege-escalation hole
+  (`profiles.role`/`team_id` were client-updatable) and a critical IDOR/path-traversal hole
+  (`video_jobs.raw_video_path` reaching a service-role Storage call unsanitized), plus several
+  lower-severity issues. Migration `019_security_hardening.sql` needs to be run, and two dev
+  Supabase Auth accounts need deleting/rotating — both called out in that document.
 - **Storage bucket `exercise-videos` is private** (confirmed) — good, keep it that way; signed
   URLs are the only access path, which is correct for user video content.
 - **Video upload size/data cost**: raw clips upload over the user's own connection before your
@@ -405,14 +432,14 @@ Worth stating plainly so nothing gets "fixed" that isn't broken:
 
 ## 6. What's left, in the order it actually needs to happen
 
-All of Phase B is done except one item — everything left below is either yours to decide/do, or
-Phase C onward.
+Phase B is fully decided — nothing left blocking Phase C except setting up the one piece of
+automation below.
 
-1. **You**: enable GitHub Pages for the repo (§1.4) — one settings change, the last piece of the
-   Privacy Policy item; nothing left for me to draft or code.
-2. **You**: decide the worker-cadence approach for launch (§2.1) — a product call, not code, and
-   now the last open item blocking Phase C; tell me what you land on and I can help build
-   whatever automation it needs.
-3. **You**: Apple Developer Program enrollment + registering the bundle ID (Phase A) — gates
-   everything after it, has the least predictable timeline, worth starting in parallel with 1-2.
-4. Then Phase C onward (build, TestFlight, metadata, submit) — none of it started yet.
+1. **Either of us**: set up the Windows Task Scheduler job for the 30-min worker cadence (§2.1) —
+   decided, not yet built. Say go and I'll write the task/script.
+2. **You**: Apple Developer Program enrollment + registering the bundle ID (Phase A) — gates
+   everything after it, has the least predictable timeline, worth starting in parallel with 1.
+3. Then Phase C onward (build, TestFlight, metadata, submit) — none of it started yet.
+4. **Before full App Store Review specifically** (not before beta): revisit §2.1 — pair the
+   30-min cadence with a demo account + reviewer notes (options 2/3 in that section) rather than
+   relying on the cadence alone during a reviewer's live test.

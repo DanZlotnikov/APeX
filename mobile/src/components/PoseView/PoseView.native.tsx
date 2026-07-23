@@ -119,7 +119,14 @@ export default function PoseView({ videoUri, onExerciseResults, onAssessment, on
       onMessage={onMessage}
       mediaPlaybackRequiresUserAction={false}
       allowsInlineMediaPlayback
-      originWhitelist={['*']}
+      // Restricts top-level *navigation* only (e.g. if injected/compromised
+      // CDN JS ever tried `window.location = ...`) — unrelated to the
+      // allowUniversalAccessFromFileURLs/allowFileAccess pair below, which
+      // is what the MediaPipe CDN fetch/import actually needs and stays as
+      // permissive as required. This page only ever needs to stay on its
+      // own bundled file:// document, so there's no reason to allow
+      // navigating anywhere else.
+      originWhitelist={['file://*']}
       javaScriptEnabled
       domStorageEnabled
       cacheEnabled
