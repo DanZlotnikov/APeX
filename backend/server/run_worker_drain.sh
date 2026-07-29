@@ -26,8 +26,13 @@ fi
   echo "=== $(date -Iseconds) run start ==="
   source ../GENMO/.venv/bin/activate
   if [ -f .env ]; then
+    # tr -d '\r', not a plain `source .env` — a CRLF-saved .env (easy to end
+    # up with on Windows, e.g. opening it in Notepad) leaves a trailing \r
+    # baked into each value, which silently corrupts SUPABASE_URL and makes
+    # every request fail with "Invalid non-printable ASCII character in
+    # URL, '\r' at position N" — confirmed the hard way, not hypothetical.
     set -a
-    source .env
+    source <(tr -d '\r' < .env)
     set +a
   fi
   python -u supabase_worker.py --drain

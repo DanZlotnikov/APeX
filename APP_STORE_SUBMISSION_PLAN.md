@@ -24,7 +24,7 @@ something, don't just add new prose underneath stale tags.
 | 2.3 | Sign in with Apple | ✅ N/A — confirmed still not required, no change needed |
 | 2.4 | Unnecessary microphone permission | ✅ Done — removed at every layer, including one not originally anticipated |
 | 2.5 | `userInterfaceStyle` light/dark mismatch | ✅ Done — set to `"dark"` |
-| Phase C/D/E | Build, TestFlight, metadata, submit | 🔴 Not started |
+| Phase C/D/E | Build, TestFlight, metadata, submit | 🟡 First production build succeeded (`eas build`); not yet submitted/tested on-device |
 
 **Nothing left blocking Phase C.** §2.1's worker cadence is built and verified (30-min scheduled
 task on the local PC, via WSL2, real credentials in place) but currently disabled at your request —
@@ -403,18 +403,36 @@ Changed to `"dark"` in `app.json`, matching what the app actually always looks l
     `backend/server/.env` and run it once manually to confirm end-to-end before trusting the
     unattended cadence.
 
-### Phase C — Build & internal testing — 🔴 not started
+### Phase C — Build & internal testing — 🟡 in progress
 
-11. `eas login`, then `eas build --platform ios --profile production` (or `preview` first for
-    your own device testing via ad-hoc distribution). `eas.json` profiles are ready for this now.
-12. Set up push notification credentials: run through EAS's prompt to generate an APNs key when
-    building (or `eas credentials`) — required for `expo-notifications` to actually deliver in a
-    production/TestFlight build; it silently no-ops in Expo Go and did during this whole dev
-    cycle, so **this is the first time it'll be truly exercised** — test it for real on a
-    TestFlight build before assuming it works. Still not exercised.
-13. `eas submit --platform ios` to push the build to App Store Connect / TestFlight (or
-    `eas build --auto-submit`).
-14. Install via TestFlight on a real device. Walk the **entire** golden path yourself, on a
+11. ✅ `eas login`, then `eas build --platform ios --profile production` — done. First build
+    succeeded. Credentials (Distribution Certificate, Provisioning Profile, APNs key) were all
+    freshly generated through EAS's automatic flow, tied to the registered `com.apexathletics.app`
+    bundle ID. One real fix needed along the way: the initial build failed — EAS archives the
+    *entire git repo* (not just `mobile/`, so monorepo sibling packages are visible), which pulled
+    in `backend/GENMO`'s model checkpoints (~11GB) and blew past the 2GB archive limit. Fixed with
+    a root-level `.easignore` (works like `.gitignore`, but replaces it rather than adding to it
+    for archiving purposes) excluding `backend/`, `supabase/`, and a few stray files — brought the
+    archive down to a few hundred MB.
+    **Build #2 shipped broken**: that `.easignore` blanket-excluded `.env` (copied from
+    `.gitignore`), which also matched `mobile/.env` — the file `EXPO_PUBLIC_SUPABASE_URL`/
+    `EXPO_PUBLIC_SUPABASE_ANON_KEY` come from at build time. EAS's cloud build server never saw
+    it, so those baked in empty, and `supabase.ts`'s `createClient('', '')` throws at module-load
+    time — before any UI renders, no red error screen in production. Confirmed as the actual
+    cause of a blank black screen on install, not a hypothesis. Fixed with a `!mobile/.env`
+    negation in `.easignore`. **Needs a fresh build + resubmit** to actually fix the TestFlight
+    build currently up.
+12. ✅ Push notification credentials — generated during the build via EAS's prompt (APNs key).
+    **Still not exercised for real** — silently no-ops in Expo Go, so this needs an actual
+    TestFlight device test (step 14) before assuming it works.
+13. ✅ `eas submit --platform ios` — uploaded successfully (build 1.0.0 #2, ASC App ID
+    6795887989). Generated an App Store Connect API Key (APP_MANAGER role — least-privilege, no
+    admin access) for EAS to use on this and future submissions without re-prompting for Apple
+    ID/2FA. Apple is now processing the binary (~5-10 min per their own estimate) before it's
+    selectable for TestFlight/the App Store version — check
+    https://appstoreconnect.apple.com/apps/6795887989/testflight/ios.
+14. 🔴 Install via TestFlight on a real device — next step, once Apple finishes processing. Walk
+    the **entire** golden path yourself, on a
     connection that isn't your dev machine's local network: sign up as a teamless athlete, record
     a video, confirm upload, background the app, wait for your worker to actually process it (run
     the worker for real during this test), get the push notification, save it, check History,

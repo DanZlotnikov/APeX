@@ -191,6 +191,16 @@ def handle_job(models: "pipeline.worker.Models", job: dict) -> None:
 
 def main(drain_on_idle: bool = False, idle_sleep_seconds: float = POLL_SECONDS) -> None:
     models = pipeline.worker.load_all_models()
+
+    try:
+        reclaimed = supabase_client.reclaim_stale_processing_jobs()
+        if reclaimed:
+            print(f"[supabase-worker] reclaimed {len(reclaimed)} orphaned job(s) stuck in processing: {reclaimed}")
+    except Exception as e:  # noqa: BLE001
+        # Non-fatal — worst case an orphaned job waits for the next startup
+        # to be reclaimed instead of this one, not worth crashing over.
+        print(f"[supabase-worker] failed to check for orphaned processing jobs (non-fatal): {e}")
+
     if drain_on_idle:
         print("[supabase-worker] ready (drain mode — exits once the queue is empty) ...")
     elif idle_sleep_seconds != POLL_SECONDS:

@@ -1,0 +1,46 @@
+# EAS Build archives the whole git repo (not just mobile/) so monorepo
+# builds can see sibling packages — but this repo also contains
+# backend/GENMO (a full PyTorch/CUDA project with model checkpoints and a
+# venv, several GB) and supabase/ (SQL migrations, not JS), neither of
+# which the Expo app needs at build time. Without this file, EAS falls
+# back to .gitignore for exclusions; once this file exists it's used
+# INSTEAD of .gitignore, not in addition to it — so the usual excludes
+# (node_modules, venvs, build output) are repeated here explicitly.
+
+# Not needed to build the mobile app at all
+backend/
+supabase/
+reference/
+
+# Stray files that landed at the repo root and don't belong in the archive
+# (anchored to root only, via the leading slash, so this can't shadow real
+# assets anywhere under mobile/)
+/IMG_*.PNG
+/ScreenRecording*.MP4
+
+# Node / Expo — EAS installs these fresh on its own build servers
+node_modules/
+.expo/
+dist/
+web-build/
+*.log
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Env / editor
+.env
+.DS_Store
+.idea/
+.vscode/
+
+# mobile/.env IS needed at build time — EXPO_PUBLIC_* vars get baked into
+# the JS bundle by Metro during the EAS cloud build itself, which has no
+# access to this machine otherwise. Excluding it silently shipped an empty
+# Supabase URL/anon key; createClient('', '') throws at module-load time,
+# before any UI renders — confirmed as the actual cause of a blank black
+# screen on a real TestFlight install, not a hypothetical.
+!mobile/.env

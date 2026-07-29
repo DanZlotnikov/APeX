@@ -53,6 +53,31 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def reclaim_stale_processing_jobs() -> list[str]:
+    """Called once at worker startup, before the poll loop. flock (see
+    run_worker_drain.sh / run_backend.ps1) guarantees only one worker
+    process ever runs at a time, so any row still sitting in
+    status='processing' at the moment a fresh worker starts up cannot
+    possibly be legitimately in-flight elsewhere — it can only be orphaned
+    by whatever worker claimed it dying (killed, crashed, machine restart)
+    before reaching mark_completed/mark_failed. fetch_queued_jobs only ever
+    selects status='queued', so without this, an orphaned row is stuck
+    forever. Resetting to 'queued' means this run picks it up and actually
+    finishes it, from scratch (there's no partial-progress checkpointing
+    within a single video, so re-running it is the correct way to "resume").
+    """
+    url, key = _config()
+    resp = httpx.patch(
+        f"{url}/rest/v1/{JOBS_TABLE}",
+        headers=_rest_headers(key, prefer="return=representation"),
+        params={"status": "eq.processing"},
+        json={"status": "queued", "started_at": None},
+        timeout=30.0,
+    )
+    resp.raise_for_status()
+    return [row["id"] for row in resp.json()]
+
+
 def fetch_queued_jobs(limit: int = 5) -> list[dict]:
     """Oldest-first queued jobs. Returned rows may already have been claimed
     by the time claim_job() runs on them (single worker in practice, but

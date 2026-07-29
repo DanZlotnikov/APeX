@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>APeX &middot; Backend Dashboard</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header class="masthead">
+  <div class="brand">
+    <div class="brand-badge"><div class="brand-badge-inner"><span>APeX</span></div></div>
+    <div class="brand-text">
+      <span class="brand-name">APeX</span>
+      <span class="brand-tag">Backend Dashboard</span>
+    </div>
+  </div>
+  <div class="status-bar">
+    <span class="conn-indicator" id="connIndicator"><span class="dot"></span><span id="connLabel">Connecting&hellip;</span></span>
+    <span class="mode-badge" id="modeBadge">&mdash;</span>
+    <button class="toggle-btn" id="toggleModeBtn" disabled>Toggle Mode</button>
+  </div>
+</header>
+
+<main class="layout">
+  <section class="panel log-panel">
+    <div class="panel-header">
+      <span>LIVE LOG</span>
+      <span class="log-count" id="logCount">0 lines</span>
+    </div>
+    <div class="log-stream" id="logStream"></div>
+  </section>
+
+  <section class="panel jobs-panel">
+    <div class="panel-header jobs-header">
+      <span>REQUESTS</span>
+      <div class="controls">
+        <input id="searchInput" type="text" placeholder="Search athlete, exercise, id&hellip;" class="search-input">
+        <select id="statusFilter">
+          <option value="">All statuses</option>
+          <option value="queued">Queued</option>
+          <option value="processing">Processing</option>
+          <option value="completed">Completed</option>
+          <option value="saved">Saved</option>
+          <option value="failed">Failed</option>
+        </select>
+        <select id="exerciseFilter">
+          <option value="">All exercises</option>
+        </select>
+        <select id="sortSelect">
+          <option value="time_desc">Newest first</option>
+          <option value="time_asc">Oldest first</option>
+          <option value="athlete">Athlete name</option>
+          <option value="exercise">Exercise</option>
+          <option value="status">Status</option>
+        </select>
+        <span class="job-count" id="jobCount">0 requests</span>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table class="jobs-table">
+        <thead>
+          <tr>
+            <th>Status</th>
+            <th>Athlete</th>
+            <th>Exercise</th>
+            <th>Reps</th>
+            <th>Readiness</th>
+            <th>Video Length</th>
+            <th>Process Time</th>
+            <th>Recorded</th>
+            <th>Updated</th>
+          </tr>
+        </thead>
+        <tbody id="jobsBody"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<div class="detail-overlay" id="detailOverlay">
+  <div class="detail-modal">
+    <div class="detail-modal-header">
+      <span id="detailTitle">Request detail</span>
+      <button id="detailClose" class="detail-close">&times;</button>
+    </div>
+    <div class="detail-modal-body" id="detailBody"></div>
+  </div>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
