@@ -1,27 +1,6 @@
 import { supabase } from './supabase';
 import { DbProfile } from './types';
 
-// Used by dev quick-login buttons in LoginScreen, which are themselves
-// gated behind __DEV__ and stripped from release builds by Metro's
-// minifier. This export is ALSO gated (not unconditional) so the literal
-// credential strings aren't retained in a production bundle just because
-// this module is always imported — Metro doesn't reliably tree-shake
-// unused named exports the way it dead-code-eliminates an `if (__DEV__)`
-// branch within one file, so an unconditional export here would ship the
-// strings even with LoginScreen's UI hidden. IMPORTANT: this only removes
-// the strings from the bundle — it does NOT invalidate the underlying
-// Supabase Auth accounts. Those must be deleted or have their passwords
-// rotated in the Supabase dashboard before beta/production, since
-// anyone who already has these credentials can sign in via the public
-// Auth API directly, with no dependency on this file or the app's UI at
-// all. See SECURITY_APP_STORE_AUDIT.md.
-export const DEV_CREDENTIALS = __DEV__
-  ? {
-      athlete: { email: 'daniel.cohen@apex.dev', password: 'apex_dev_123' },
-      manager: { email: 'coach@apex.dev',        password: 'apex_dev_123' },
-    } as const
-  : (undefined as any);
-
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
 export async function signIn(email: string, password: string) {

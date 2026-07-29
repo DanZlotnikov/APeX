@@ -12,7 +12,6 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { DEV_CREDENTIALS } from '../api/auth';
 import { colors, spacing } from '../theme';
 
 export type LoginRole = 'athlete' | 'manager';
@@ -31,7 +30,6 @@ export default function LoginScreen({ onLogin, onSignUp }: Props) {
   const [password,  setPassword]  = useState('');
   const [loading,   setLoading]   = useState(false);
   const [error,     setError]     = useState('');
-  const [devOpen,   setDevOpen]   = useState(false);
 
   useEffect(() => {
     Animated.parallel([
@@ -48,21 +46,6 @@ export default function LoginScreen({ onLogin, onSignUp }: Props) {
       await onLogin(email.trim(), password);
     } catch (e: any) {
       setError(e?.message ?? 'Login failed. Check your credentials.');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleDevLogin(role: LoginRole) {
-    const creds = DEV_CREDENTIALS[role];
-    setEmail(creds.email);
-    setPassword(creds.password);
-    setError('');
-    setLoading(true);
-    try {
-      await onLogin(creds.email, creds.password);
-    } catch (e: any) {
-      setError(e?.message ?? 'Dev login failed.');
     } finally {
       setLoading(false);
     }
@@ -143,51 +126,8 @@ export default function LoginScreen({ onLogin, onSignUp }: Props) {
             </Text>
           </Pressable>
         </Animated.View>
-
-        {/* ── Dev section ───────────────────────────────────────── */}
-        {/* __DEV__ is a React Native global that's statically `false` in
-            any release build (EAS preview/production, TestFlight, App
-            Store) — Metro's minifier dead-code-eliminates this whole
-            branch there, so neither the UI nor the DEV_CREDENTIALS string
-            literals ship in a production bundle. Never remove this gate;
-            a hardcoded-credential login bypass shipping live is both a
-            real account-takeover vector and a near-certain App Review
-            rejection if a reviewer finds it. */}
-        {__DEV__ && (
-          <Animated.View style={[styles.devSection, { opacity: fade }]}>
-            <Pressable onPress={() => setDevOpen((v) => !v)} style={styles.devToggle}>
-              <View style={styles.devLine} />
-              <Text style={styles.devToggleText}>DEV  {devOpen ? '▲' : '▼'}</Text>
-              <View style={styles.devLine} />
-            </Pressable>
-
-            {devOpen && (
-              <View style={styles.devButtons}>
-                <DevBtn label="ATHLETE" sub="daniel.cohen@apex.dev" color={colors.primary} onPress={() => void handleDevLogin('athlete')} />
-                <DevBtn label="MANAGER" sub="coach@apex.dev"         color="#B794F6"       onPress={() => void handleDevLogin('manager')} />
-              </View>
-            )}
-          </Animated.View>
-        )}
       </ScrollView>
     </KeyboardAvoidingView>
-  );
-}
-
-function DevBtn({ label, sub, color, onPress }: { label: string; sub: string; color: string; onPress: () => void }) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [styles.devBtn, { borderColor: `${color}44` }, pressed && { opacity: 0.7 }]}
-    >
-      <View style={[styles.devBtnDot, { backgroundColor: `${color}22` }]}>
-        <View style={[styles.devBtnDotInner, { backgroundColor: color }]} />
-      </View>
-      <View>
-        <Text style={[styles.devBtnLabel, { color }]}>{label}</Text>
-        <Text style={styles.devBtnSub}>{sub}</Text>
-      </View>
-    </Pressable>
   );
 }
 
@@ -244,26 +184,4 @@ const styles = StyleSheet.create({
   signUpLink: { alignItems: 'center', paddingVertical: spacing.sm },
   signUpLinkText:   { color: colors.muted, fontSize: 13, fontWeight: '500' },
   signUpLinkAccent: { color: colors.primary, fontWeight: '700' },
-
-  devSection: { gap: spacing.sm },
-  devToggle:  { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  devLine:    { flex: 1, height: 1, backgroundColor: colors.border },
-  devToggleText: { color: colors.muted, fontSize: 9, fontWeight: '700', letterSpacing: 2 },
-
-  devButtons: { flexDirection: 'row', gap: spacing.md },
-  devBtn: {
-    flex: 1,
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    borderWidth: 1,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  devBtnDot:      { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  devBtnDotInner: { width: 10, height: 10, borderRadius: 5 },
-  devBtnLabel:    { fontSize: 12, fontWeight: '900', letterSpacing: 1.5 },
-  devBtnSub:      { color: colors.muted, fontSize: 9, fontWeight: '600', marginTop: 2 },
 });
