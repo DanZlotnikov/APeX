@@ -32,16 +32,32 @@ anyway.
 
 Usage:
     cd backend/server && source ../GENMO/.venv/bin/activate
-    SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... python supabase_worker.py
+    SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... python supabase_worker.py [mode]
 
-Pass --drain to exit once the queue is empty instead of polling forever —
-this is what the scheduled 30-min cadence uses (see run_worker_drain.sh and
-APP_STORE_SUBMISSION_PLAN.md §2.1) so each scheduled run loads the models
-once, processes whatever's queued, and exits rather than idling/overlapping
-with the next trigger. Omit the flag for manual/continuous local runs.
+Three run modes, models are loaded once at startup either way (~90s), never
+per-job or per-cycle:
+
+  (no flag)              Continuous — checks for new jobs every
+                          POLL_SECONDS, forever, until you stop it (Ctrl+C).
+  --interval-minutes N   Also runs forever, but only checks every N minutes
+                          when idle instead of every few seconds — e.g.
+                          --interval-minutes 30 for an every-30-min cadence,
+                          self-contained in one long-lived process (no OS
+                          scheduler needed to get this behavior).
+  --drain                Exits once the queue is empty (or after repeated
+                          fetch failures) instead of running forever — for
+                          an EXTERNAL scheduler that relaunches this script
+                          periodically (see run_worker_drain.sh and
+                          APP_STORE_SUBMISSION_PLAN.md §2.1), so each
+                          relaunch loads the models once, drains, and exits
+                          rather than idling/overlapping with the next
+                          trigger. --interval-minutes is the alternative to
+                          this that doesn't need an external scheduler at
+                          all — pick one or the other, not both.
 """
 from __future__ import annotations
 
+import argparse
 import re
 import shutil
 import sys
@@ -173,15 +189,22 @@ def handle_job(models: "pipeline.worker.Models", job: dict) -> None:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
-def main(drain_on_idle: bool = False) -> None:
+def main(drain_on_idle: bool = False, idle_sleep_seconds: float = POLL_SECONDS) -> None:
     models = pipeline.worker.load_all_models()
-    print("[supabase-worker] ready, polling for queued jobs ...")
+    if drain_on_idle:
+        print("[supabase-worker] ready (drain mode — exits once the queue is empty) ...")
+    elif idle_sleep_seconds != POLL_SECONDS:
+        print(f"[supabase-worker] ready, checking for queued jobs every {idle_sleep_seconds / 60:g} min ...")
+    else:
+        print("[supabase-worker] ready, polling for queued jobs ...")
 
     # In drain mode, a fetch that keeps failing (bad/missing credentials, Supabase
-    # unreachable) must not retry forever the way continuous mode deliberately does
-    # — a scheduled run has to actually exit so the next 30-min trigger (and Task
+    # unreachable) must not retry forever the way the other two modes deliberately
+    # do — a scheduled run has to actually exit so the next trigger (and Task
     # Scheduler's restart-on-failure policy) can take over. A few retries first so a
-    # single transient blip doesn't waste an entire scheduled run.
+    # single transient blip doesn't waste an entire scheduled run. Always retried at
+    # the short POLL_SECONDS interval regardless of mode — an error should be
+    # retried quickly, unlike a merely-empty queue in --interval-minutes mode.
     consecutive_fetch_failures = 0
 
     while True:
@@ -202,7 +225,7 @@ def main(drain_on_idle: bool = False) -> None:
             if drain_on_idle:
                 print("[supabase-worker] queue empty, exiting (--drain)")
                 return
-            time.sleep(POLL_SECONDS)
+            time.sleep(idle_sleep_seconds)
             continue
 
         for job in jobs:
@@ -219,4 +242,25 @@ def main(drain_on_idle: bool = False) -> None:
 
 
 if __name__ == "__main__":
-    main(drain_on_idle="--drain" in sys.argv)
+    parser = argparse.ArgumentParser(description="APeX Supabase video_jobs worker")
+    mode_group = parser.add_mutually_exclusive_group()
+    mode_group.add_argument(
+        "--drain", action="store_true",
+        help="Exit once the queue is empty (or after repeated fetch failures) instead of "
+             "running forever. For an external scheduler that relaunches this script "
+             "periodically (see run_worker_drain.sh).",
+    )
+    mode_group.add_argument(
+        "--interval-minutes", type=float, default=None,
+        help="Run forever, checking for new jobs every N minutes when idle instead of every "
+             f"{POLL_SECONDS:g}s — e.g. 30 for an every-30-min cadence in one long-lived "
+             "process. Omit both flags for the default: check continuously.",
+    )
+    args = parser.parse_args()
+
+    if args.drain:
+        main(drain_on_idle=True)
+    elif args.interval_minutes is not None:
+        main(idle_sleep_seconds=args.interval_minutes * 60)
+    else:
+        main()
