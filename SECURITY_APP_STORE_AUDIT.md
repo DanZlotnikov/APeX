@@ -6,8 +6,12 @@ from `APP_STORE_SUBMISSION_PLAN.md` §4), plus a general Apple-rejection-risk pa
 below was verified against the actual code (not assumed) — several by empirically checking the
 real behavior (a built bundle, the vendored `httpx` source, `py_compile`), not just reading it.
 
-**Status: the critical and high findings are fixed and validated in this same pass.** One item
-needs action only you can take (see "Required manual step" below) — nothing else is blocking.
+**Status: the critical and high findings are fixed and validated in this same pass, and migration
+`019_security_hardening.sql` has been run against the live Supabase project (confirmed by you on
+2026-07-28)** — so the DB-level fixes (profiles lock trigger, `raw_video_path` CHECK constraint,
+notifications policy drop, sessions/session_metrics tightening) are now actually live, not just
+committed. One item still worth a couple minutes of your time — rotating the two dev accounts'
+password (Critical finding #3; keeping the accounts themselves is fine, see the checklist below).
 
 ---
 
@@ -84,13 +88,18 @@ boundaries the way it dead-code-eliminates a local `if (__DEV__)` branch. Fixed 
 export itself conditional (`__DEV__ ? {...} : undefined`) — re-exported, re-built, re-checked:
 **zero matches** for any of the three credential strings in the fresh bundle.
 
-**⚠️ Required manual step — only you can do this**: gating the code does **not** invalidate the
-underlying Supabase Auth accounts. Anyone who already has (or later extracts from an older build,
-git history, or this document) `daniel.cohen@apex.dev` / `coach@apex.dev` / `apex_dev_123` can
-still sign in directly via the public Supabase Auth API — this has nothing to do with the app's
-UI or code at all. **Delete these two accounts (or rotate their passwords to something not
-hardcoded anywhere) in your Supabase dashboard before beta.** I don't have Supabase auth-admin
-access to do this myself.
+**Manual step — only you can do this, but deletion isn't required**: gating the code does **not**
+invalidate the underlying Supabase Auth accounts — `daniel.cohen@apex.dev` / `coach@apex.dev` /
+`apex_dev_123` can still sign in directly via the public Supabase Auth API, independent of the
+app's UI or code. That said, this repo is confirmed **private**, and migration 019's role/team_id
+lock means a compromised login here can no longer escalate to an arbitrary team the way it could
+before — so the realistic blast radius is now bounded to this account's own team/data, not the
+whole app. Deleting the accounts isn't necessary: they're useful for your own dev-build testing
+(already `__DEV__`-gated out of production builds) and are a reasonable candidate for the
+App Store Connect reviewer demo account (Phase D, item 21). **Just rotate the password** away
+from `apex_dev_123` at some point, since that exact string is permanently in git history — do it
+whenever convenient, not urgently blocking. I don't have Supabase auth-admin access to do this
+myself.
 
 ---
 
@@ -213,8 +222,10 @@ so this doesn't affect it.
 Please check/confirm these in the Supabase dashboard — none of them are visible from the
 migration files alone:
 
-1. **Run `019_security_hardening.sql`** — same manual step as every other migration this session
-   (SQL Editor or `supabase db push`). Nothing above is actually fixed until this runs.
+1. ✅ **Run `019_security_hardening.sql`** — confirmed run against the live project (2026-07-28).
+   I don't have dashboard access myself, so this is taken on your word rather than independently
+   verified — if you want real confidence, try the escalation UPDATE from finding #1 yourself
+   post-migration and confirm it's rejected.
 2. **Auth settings** (Authentication → Providers/Policies): is email confirmation required at
    signup? Is "Leaked Password Protection" (checks against HaveIBeenPwned) enabled? Any rate
    limiting on the auth endpoints? None of this is controlled by the migrations.
@@ -229,8 +240,9 @@ migration files alone:
 5. **Confirm you're running the numbered migrations in order**, not `combined_for_paste.sql` — that
    file is a hand-merged, manually-kept-in-sync snapshot (flagged as a drift risk in
    `MANAGER_MODULE_AUDIT.md`) and I can't verify it's not what's actually deployed.
-6. **Delete or rotate the two dev accounts** — see Critical finding #3 above, this is the one
-   item that's genuinely required, not just a nice-to-have confirmation.
+6. **Rotate the two dev accounts' password** — see Critical finding #3 above. Keeping the
+   accounts is fine (useful for your own testing and as the App Store Connect reviewer demo
+   account); just move off `apex_dev_123` since it's permanently in git history.
 
 ---
 

@@ -16,6 +16,7 @@ venv/
 # Backend runtime artifacts
 backend/models/*.task
 backend/storage/
+backend/server/.worker.lock
 
 # Env / editor
 .env

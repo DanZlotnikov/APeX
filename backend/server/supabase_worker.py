@@ -33,11 +33,18 @@ anyway.
 Usage:
     cd backend/server && source ../GENMO/.venv/bin/activate
     SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... python supabase_worker.py
+
+Pass --drain to exit once the queue is empty instead of polling forever —
+this is what the scheduled 30-min cadence uses (see run_worker_drain.sh and
+APP_STORE_SUBMISSION_PLAN.md §2.1) so each scheduled run loads the models
+once, processes whatever's queued, and exits rather than idling/overlapping
+with the next trigger. Omit the flag for manual/continuous local runs.
 """
 from __future__ import annotations
 
 import re
 import shutil
+import sys
 import tempfile
 import time
 import traceback
@@ -166,19 +173,35 @@ def handle_job(models: "pipeline.worker.Models", job: dict) -> None:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
-def main() -> None:
+def main(drain_on_idle: bool = False) -> None:
     models = pipeline.worker.load_all_models()
     print("[supabase-worker] ready, polling for queued jobs ...")
+
+    # In drain mode, a fetch that keeps failing (bad/missing credentials, Supabase
+    # unreachable) must not retry forever the way continuous mode deliberately does
+    # — a scheduled run has to actually exit so the next 30-min trigger (and Task
+    # Scheduler's restart-on-failure policy) can take over. A few retries first so a
+    # single transient blip doesn't waste an entire scheduled run.
+    consecutive_fetch_failures = 0
 
     while True:
         try:
             jobs = supabase_client.fetch_queued_jobs(limit=JOBS_PER_POLL)
+            consecutive_fetch_failures = 0
         except Exception as e:  # noqa: BLE001
             print(f"[supabase-worker] failed to fetch queued jobs: {e}")
+            if drain_on_idle:
+                consecutive_fetch_failures += 1
+                if consecutive_fetch_failures >= 3:
+                    print("[supabase-worker] repeated fetch failures, exiting (--drain)")
+                    sys.exit(1)
             time.sleep(POLL_SECONDS)
             continue
 
         if not jobs:
+            if drain_on_idle:
+                print("[supabase-worker] queue empty, exiting (--drain)")
+                return
             time.sleep(POLL_SECONDS)
             continue
 
@@ -196,4 +219,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    main(drain_on_idle="--drain" in sys.argv)

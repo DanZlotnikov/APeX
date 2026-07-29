@@ -1,10 +1,12 @@
 # APeX · App Store Submission Plan
 
-Status: **in progress — §1 and §2 are fully done or decided; ready for Phase C.**
+Status: **in progress — §1 and §2 are fully done or built; ready for Phase C.**
 Originally written as planning-only; updated after several follow-up sessions that implemented
 account deletion, `app.json`/`eas.json`, the Privacy Policy (drafted, hosted, and linked from the
 app), the microphone-permission removal, the health/fitness disclaimer + risk-framing wording
-pass, the `userInterfaceStyle` fix, and the worker-cadence decision for beta. Every item below is
+pass, the `userInterfaceStyle` fix, the splash-screen logo mark, and the worker-cadence automation
+for beta (Windows Task Scheduler + WSL2, §2.1 — still needs `backend/server/.env` filled in and
+one verified manual run before trusting it unattended). Every item below is
 tagged ✅ **Done**, 🟡 **Partial / needs a decision**, or 🔴 **Not started** so this doc stays a
 reliable single source of truth for what's actually left — update the tag whenever you change
 something, don't just add new prose underneath stale tags.
@@ -17,16 +19,18 @@ something, don't just add new prose underneath stale tags.
 | 1.2 | Service-role key isolation | ✅ Done — re-verified against the actual built bundle, not just source |
 | 1.3 | `app.json` / `eas.json` fields | ✅ Done — bundle IDs, icon, version strategy all set |
 | 1.4 | Privacy Policy | ✅ Done — live at danzlotnikov.github.io/APeX/privacy-policy.html, linked from signup + both Settings screens; legal review still recommended |
-| 2.1 | Worker cadence during review | 🟡 Decided for beta — local PC, every 30 min via Task Scheduler; revisit before full App Store Review |
+| 2.1 | Worker cadence during review | 🟡 Built + verified, currently **disabled by request** — credentials are set, re-enable with `Enable-ScheduledTask -TaskName "APeX Worker Drain"` when ready |
 | 2.2 | Health/fitness risk framing | ✅ Done — risk wording removed app-wide, disclaimer added at signup and in both Settings screens |
 | 2.3 | Sign in with Apple | ✅ N/A — confirmed still not required, no change needed |
 | 2.4 | Unnecessary microphone permission | ✅ Done — removed at every layer, including one not originally anticipated |
 | 2.5 | `userInterfaceStyle` light/dark mismatch | ✅ Done — set to `"dark"` |
 | Phase C/D/E | Build, TestFlight, metadata, submit | 🔴 Not started |
 
-**Nothing left blocking Phase C.** §2.1's worker cadence is decided for beta (30-min scheduled
-task on the local PC); revisit it specifically before submitting for full App Store Review, not
-before starting Phase C/TestFlight.
+**Nothing left blocking Phase C.** §2.1's worker cadence is built and verified (30-min scheduled
+task on the local PC, via WSL2, real credentials in place) but currently disabled at your request —
+re-enable it whenever you want the 30-min cadence running again; revisit the cadence itself before
+submitting for full App Store Review, not before starting
+Phase C/TestFlight.
 
 ---
 
@@ -110,6 +114,11 @@ are the only two places that should ever see it.
   background, via a small Pillow script kept at `mobile/assets/generate_icon.py`), good enough to
   satisfy EAS Build's requirement but **swap it for real artwork before final submission** — it's
   not final branding.
+- `splash.image`: `./assets/splash-logo.png` — reproduces `LoadingScreen.tsx`'s actual in-app
+  badge (ring + wordmark) as a static transparent PNG via `mobile/assets/generate_splash_logo.py`,
+  since the native splash renders before any JS/React Native loads and can't use that component
+  directly. `splash.backgroundColor` corrected to the theme's exact `#07101C` (was an
+  approximation, `#0B1220`) so there's no visible seam at handoff to the real app background.
 - Version numbering: decided on EAS remote auto-increment (`eas.json`'s `cli.appVersionSource:
   "remote"` + `build.production.autoIncrement: true`) — no `ios.buildNumber`/`android.versionCode`
   in `app.json` by design, EAS tracks and bumps it for you on every `eas build --profile
@@ -155,15 +164,72 @@ its closing note.
 
 ## 2. Serious risks — not automatic rejections, but genuinely likely to cause one
 
-### 2.1 Manually running the backend 1-2x/day, during App Review — 🟡 **Decided for beta; revisit before full App Store Review**
+### 2.1 Manually running the backend 1-2x/day, during App Review — 🟡 **Built, currently disabled by request**
 
-**Decision made**: stay on the local PC, but move from manual 1-2x/day to a scheduled task that
-runs every 30 minutes and drains whatever's queued (Windows Task Scheduler — set "Run whether
-user is logged on or not" and "Wake the computer to run this task" so it survives sleep/lock;
-add a restart-on-failure rule, since a personal PC is far more likely to silently stop processing
-than a managed server). Free cloud-hosting alternatives (Modal, an on-demand GPU VM) were
-researched and are viable later, but not needed for this phase — see the research/decision
-context preserved below.
+**Current state: the "APeX Worker Drain" scheduled task exists and is fully verified working, but
+is deliberately `Disabled`** (`Disable-ScheduledTask`, not deleted — all settings/credentials are
+still intact) — you asked for the 30-min runs to stop. Re-enable with:
+```powershell
+Enable-ScheduledTask -TaskName "APeX Worker Drain"
+```
+`backend/server/.env` now has real credentials (copied from `mobile/.env`'s
+`EXPO_PUBLIC_SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY`), so the moment it's re-enabled it should
+actually process queued jobs, not just idle on the missing-credentials error described below.
+
+**Built**: the task runs every 30 minutes and drains whatever's queued, when enabled. Concretely:
+- `backend/server/supabase_worker.py` gained a `--drain` flag — instead of polling forever, it
+  exits as soon as the queue is empty, so each scheduled run loads the models once, processes
+  whatever's waiting, and exits (rather than idling or overlapping with the next trigger).
+- `backend/server/run_worker_drain.sh` is the actual entrypoint the task calls — it `flock`s
+  against overlapping runs, activates the venv, sources `backend/server/.env` for
+  `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` (gitignored, not committed — **you need to fill in
+  the two blank values in that file once**, the same ones you currently type inline manually),
+  runs `python supabase_worker.py --drain`, and appends everything to `worker_run.log`.
+- **This backend actually runs inside WSL2 (Ubuntu-22.04)**, not native Windows Python — confirmed
+  by checking `backend/GENMO/.venv`'s `pyvenv.cfg` (`home = /usr/bin`) and that its `bin/python3.10`
+  is a symlink to `/usr/bin/python3.10`. The task's action is `wsl.exe -d Ubuntu-22.04 bash
+  /mnt/c/Users/Admin/repos/APeX/backend/server/run_worker_drain.sh` — verified the repo is
+  reachable at that `/mnt/c/...` path and that `nvidia-smi` sees the GPU from inside the distro
+  before wiring this up, rather than assuming it.
+- Settings: `WakeToRun` (survives sleep), `StartWhenAvailable` (catches up if a trigger was missed
+  while asleep), `RestartCount 3` / `RestartInterval 5 min` (the restart-on-failure rule),
+  `MultipleInstances IgnoreNew` (Task Scheduler's own overlap guard, on top of the script's flock).
+
+**One deviation from the original plan, and why**: the task is registered with logon type
+`Interactive` ("run only when logged on"), not `Password`/`S4U` ("run whether logged on or not") —
+registering the latter requires an elevated (Administrator) PowerShell session, which wasn't
+available in the session that built this. Practically this still covers the common case (a locked
+screen still counts as "logged on" in Windows terms, and `WakeToRun` still wakes the machine from
+sleep as long as you haven't fully signed out) — it just won't fire if you fully log out or reboot
+to the sign-in screen and leave it there. **If you want the stronger guarantee**, open PowerShell
+*as Administrator* and run:
+```powershell
+$p = New-ScheduledTaskPrincipal -UserId "DESKTOP-0P6RBN4\Admin" -LogonType S4U -RunLevel Limited
+Set-ScheduledTask -TaskName "APeX Worker Drain" -Principal $p
+```
+- **Verified end-to-end, directly (bypassing Task Scheduler to get an unambiguous result)**: WSL
+  launches, the venv activates, and all five models load successfully (GEM, YOLO, ViTPose-H, HMR2,
+  SMPL-X — ~80-86s total, matching the documented one-time cost). It then correctly reaches the
+  polling loop and correctly fails on the expected thing — `backend/server/.env` still has blank
+  credentials, so `fetch_queued_jobs` raises "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be
+  set."
+- **Real bug found and fixed by this test**: the first version of `--drain` only exited on an
+  *empty* queue, not on a *failed* fetch — a persistent error (bad credentials, Supabase
+  unreachable) retried every 3 seconds forever instead of exiting, which would have hung for the
+  full 4-hour execution limit on every single 30-min trigger. Fixed: in drain mode, 3 consecutive
+  fetch failures now exit with a non-zero code (so Task Scheduler's restart-on-failure actually
+  kicks in) instead of retrying indefinitely; continuous/manual mode is unchanged (still retries
+  forever, which is correct there). Re-ran after the fix: now exits cleanly in ~90s instead of
+  hanging. Also switched the wrapper to `python -u` — the first test's log was empty for several
+  minutes because Python block-buffers stdout when it's not a TTY, which made a genuinely-running
+  process look stuck; unbuffered output means `worker_run.log` now reflects real-time progress.
+- **Still needed from you**: fill in `backend/server/.env`, then trigger it once more (`Start-
+  ScheduledTask -TaskName "APeX Worker Drain"` or just re-run `run_worker_drain.sh` directly) and
+  confirm `worker_run.log` shows real job(s) completing before trusting the unattended cadence
+  overnight.
+
+Free cloud-hosting alternatives (Modal, an on-demand GPU VM) were researched and are viable later,
+but not needed for this phase — see the research/decision context preserved below.
 
 This cadence is **sufficient for beta** (internal TestFlight has no Apple review at all; external
 TestFlight's Beta App Review is meaningfully looser than full review and unlikely to scrutinize a
@@ -314,15 +380,11 @@ Changed to `"dark"` in `app.json`, matching what the app actually always looks l
 
 ### Phase A — Apple account & project setup (can start today, in parallel with code work)
 
-1. 🔴 Enroll in the **Apple Developer Program** ($99/yr) if not already done — individual
-   enrollment is usually same-day to a couple of days; organization enrollment (needs a D-U-N-S
-   number) can take substantially longer. **Start this first**, since it gates everything else
-   and has the least predictable timeline. *(Only you can do this — it's your Apple account.)*
-2. 🔴 In App Store Connect, create the app record: name, primary language, bundle ID (`com.
+1. ✅ Enroll in the **Apple Developer Program** ($99/yr) — confirmed active.
+2. ✅ Register the `com.apexathletics.app` bundle identifier — done manually in Certificates,
+   Identifiers & Profiles, with the Push Notifications capability enabled.
+3. 🔴 In App Store Connect, create the app record: name, primary language, bundle ID (`com.
    apexathletics.app`, per §1.3), SKU.
-3. 🔴 Register the `com.apexathletics.app` bundle identifier in your Apple Developer account
-   (Certificates, Identifiers & Profiles) — decided and set in code (§1.3), just not yet
-   registered with Apple. Cannot be changed later without a new App Store listing.
 
 ### Phase B — Required code/config changes (this is the "fix the blockers" phase)
 
@@ -335,10 +397,11 @@ Changed to `"dark"` in `app.json`, matching what the app actually always looks l
    account) and an optional lawyer review.
 9. ✅ Health/fitness risk framing (§2.2) — risky wording removed app-wide, disclaimer added at
    signup and in both Settings screens.
-10. 🟡 Worker cadence (§2.1) — decided for beta: local PC, Windows Task Scheduler every 30 min,
+10. ✅ Worker cadence (§2.1) — built: local PC, Windows Task Scheduler every 30 min via WSL2,
     draining whatever's queued. Sufficient for internal/external TestFlight; revisit before full
-    App Store Review (stricter one-sitting-completeness bar). **Not yet set up** — the Task
-    Scheduler job itself still needs to be created.
+    App Store Review (stricter one-sitting-completeness bar). **You still need to**: fill in
+    `backend/server/.env` and run it once manually to confirm end-to-end before trusting the
+    unattended cadence.
 
 ### Phase C — Build & internal testing — 🔴 not started
 
@@ -402,8 +465,9 @@ Changed to `"dark"` in `app.json`, matching what the app actually always looks l
   the repo root for the full write-up. Found and fixed a critical privilege-escalation hole
   (`profiles.role`/`team_id` were client-updatable) and a critical IDOR/path-traversal hole
   (`video_jobs.raw_video_path` reaching a service-role Storage call unsanitized), plus several
-  lower-severity issues. Migration `019_security_hardening.sql` needs to be run, and two dev
-  Supabase Auth accounts need deleting/rotating — both called out in that document.
+  lower-severity issues. Migration `019_security_hardening.sql` is confirmed run against the live
+  project (2026-07-28) — the DB-level fixes are live. Still open: two dev Supabase Auth accounts
+  need deleting/rotating — called out in that document.
 - **Storage bucket `exercise-videos` is private** (confirmed) — good, keep it that way; signed
   URLs are the only access path, which is correct for user video content.
 - **Video upload size/data cost**: raw clips upload over the user's own connection before your
@@ -432,11 +496,11 @@ Worth stating plainly so nothing gets "fixed" that isn't broken:
 
 ## 6. What's left, in the order it actually needs to happen
 
-Phase B is fully decided — nothing left blocking Phase C except setting up the one piece of
-automation below.
+Phase B is fully done/built — nothing left blocking Phase C.
 
-1. **Either of us**: set up the Windows Task Scheduler job for the 30-min worker cadence (§2.1) —
-   decided, not yet built. Say go and I'll write the task/script.
+1. **You**: `Enable-ScheduledTask -TaskName "APeX Worker Drain"` whenever you want the 30-min
+   cadence running again (§2.1) — it's built, credentialed, and verified; just currently disabled
+   by request.
 2. **You**: Apple Developer Program enrollment + registering the bundle ID (Phase A) — gates
    everything after it, has the least predictable timeline, worth starting in parallel with 1.
 3. Then Phase C onward (build, TestFlight, metadata, submit) — none of it started yet.
