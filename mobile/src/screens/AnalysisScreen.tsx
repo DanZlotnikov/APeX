@@ -19,8 +19,7 @@ import { compareToHistory, Comparison } from '../utils/stats';
 import { playChime } from '../utils/sound';
 import { colors, spacing } from '../theme';
 import { createSession } from '../api/sessions';
-import { TargetExercise } from '../api/types';
-import { EXERCISE_LABELS, ExerciseKey } from '../utils/exerciseMetrics';
+import { ExerciseKey } from '../utils/exerciseMetrics';
 
 interface Props {
   videoUri: string;
@@ -28,10 +27,6 @@ interface Props {
   userId?: string;
   teamId?: string;
   athleteName?: string;
-  /** Set when the athlete tapped a required task on the dashboard, rather than free-recording. */
-  targetExercise?: TargetExercise | null;
-  /** Re-enter the camera for another attempt at the same target exercise. */
-  onRecordAgain?: () => void;
 }
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
@@ -121,7 +116,7 @@ const loaderStyles = StyleSheet.create({
 });
 
 export default function AnalysisScreen({
-  videoUri, onHome, userId, teamId, athleteName, targetExercise, onRecordAgain,
+  videoUri, onHome, userId, teamId, athleteName,
 }: Props) {
   const { settings, accentColor } = useSettings();
   const [assessment, setAssessment]     = useState<Assessment | null>(null);
@@ -158,26 +153,14 @@ export default function AnalysisScreen({
   // one is a rare edge case we don't try to split into separate sessions).
   const actual        = assessment?.perExercise[0] ?? null;
   const actualKey: ExerciseKey | null = actual?.key ?? null;
-  // targetExercise.key is now the 6-exercise pipeline vocabulary (see
-  // api/types.ts); this screen is unreachable from any navigation path
-  // (see MANAGER_MODULE_AUDIT.md section 5) and only ever dealt with the
-  // retired on-device analyzer's 3, so the cast is safe — kept only so this
-  // dead code still compiles.
-  const effectiveKey: ExerciseKey | null = actualKey ?? (targetExercise?.key as ExerciseKey | undefined) ?? null;
-  const mismatched     = !!(targetExercise && actualKey && actualKey !== targetExercise.key);
-  const requiredReps   = targetExercise && effectiveKey ? targetExercise.requiredRepsByKey[effectiveKey] : undefined;
-  const completedReps  = actual?.reps ?? 0;
-  const meetsRequirement = requiredReps == null ? true : completedReps >= requiredReps;
-  const showRequirement = !!targetExercise;
 
   const handleSave = useCallback(async () => {
     if (!assessment || saved || saving) return;
-    if (showRequirement && !meetsRequirement) return; // Record Again is the only action in this state
     setSaving(true);
     setSaveError(null);
     try {
       const id = makeId();
-      const keyToSave: ExerciseKey = effectiveKey ?? 'squat';
+      const keyToSave: ExerciseKey = actualKey ?? 'squat';
 
       // Local save (always — offline capable), scoped to this user so it
       // never leaks into whoever's signed in next on the same device. No
@@ -202,7 +185,7 @@ export default function AnalysisScreen({
     } finally {
       setSaving(false);
     }
-  }, [assessment, saved, saving, teamId, userId, athleteName, showRequirement, meetsRequirement, effectiveKey]);
+  }, [assessment, saved, saving, teamId, userId, athleteName, actualKey]);
 
   const isReady = comparison !== undefined;
 
@@ -246,82 +229,18 @@ export default function AnalysisScreen({
 
       {isReady && (
         <View style={styles.footer}>
-          {showRequirement && (
-            <RequirementCard
-              activeLabel={effectiveKey ? EXERCISE_LABELS[effectiveKey] : '—'}
-              targetLabel={targetExercise!.label}
-              completedReps={completedReps}
-              requiredReps={requiredReps}
-              meetsRequirement={meetsRequirement}
-              mismatched={mismatched}
-            />
-          )}
-
-          {showRequirement && !meetsRequirement ? (
-            <PrimaryButton label="Record Again" onPress={() => onRecordAgain?.()} />
-          ) : (
-            <PrimaryButton
-              label={saved ? 'Saved ✓' : 'Save Analysis'}
-              onPress={handleSave}
-              disabled={saved}
-              loading={saving}
-            />
-          )}
+          <PrimaryButton
+            label={saved ? 'Saved ✓' : 'Save Analysis'}
+            onPress={handleSave}
+            disabled={saved}
+            loading={saving}
+          />
           {saveError && <Text style={styles.saveError}>{saveError}</Text>}
         </View>
       )}
     </SafeAreaView>
   );
 }
-
-function RequirementCard({
-  activeLabel, targetLabel, completedReps, requiredReps, meetsRequirement, mismatched,
-}: {
-  activeLabel: string;
-  targetLabel: string;
-  completedReps: number;
-  requiredReps: number | undefined;
-  meetsRequirement: boolean;
-  mismatched: boolean;
-}) {
-  return (
-    <View style={reqStyles.card}>
-      {mismatched && (
-        <Text style={reqStyles.note}>
-          You performed <Text style={reqStyles.noteStrong}>{activeLabel}</Text> instead of {targetLabel} — this will be saved as {activeLabel}.
-        </Text>
-      )}
-      <View style={reqStyles.row}>
-        <Text style={reqStyles.exercise}>{activeLabel.toUpperCase()}</Text>
-        <Text style={reqStyles.reps}>
-          {requiredReps != null ? `${completedReps} of ${requiredReps} reps` : `${completedReps} reps`}
-        </Text>
-      </View>
-      <Text style={[reqStyles.status, meetsRequirement && reqStyles.statusDone]}>
-        {requiredReps == null ? 'Recorded' : meetsRequirement ? 'Completed' : 'Not completed yet — keep going'}
-      </Text>
-    </View>
-  );
-}
-
-const reqStyles = StyleSheet.create({
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-    gap: 6,
-  },
-  note: { color: colors.muted, fontSize: 12, lineHeight: 17 },
-  noteStrong: { color: colors.text, fontWeight: '700' },
-  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  exercise: { color: colors.text, fontSize: 14, fontWeight: '800', letterSpacing: 1 },
-  reps: { color: colors.muted, fontSize: 13, fontWeight: '600' },
-  status: { color: colors.muted, fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
-  statusDone: { color: colors.primary },
-});
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },

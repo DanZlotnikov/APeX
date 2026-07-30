@@ -51,10 +51,9 @@ export const PIPELINE_EXERCISE_KEYS: PipelineExerciseKey[] = ['squat', 'jump', '
 const RAW_TO_BRIDGED: Record<string, string> = { vertical_jump: 'jump', pull_up: 'pullup' };
 
 // Resolves which exercise a completed video_jobs row actually turned out to
-// be, in the bridged vocabulary above. Mirrors OverviewScreen's Today's
-// Tasks resolution logic (resolveTaskStatus) exactly, factored out so the
-// Routine feature's completion-matching stays consistent with it without
-// duplicating the two call sites' inline logic.
+// be, in the bridged vocabulary above. Used by the Routine feature's
+// completion-matching (routineProgress.ts) so it stays consistent with how
+// sessions.exercise_type is populated.
 export function resolveJobExerciseKey(job: { exerciseType: string | null }): string | null {
   if (!job.exerciseType) return null;
   return RAW_TO_BRIDGED[job.exerciseType] ?? job.exerciseType;
@@ -67,8 +66,8 @@ export function resolveJobExerciseKey(job: { exerciseType: string | null }): str
 // present if only one analyzer produced a result (e.g. 0 reps); null if
 // neither did. The ONE place this formula lives client-side — every screen
 // that shows a "readiness" number for a completed-but-not-yet-saved
-// video_jobs row (Today's Tasks, the Routine progress table,
-// BiomechanicsReport's gauge) must call this rather than reading
+// video_jobs row (the Routine progress table, BiomechanicsReport's gauge)
+// must call this rather than reading
 // overall_balance_pct directly, so a job never shows a different readiness
 // number before Save than sessions.readiness_score gives it after.
 export function readinessPctFromAnalysis(analysis: {

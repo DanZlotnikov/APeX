@@ -31,7 +31,7 @@ sys.path.insert(0, str(_REPO_ROOT))
 # ---- 1a. Person Detection + Tracking (YOLOv8) ----------------------------
 
 
-def detect_and_track(video_path: str, preprocess_dir: str, yolo_model=None) -> torch.Tensor:
+def detect_and_track(video_path: str, preprocess_dir: str, yolo_model=None) -> tuple[torch.Tensor, bool]:
     """Run YOLOv8 person detection, select top-1 track, smooth bboxes.
 
     Args:
@@ -41,12 +41,28 @@ def detect_and_track(video_path: str, preprocess_dir: str, yolo_model=None) -> t
             original one-shot-script behavior.
 
     Returns:
-        bbx_xys: (L, 3) tensor of [center_x, center_y, bbox_size]
+        bbx_xys: (L, 3) tensor of [center_x, center_y, bbox_size]. When no
+            frame ever had a real detection (see any_detected below), this
+            is a fabricated placeholder box (frame center, see the "no
+            detection" fallback below) — NOT a real person location.
+        any_detected: True if YOLO found a real person in at least one
+            frame; False if every single frame had zero detections. Lets
+            callers (run_core_pipeline) distinguish "genuinely no person in
+            this clip" from "person briefly left frame/was occluded" (the
+            latter still produces a real, if momentarily stale, box via the
+            repeat-last-box fallback below and should NOT short-circuit).
     """
     cache_path = os.path.join(preprocess_dir, "bbx.pt")
+    detected_cache_path = os.path.join(preprocess_dir, "bbx_person_detected.pt")
     if os.path.exists(cache_path):
         print(f"[Stage 1a] Loading cached bounding boxes from {cache_path}")
-        return torch.load(cache_path, map_location="cpu")
+        bbx_xys = torch.load(cache_path, map_location="cpu")
+        # Older cache dirs (written before the any_detected flag existed)
+        # have no sidecar file — default True, i.e. the pre-existing
+        # behavior of trusting the cached box, rather than retroactively
+        # short-circuiting a previously-successful cached run.
+        any_detected = torch.load(detected_cache_path) if os.path.exists(detected_cache_path) else True
+        return bbx_xys, any_detected
 
     print("[Stage 1a] Running YOLOv8 person detection ...")
     from gem.utils.video_io_utils import get_video_lwh, read_video_np
@@ -71,6 +87,8 @@ def detect_and_track(video_path: str, preprocess_dir: str, yolo_model=None) -> t
                 xyxy = box.xyxy[0].cpu().numpy()
                 conf = float(box.conf[0].cpu())
                 all_boxes[i].append(np.append(xyxy, conf))
+
+    any_detected = any(len(boxes) > 0 for boxes in all_boxes)
 
     # Simple greedy tracking: pick the person with the largest total area across frames.
     # For each frame take the largest-area detection.
@@ -106,8 +124,11 @@ def detect_and_track(video_path: str, preprocess_dir: str, yolo_model=None) -> t
 
     os.makedirs(preprocess_dir, exist_ok=True)
     torch.save(bbx_xys, cache_path)
+    torch.save(any_detected, detected_cache_path)
     print(f"[Stage 1a] Bounding boxes saved to {cache_path} ({len(bbx_xys)} frames)")
-    return bbx_xys
+    if not any_detected:
+        print(f"[Stage 1a] {video_path}: no person detected in any frame")
+    return bbx_xys, any_detected
 
 
 # ---- 1b. COCO-17 2D Keypoint Extraction (ViTPose-H) ----------------------

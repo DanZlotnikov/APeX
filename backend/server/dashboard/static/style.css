@@ -70,22 +70,80 @@ body { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
 .conn-indicator.connected #connLabel { color: var(--accent); }
 .conn-indicator.error .dot { background: var(--danger); }
 
-.mode-badge {
-  font-size: 0.72rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
-  padding: 0.3rem 0.7rem; border-radius: 999px;
-  background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
-}
-.mode-badge.continuous { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
-.mode-badge.\32 6min, .mode-badge.mode-30min { color: var(--info); border-color: color-mix(in srgb, var(--info) 40%, var(--border)); }
+/* ── server control (start/stop + mode dropdown split button) ────────── */
 
-.toggle-btn {
-  font-size: 0.75rem; font-weight: 600; letter-spacing: 0.03em;
-  padding: 0.4rem 0.85rem; border-radius: 8px;
-  background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
-  cursor: pointer; transition: background 0.15s, border-color 0.15s;
+.server-control { display: flex; align-items: stretch; position: relative; }
+
+.server-action-btn {
+  display: flex; align-items: center; gap: 0.5rem;
+  font-size: 0.78rem; font-weight: 700; letter-spacing: 0.02em;
+  padding: 0.45rem 0.9rem;
+  border-radius: 8px 0 0 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-right: none;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
-.toggle-btn:hover:not(:disabled) { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
-.toggle-btn:disabled { opacity: 0.4; cursor: default; }
+.server-action-btn:disabled { opacity: 0.5; cursor: default; }
+
+.server-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+
+/* Running: server is live — dot pulses accent-teal, button reads "Stop Server". */
+.server-action-btn.running {
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  color: var(--accent);
+}
+.server-action-btn.running .server-dot { background: var(--accent); box-shadow: 0 0 6px var(--accent); animation: pulse 1.8s infinite; }
+.server-action-btn.running:hover:not(:disabled) { background: var(--danger-soft); border-color: color-mix(in srgb, var(--danger) 45%, var(--border)); color: var(--danger); }
+.server-action-btn.running:hover:not(:disabled) .server-dot { background: var(--danger); box-shadow: 0 0 6px var(--danger); animation: none; }
+
+/* Stopped: dead — no polling, nothing processing. Button reads "Start Server". */
+.server-action-btn.stopped { background: var(--surface-2); color: var(--muted); border-color: var(--border); }
+.server-action-btn.stopped .server-dot { background: var(--muted); }
+.server-action-btn.stopped:hover:not(:disabled) { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); color: var(--accent); }
+.server-action-btn.stopped:hover:not(:disabled) .server-dot { background: var(--accent); }
+
+.mode-selector { position: relative; }
+
+.mode-dropdown-toggle {
+  display: flex; align-items: center; gap: 0.35rem; height: 100%;
+  font-size: 0.75rem; font-weight: 600;
+  padding: 0.45rem 0.65rem;
+  border-radius: 0 8px 8px 0;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.mode-dropdown-toggle:disabled { opacity: 0.5; cursor: default; }
+.mode-dropdown-toggle:hover:not(:disabled) { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.mode-dropdown-toggle .caret { font-size: 0.6rem; color: var(--muted); }
+
+.mode-dropdown-menu {
+  display: none;
+  position: absolute; top: calc(100% + 6px); right: 0;
+  min-width: 160px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 12px 30px -10px rgba(0,0,0,0.6);
+  padding: 0.3rem;
+  z-index: 50;
+}
+.mode-dropdown-menu.open { display: block; }
+
+.mode-option {
+  display: block; width: 100%; text-align: left;
+  background: none; border: none; color: var(--text);
+  font-size: 0.8rem; font-family: inherit;
+  padding: 0.5rem 0.6rem; border-radius: 6px;
+  cursor: pointer;
+}
+.mode-option:hover { background: var(--accent-soft); color: var(--accent); }
+.mode-option.active { color: var(--accent); font-weight: 700; }
+.mode-option.active::after { content: ' \2713'; }
 
 /* ── layout ────────────────────────────────────────────────────────── */
 

@@ -28,8 +28,9 @@ from typing import Optional
 
 import httpx
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 APP_DIR = Path(__file__).resolve().parent
 SERVER_DIR = APP_DIR.parent  # backend/server
@@ -40,6 +41,14 @@ WSL_DISTRO = "Ubuntu-22.04"
 WSL_SERVER_DIR = "/mnt/c/Users/Admin/repos/APeX/backend/server"
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+# Query-string cache-buster, fixed per process lifetime. Cache-Control
+# headers alone aren't reliably enough — a browser tab that already loaded
+# /static/style.css or app.js under the old URL can keep serving it from
+# disk cache regardless of what headers a *later* request gets. Appending
+# ?v=<boot time> makes every server restart a genuinely different URL, so
+# there's nothing stale to possibly serve.
+BOOT_VERSION = str(int(time.time()))
 
 app = FastAPI(title="APeX Backend Dashboard")
 
@@ -67,10 +76,11 @@ class WorkerSupervisor:
             f"flock .worker.lock python -u supabase_worker.py {py_args}"
         ).strip()
 
-    def start(self, mode: str) -> None:
+    def start(self, mode: Optional[str] = None) -> None:
         with self._lock:
             if self.process is not None:
                 return
+            mode = mode or self.mode
             self.mode = mode
             cmd = ["wsl.exe", "-d", WSL_DISTRO, "bash", "-c", self._bash_command(mode)]
             self.process = subprocess.Popen(
@@ -101,12 +111,17 @@ class WorkerSupervisor:
             proc.kill()
         log_event("system", "Worker stopped")
 
-    def toggle(self) -> str:
-        new_mode = "30min" if self.mode == "continuous" else "continuous"
-        self.stop()
-        time.sleep(1)
-        self.start(new_mode)
-        return new_mode
+    def set_mode(self, mode: str) -> None:
+        """Switches mode. If currently running, restarts into the new mode
+        immediately; if stopped, just remembers it for the next Start.
+        """
+        was_running = self.process is not None
+        if was_running:
+            self.stop()
+            time.sleep(1)
+            self.start(mode)
+        else:
+            self.mode = mode
 
     def _read_output(self, proc: subprocess.Popen) -> None:
         if proc.stdout is None:
@@ -176,14 +191,33 @@ async def ws_logs(websocket: WebSocket) -> None:
 
 # ── Status / mode control ──────────────────────────────────────────────────
 
+class ModeRequest(BaseModel):
+    mode: str
+
+
 @app.get("/api/status")
 async def get_status() -> dict:
     return {"mode": supervisor.mode, "running": supervisor.process is not None, "started_at": supervisor.started_at}
 
 
-@app.post("/api/toggle-mode")
-async def toggle_mode() -> dict:
-    return {"mode": supervisor.toggle()}
+@app.post("/api/start")
+async def start_worker() -> dict:
+    supervisor.start()
+    return {"mode": supervisor.mode, "running": supervisor.process is not None}
+
+
+@app.post("/api/stop")
+async def stop_worker() -> dict:
+    supervisor.stop()
+    return {"mode": supervisor.mode, "running": supervisor.process is not None}
+
+
+@app.post("/api/set-mode")
+async def set_mode(req: ModeRequest) -> dict:
+    if req.mode not in ("continuous", "30min"):
+        return {"error": "invalid mode"}
+    supervisor.set_mode(req.mode)
+    return {"mode": supervisor.mode, "running": supervisor.process is not None}
 
 
 # ── Supabase job/session data (read-only queries, separate from the worker) ─
@@ -260,10 +294,24 @@ async def get_jobs() -> dict:
 
 
 # ── Static frontend ──────────────────────────────────────────────────────
+# This is actively edited and reloaded during development — browsers caching
+# a stale index.html/app.js/style.css (FastAPI's StaticFiles sets no
+# explicit cache policy, so the browser default applies) has already caused
+# a real "the UI doesn't match what was just changed" confusion once. A
+# local single-user tool has nothing to gain from caching these anyway.
+@app.middleware("http")
+async def no_cache(request, call_next):
+    response = await call_next(request)
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    return response
+
 
 app.mount("/static", StaticFiles(directory=str(APP_DIR / "static")), name="static")
 
 
 @app.get("/")
-async def index() -> FileResponse:
-    return FileResponse(str(APP_DIR / "static" / "index.html"))
+async def index() -> HTMLResponse:
+    html = (APP_DIR / "static" / "index.html").read_text(encoding="utf-8")
+    html = html.replace('href="/static/style.css"', f'href="/static/style.css?v={BOOT_VERSION}"')
+    html = html.replace('src="/static/app.js"', f'src="/static/app.js?v={BOOT_VERSION}"')
+    return HTMLResponse(html)

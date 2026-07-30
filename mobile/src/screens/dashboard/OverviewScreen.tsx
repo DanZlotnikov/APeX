@@ -1,81 +1,41 @@
 import { useFocusEffect } from '@react-navigation/native';
 import React, { useCallback, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { getAthleteById } from '../../api/athletes';
-import { getTeamRoutine } from '../../api/teamRoutine';
 import { getRoutine, RoutineSetting } from '../../api/routine';
 import { getSessionHistory, SessionHistoryEntry } from '../../api/sessions';
-import { AthleteViewModel, ExerciseReadiness, TargetExercise } from '../../api/types';
-import { VideoJob } from '../../api/videoJobs';
+import { AthleteViewModel } from '../../api/types';
 import LineTrend from '../../components/charts/LineTrend';
 import DeltaChip from '../../components/DeltaChip';
 import { useSettings } from '../../state/SettingsContext';
 import { useVideoJobsContext } from '../../state/VideoJobsContext';
 import { mean } from '../../utils/history';
-import { exerciseLabel, PipelineExerciseKey, readinessPctFromAnalysis, resolveJobExerciseKey } from '../../utils/pipelineExercise';
 import { computeRoutineProgress } from '../../utils/routineProgress';
 import { StatDelta } from '../../utils/stats';
 import { formatHeight, formatWeight } from '../../utils/units';
 import { colors, spacing } from '../../theme';
 
-// Today's Tasks redesign for the async pipeline (HANDOFF_video_pipeline.md
-// section 4 item 8): a task can no longer just be "done"/"not done" from
-// sessions alone, since a save now happens well after recording. Layering
-// today's live video_jobs (matched by target_exercise_key) on top of the
-// DB-driven ExerciseReadiness gives the in-between states — pending while
-// the pipeline runs, resolved to met/mismatched the moment the job
-// completes (per the handoff, this resolves on job completion, not on the
-// athlete tapping Save in the Processing tab).
-type TaskStatus =
-  | { kind: 'done'; readinessPct: number | null }
-  | { kind: 'pending' }
-  | { kind: 'mismatch'; actualLabel: string }
-  | { kind: 'failed' }
-  | { kind: 'not_done' };
-
-function resolveTaskStatus(key: PipelineExerciseKey, dbState: ExerciseReadiness, todaysJobs: VideoJob[]): TaskStatus {
-  const job = todaysJobs.find((j) => j.targetExerciseKey === key);
-  if (job) {
-    if (job.status === 'queued' || job.status === 'processing') return { kind: 'pending' };
-    if (job.status === 'failed') return { kind: 'failed' };
-    if (job.status === 'completed') {
-      const readinessPct = readinessPctFromAnalysis(job.analysis);
-      const actualKey = resolveJobExerciseKey(job);
-      if (actualKey === key) return { kind: 'done', readinessPct: readinessPct != null ? Math.round(readinessPct) : null };
-      return { kind: 'mismatch', actualLabel: exerciseLabel(actualKey) };
-    }
-  }
-  // dbState.readiness reads sessions.readiness_score, which save_video_job
-  // (migration 011) now populates from balance too, so this is consistent
-  // with the 'completed'-but-unsaved branch above.
-  if (dbState.testedToday) return { kind: 'done', readinessPct: dbState.readiness };
-  return { kind: 'not_done' };
-}
-
 interface Props {
   userId?: string;
   teamId?: string;
-  onSelectTask: (target: TargetExercise) => void;
 }
 
-export default function OverviewScreen({ userId, teamId, onSelectTask }: Props) {
+export default function OverviewScreen({ userId, teamId }: Props) {
   const { profile, settings, accentColor } = useSettings();
   const [sessions, setSessions]       = useState<SessionHistoryEntry[]>([]);
   const [routine, setRoutine]         = useState<RoutineSetting[]>([]);
   const [athlete, setAthlete]         = useState<AthleteViewModel | null>(null);
-  const [minRepsByKey, setMinRepsByKey] = useState<Partial<Record<PipelineExerciseKey, number>>>({});
   const [loading, setLoading]         = useState(true);
   const { jobs } = useVideoJobsContext();
 
   const todayUtc = new Date().toISOString().slice(0, 10);
-  const todaysJobs = jobs.filter((j) => !!j.targetExerciseKey && j.recordedAt.startsWith(todayUtc));
   const todaysSessions = sessions.filter((s) => s.recordedAt.startsWith(todayUtc));
   const todaysCompletedJobs = jobs.filter((j) => j.status === 'completed' && j.recordedAt.startsWith(todayUtc));
   const routineProgress = computeRoutineProgress(routine, todaysSessions, todaysCompletedJobs);
 
-  // Refetch on every focus (not just mount) so completing a task and coming
-  // back from AnalysisScreen shows it as done immediately, alongside every
-  // other required exercise whether it's done yet or not.
+  // Refetch on every focus (not just mount) so completing an exercise and
+  // coming back from AnalysisScreen updates today's routine progress and
+  // readiness trend immediately.
   useFocusEffect(
     useCallback(() => {
       let active = true;
@@ -91,19 +51,9 @@ export default function OverviewScreen({ userId, teamId, onSelectTask }: Props) 
         setRoutine([]);
       }
 
-      // getAthleteById now resolves required exercises the same way for
-      // every athlete, team or individual (see buildViewModel / migration
-      // 018) — the team-routine target-reps lookup below (used for the
-      // task-detail requirement) only needs a team for team athletes.
       if (userId) {
-        Promise.all([getAthleteById(userId), teamId ? getTeamRoutine(teamId) : Promise.resolve([])])
-          .then(([a, routineDefaults]) => {
-            if (!active) return;
-            setAthlete(a);
-            const m: Partial<Record<PipelineExerciseKey, number>> = {};
-            routineDefaults.forEach((r) => { m[r.exerciseType] = r.targetReps; });
-            setMinRepsByKey(m);
-          })
+        getAthleteById(userId)
+          .then((a) => { if (active) setAthlete(a); })
           .catch((e) => console.warn('Failed to load athlete overview', e))
           .finally(() => { if (active) setLoading(false); });
       } else {
@@ -136,10 +86,6 @@ export default function OverviewScreen({ userId, teamId, onSelectTask }: Props) 
         }
       : null;
 
-  function handleTaskPress(key: PipelineExerciseKey, label: string) {
-    onSelectTask({ key, label, requiredRepsByKey: minRepsByKey });
-  }
-
   return (
     <View style={styles.screen}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -152,38 +98,6 @@ export default function OverviewScreen({ userId, teamId, onSelectTask }: Props) 
           <ProfileStat label="WEIGHT" value={formatWeight(profile.weightKg, settings.units)} />
           <ProfileStat label="SESSIONS" value={String(sessions.length)} />
         </View>
-
-        {!!athlete?.perExerciseReadiness.length && (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>TODAY'S TASKS</Text>
-            {athlete.perExerciseReadiness.map((t) => {
-              const status = resolveTaskStatus(t.key, t, todaysJobs);
-              return (
-                <Pressable
-                  key={t.key}
-                  onPress={() => handleTaskPress(t.key, t.label)}
-                  style={({ pressed }) => [styles.taskRow, pressed && styles.taskRowPressed]}
-                >
-                  <View style={[
-                    styles.taskDot,
-                    status.kind === 'done' && styles.taskDotDone,
-                    status.kind === 'pending' && styles.taskDotPending,
-                    (status.kind === 'mismatch' || status.kind === 'failed') && styles.taskDotAlert,
-                  ]} />
-                  <Text style={styles.taskLabel} numberOfLines={1}>{t.label}</Text>
-                  <Text style={styles.taskStatus} numberOfLines={1}>
-                    {status.kind === 'done' && (status.readinessPct != null ? `Completed · ${status.readinessPct}%` : 'Completed')}
-                    {status.kind === 'pending' && 'Pending…'}
-                    {status.kind === 'mismatch' && `Recorded ${status.actualLabel} instead`}
-                    {status.kind === 'failed' && 'Processing failed'}
-                    {status.kind === 'not_done' && 'Not completed yet'}
-                  </Text>
-                  <Text style={styles.chevron}>›</Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        )}
 
         <View style={styles.card}>
           <View style={styles.cardHead}>
@@ -304,25 +218,12 @@ const styles = StyleSheet.create({
   cardHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   cardTitle: { color: colors.muted, fontSize: 11, fontWeight: '700', letterSpacing: 2, marginBottom: spacing.xs },
 
-  taskRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: spacing.sm + 2,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-  },
-  taskRowPressed: { opacity: 0.6 },
   taskDot: {
     width: 9, height: 9, borderRadius: 5,
     borderWidth: 1.5, borderColor: colors.muted,
     marginRight: spacing.sm,
   },
   taskDotDone: { backgroundColor: colors.primary, borderColor: colors.primary },
-  taskDotPending: { backgroundColor: colors.warning, borderColor: colors.warning },
-  taskDotAlert: { backgroundColor: colors.danger, borderColor: colors.danger },
-  taskLabel: { flex: 1, color: colors.text, fontSize: 14, fontWeight: '700' },
-  taskStatus: { color: colors.muted, fontSize: 12, fontWeight: '600', marginRight: spacing.xs },
-  chevron: { color: colors.muted, fontSize: 18, fontWeight: '400' },
 
   bigRow: { flexDirection: 'row', alignItems: 'flex-start', marginTop: spacing.sm },
   big: { fontSize: 52, fontWeight: '900', lineHeight: 56 },

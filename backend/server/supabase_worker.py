@@ -184,7 +184,12 @@ def handle_job(models: "pipeline.worker.Models", job: dict) -> None:
             return
 
         supabase_client.mark_completed(job_id, result_path, result["analysis"], result["active_exercise"])
-        print(f"[supabase-worker] {job_id}: completed (exercise={result['active_exercise']})")
+        if not result["person_detected"]:
+            print(f"[supabase-worker] {job_id}: completed (no person detected in video)")
+        elif result["active_exercise"] is None:
+            print(f"[supabase-worker] {job_id}: completed (person detected, no exercise recognized)")
+        else:
+            print(f"[supabase-worker] {job_id}: completed (exercise={result['active_exercise']})")
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 

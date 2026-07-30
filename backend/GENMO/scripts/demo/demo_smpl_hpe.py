@@ -249,7 +249,7 @@ def main():
     print(f"\n[Info] Video: {L} frames, {W}x{H}")
 
     # 1a. Person detection + tracking
-    bbx_xys = detect_and_track(video_path, preprocess_dir)
+    bbx_xys, _person_detected = detect_and_track(video_path, preprocess_dir)
 
     # 1b. 2D Keypoints (COCO-17)
     vitpose_cache = os.path.join(preprocess_dir, "vitpose.pt")

@@ -40,6 +40,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts" / "demo"))
 os.chdir(REPO_ROOT)  # every relative "inputs/..." / "outputs/..." path assumes this cwd
 
+import numpy as np  # noqa: E402
 import torch  # noqa: E402
 
 from demo_smpl_hpe import assemble_data, render_2d_keypoints  # noqa: E402
@@ -52,7 +53,7 @@ from demo_utils import (  # noqa: E402
     run_inference,
 )
 from biomechanics import run_biomechanical_analysis  # noqa: E402
-from exercises import analyze_exercises, compute_rep_timeline, stabilize_grip_point  # noqa: E402
+from exercises import EXERCISE_REGISTRY, analyze_exercises, compute_rep_timeline, stabilize_grip_point  # noqa: E402
 from skeleton_renderer import render_skeleton_frames  # noqa: E402
 from smoothing import smooth_keypoints_zero_phase  # noqa: E402
 
@@ -198,8 +199,21 @@ def run_core_pipeline(
         else) — that's entirely the callback's business.
 
     Returns a dict: kp2d, bbx_xys, pred, joints_np, counts, timeline,
-    analysis (see biomechanics.run_biomechanical_analysis), L, W, H, and
-    timing breakdown (t_preproc, t_inference, t_exercise).
+    analysis (see biomechanics.run_biomechanical_analysis), L, W, H,
+    person_detected, and timing breakdown (t_preproc, t_inference, t_exercise).
+
+    person_detected=False means YOLO never found a real person in any frame
+    of this clip (see demo_utils.detect_and_track) — in that case this
+    function stops right after the YOLO stage and returns early with
+    placeholder values for everything downstream (kp2d, joints_np all-zero;
+    counts all-zero; timeline/analysis in their normal "nothing detected"
+    shape — see compute_rep_timeline/run_biomechanical_analysis's own
+    empty-input behavior, mirrored here) rather than running ViTPose/HMR2/
+    GEM/SMPL-X on a crop that provably has no person in it. Callers that
+    care about the distinction (e.g. to render a "person not detected"
+    panel instead of the usual skeleton) should check this flag; callers
+    that don't will still get a well-typed, correctly-shaped result instead
+    of a crash.
 
     Raises PipelineCancelled (see cancel_check above) if the pipeline was
     aborted after preprocessing but before inference.
@@ -221,7 +235,7 @@ def run_core_pipeline(
     # this from scratch.
     print(f"{log_prefix} {video_path.name}: {L} frames, {W}x{H} (rotation: {rotation} deg)")
 
-    bbx_xys = detect_and_track(str(video_path), str(preprocess_dir), yolo_model=models.yolo)
+    bbx_xys, person_detected = detect_and_track(str(video_path), str(preprocess_dir), yolo_model=models.yolo)
 
     # get_video_lwh's frame count comes from container metadata, which can
     # disagree with how many frames pyav actually decodes for a given file
@@ -237,6 +251,27 @@ def run_core_pipeline(
         print(f"{log_prefix} {video_path.name}: frame count mismatch -- metadata said {L} frames, "
               f"actually decoded {bbx_xys.shape[0]}; using the decoded count")
         L = bbx_xys.shape[0]
+
+    if not person_detected:
+        # Stop here -- ViTPose/HMR2/GEM/SMPL-X would otherwise run on a
+        # fabricated center-of-frame crop that provably has no person in
+        # it, producing a hallucinated skeleton and phantom rep counts
+        # (confirmed on real footage: a static empty-floor clip was scored
+        # as "1 push-up"). Every downstream field is filled with the same
+        # "nothing found" shape analyze_exercises/compute_rep_timeline/
+        # run_biomechanical_analysis already use for a real clip with zero
+        # detected reps, so callers that don't check person_detected still
+        # get a consistent, well-typed result.
+        t_preproc = time.time() - t0
+        print(f"{log_prefix} {video_path.name}: no person detected, skipping pose/exercise stages ({t_preproc:.1f}s)")
+        zero_counts = {key: 0 for key in EXERCISE_REGISTRY}
+        return dict(
+            kp2d=torch.zeros(L, 17, 3), bbx_xys=bbx_xys, pred={}, joints_np=np.zeros((L, 22, 3), dtype=np.float32),
+            counts=zero_counts, timeline={"key": None, "cumulative": np.zeros(L, dtype=int)},
+            analysis={"exercise": None, "rep_count": 0, "analyses": {}}, L=L, W=W, H=H,
+            person_detected=False,
+            t_preproc=t_preproc, t_inference=0.0, t_exercise=0.0, t0=t0,
+        )
 
     frames = read_video_np(str(video_path))
     kp2d = models.vitpose.extract(frames, bbx_xys, batch_size=32)
@@ -287,6 +322,7 @@ def run_core_pipeline(
     return dict(
         kp2d=kp2d, bbx_xys=bbx_xys, pred=pred, joints_np=joints_np,
         counts=counts, timeline=timeline, analysis=analysis, L=L, W=W, H=H,
+        person_detected=True,
         t_preproc=t_preproc, t_inference=t_inference, t_exercise=t_exercise, t0=t0,
     )
 

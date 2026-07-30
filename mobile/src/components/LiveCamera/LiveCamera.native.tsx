@@ -1,5 +1,5 @@
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import React, { forwardRef, useImperativeHandle, useRef, useState } from 'react';
+import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { colors, spacing } from '../../theme';
 import { LiveCameraHandle } from './types';
@@ -14,6 +14,19 @@ const LiveCamera = forwardRef<LiveCameraHandle, Props>(
     const [cameraPerm, requestCameraPerm] = useCameraPermissions();
     const cameraRef = useRef<CameraView>(null);
     const [facing, setFacing] = useState<'front' | 'back'>('back');
+
+    // Ask as soon as this screen mounts instead of waiting for the athlete
+    // to tap Start Recording — matches the web version (LiveCamera.web.tsx),
+    // which already requests getUserMedia immediately on mount. Only fires
+    // once, on the very first visit ('undetermined' means never asked yet);
+    // once the athlete has answered (granted or denied), re-mounting this
+    // screen won't re-trigger the native OS prompt again.
+    useEffect(() => {
+      if (cameraPerm?.status === 'undetermined') {
+        void requestCameraPerm();
+      }
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [cameraPerm?.status]);
 
     useImperativeHandle(ref, () => ({
       startRecording: async (maxSeconds: number) => {
@@ -34,9 +47,14 @@ const LiveCamera = forwardRef<LiveCameraHandle, Props>(
     }));
 
     if (!cameraPerm?.granted) {
+      const deniedForGood = cameraPerm?.status === 'denied' && !cameraPerm.canAskAgain;
       return (
         <View style={styles.placeholder}>
-          <Text style={styles.hint}>Tap "Start Recording" — you'll be asked for camera permission.</Text>
+          <Text style={styles.hint}>
+            {deniedForGood
+              ? 'Camera access is off. Enable it for APeX in your device Settings to record.'
+              : 'Requesting camera permission…'}
+          </Text>
         </View>
       );
     }

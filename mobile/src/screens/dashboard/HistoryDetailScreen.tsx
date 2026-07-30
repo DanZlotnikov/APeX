@@ -13,9 +13,11 @@ const VIDEO_H = Math.round(Dimensions.get('window').height * 0.4);
 
 interface Props {
   userId?: string;
+  /** Hides the destructive delete action for a read-only viewer (e.g. a manager viewing an athlete's history). Defaults to true (unchanged behavior for the athlete's own Performance tab). */
+  canDelete?: boolean;
 }
 
-export default function HistoryDetailScreen({ userId }: Props) {
+export default function HistoryDetailScreen({ userId, canDelete = true }: Props) {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const id: string = route.params?.id;
@@ -93,9 +95,11 @@ export default function HistoryDetailScreen({ userId }: Props) {
           />
         </View>
 
-        <Pressable onPress={handleDelete} disabled={deleting} style={({ pressed }) => [styles.delete, pressed && styles.pressed]}>
-          <Text style={styles.deleteText}>{deleting ? 'DELETING…' : 'DELETE SESSION'}</Text>
-        </Pressable>
+        {canDelete && (
+          <Pressable onPress={handleDelete} disabled={deleting} style={({ pressed }) => [styles.delete, pressed && styles.pressed]}>
+            <Text style={styles.deleteText}>{deleting ? 'DELETING…' : 'DELETE SESSION'}</Text>
+          </Pressable>
+        )}
 
       </ScrollView>
     </View>

@@ -1,8 +1,9 @@
 /**
  * Single shared instance of useVideoJobs, provided via Context so every
  * consumer (the app-wide banner, the Performance tab's "PROCESSING (N)"
- * label, the Processing tab's own list, Today's Tasks) reads the exact same
- * state instead of each running its own independent useVideoJobs() call.
+ * label, the Processing tab's own list, the Overview screen's Today's
+ * Routine card) reads the exact same state instead of each running its own
+ * independent useVideoJobs() call.
  *
  * Confirmed in production: with 3-4 of those call sites all mounted at once
  * (React Navigation's bottom-tabs keeps inactive tab screens mounted, not

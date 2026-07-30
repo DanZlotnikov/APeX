@@ -8,7 +8,6 @@ import OverviewScreen from './dashboard/OverviewScreen';
 import PerformanceScreen, { PerformanceSub } from './dashboard/PerformanceScreen';
 import RoutineScreen from './dashboard/RoutineScreen';
 import SettingsScreen from './dashboard/SettingsScreen';
-import { TargetExercise } from '../api/types';
 import ProcessingBanner from '../components/ProcessingBanner';
 import UploadFailedBanner from '../components/UploadFailedBanner';
 import { removeLocalUploadsByStatus } from '../state/localUploads';
@@ -31,13 +30,12 @@ interface Props {
   teamId?: string;
   onRecord: () => void;
   onUpload: () => void;
-  onSelectTask: (target: TargetExercise) => void;
   onLogout: () => void;
   /** Bumped by App.tsx when a "video ready" notification is tapped — jumps to Performance > Processing. */
   jumpToProcessingSignal?: number;
 }
 
-export default function DashboardScreen({ userId, teamId, onRecord, onUpload, onSelectTask, onLogout, jumpToProcessingSignal }: Props) {
+export default function DashboardScreen({ userId, teamId, onRecord, onUpload, onLogout, jumpToProcessingSignal }: Props) {
   const { accentColor } = useSettings();
   const insets = useSafeAreaInsets();
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -90,7 +88,7 @@ export default function DashboardScreen({ userId, teamId, onRecord, onUpload, on
             })}
           >
             <Tab.Screen name="Overview">
-              {() => <OverviewScreen userId={userId} teamId={teamId} onSelectTask={onSelectTask} />}
+              {() => <OverviewScreen userId={userId} teamId={teamId} />}
             </Tab.Screen>
             <Tab.Screen name="Performance">
               {() => <PerformanceScreen userId={userId} sub={performanceSub} onSubChange={setPerformanceSub} />}

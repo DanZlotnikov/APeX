@@ -1,8 +1,8 @@
 /**
  * Live view of the current athlete's video_jobs rows — backs the
  * "N videos processing" banner, the Performance tab's "PROCESSING (N)"
- * label, the Processing tab's own list, and Today's Tasks (see
- * HANDOFF_video_pipeline.md section 4, items 3-8). Realtime-driven, not
+ * label, the Processing tab's own list, and the Overview screen's Today's
+ * Routine card (see HANDOFF_video_pipeline.md section 4, items 3-8). Realtime-driven, not
  * polling: any insert/update/delete on this athlete's rows triggers a
  * refetch. Rows only exist while "live" (queued/processing/completed/
  * failed) — saving or discarding a job deletes its row server-side, so it

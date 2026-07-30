@@ -5,8 +5,12 @@
   const logCount    = document.getElementById('logCount');
   const connInd     = document.getElementById('connIndicator');
   const connLabel   = document.getElementById('connLabel');
-  const modeBadge   = document.getElementById('modeBadge');
-  const toggleBtn   = document.getElementById('toggleModeBtn');
+  const serverActionBtn   = document.getElementById('serverActionBtn');
+  const serverActionLabel = document.getElementById('serverActionLabel');
+  const serverDot         = document.getElementById('serverDot');
+  const modeDropdownToggle = document.getElementById('modeDropdownToggle');
+  const modeCurrentLabel   = document.getElementById('modeCurrentLabel');
+  const modeDropdownMenu   = document.getElementById('modeDropdownMenu');
   const jobsBody    = document.getElementById('jobsBody');
   const jobCount    = document.getElementById('jobCount');
   const searchInput = document.getElementById('searchInput');
@@ -82,29 +86,66 @@
   }
   connectWebSocket();
 
-  // ── Status / mode ────────────────────────────────────────────────────
+  // ── Server start/stop + mode dropdown ───────────────────────────────
+
+  let currentMode = 'continuous';
+  let currentlyRunning = false;
 
   async function refreshStatus() {
     try {
       const res = await fetch('/api/status');
       const data = await res.json();
-      modeBadge.textContent = data.mode === '30min' ? 'Every 30 min' : 'Continuous';
-      modeBadge.className = 'mode-badge ' + (data.mode === '30min' ? 'mode-30min' : 'continuous');
-      toggleBtn.disabled = false;
-      toggleBtn.textContent = data.mode === '30min' ? 'Switch to Continuous' : 'Switch to Every 30 min';
+      currentMode = data.mode;
+      currentlyRunning = data.running;
+
+      serverActionBtn.disabled = false;
+      serverActionBtn.className = 'server-action-btn ' + (data.running ? 'running' : 'stopped');
+      serverActionLabel.textContent = data.running ? 'Stop Server' : 'Start Server';
+
+      modeDropdownToggle.disabled = false;
+      modeCurrentLabel.textContent = data.mode === '30min' ? 'Every 30 min' : 'Continuous';
+      document.querySelectorAll('.mode-option').forEach((opt) => {
+        opt.classList.toggle('active', opt.getAttribute('data-mode') === data.mode);
+      });
     } catch (e) {
-      toggleBtn.disabled = true;
+      serverActionBtn.disabled = true;
+      modeDropdownToggle.disabled = true;
     }
   }
 
-  toggleBtn.addEventListener('click', async () => {
-    toggleBtn.disabled = true;
-    toggleBtn.textContent = 'Switching…';
+  serverActionBtn.addEventListener('click', async () => {
+    serverActionBtn.disabled = true;
+    const wasRunning = currentlyRunning;
+    serverActionLabel.textContent = wasRunning ? 'Stopping…' : 'Starting…';
     try {
-      await fetch('/api/toggle-mode', { method: 'POST' });
+      await fetch(wasRunning ? '/api/stop' : '/api/start', { method: 'POST' });
     } catch (e) {}
     setTimeout(refreshStatus, 800);
   });
+
+  modeDropdownToggle.addEventListener('click', (e) => {
+    e.stopPropagation();
+    modeDropdownMenu.classList.toggle('open');
+  });
+
+  document.querySelectorAll('.mode-option').forEach((opt) => {
+    opt.addEventListener('click', async () => {
+      modeDropdownMenu.classList.remove('open');
+      const mode = opt.getAttribute('data-mode');
+      if (mode === currentMode) return;
+      modeCurrentLabel.textContent = 'Switching…';
+      try {
+        await fetch('/api/set-mode', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode: mode }),
+        });
+      } catch (e) {}
+      setTimeout(refreshStatus, 800);
+    });
+  });
+
+  document.addEventListener('click', () => modeDropdownMenu.classList.remove('open'));
 
   refreshStatus();
   setInterval(refreshStatus, 5000);

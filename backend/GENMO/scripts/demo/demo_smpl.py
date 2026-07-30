@@ -131,7 +131,7 @@ def preprocess_video_segment(
     L, W, H = get_video_lwh(video_path)
 
     # 1a. Detection + tracking
-    bbx_xys = detect_and_track(video_path, preprocess_dir)
+    bbx_xys, _person_detected = detect_and_track(video_path, preprocess_dir)
 
     # 1b. 2D Keypoints
     vitpose_cache = os.path.join(preprocess_dir, "vitpose.pt")

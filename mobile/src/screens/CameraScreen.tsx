@@ -15,11 +15,6 @@ import { normalizeVideoUri } from '../utils/video';
 // VideoPlayer barrel only re-exports the default (native/web platform split).
 const VIDEO_BOTTOM_CHROME_HEIGHT = 66;
 
-// Rendered height of reviewHeaderBar's own content, below its
-// paddingTop:insets.top (paddingBottom + the text row) — the target-pill
-// row is positioned this far below the header bar's bottom edge.
-const REVIEW_HEADER_BAR_CONTENT_HEIGHT = 42;
-
 const COUNTDOWN_SECONDS = 5;
 // Must match App.tsx's MAX_VIDEO_DURATION_SEC — same cap, applied to a live
 // recording here vs. an uploaded/picked clip there.
@@ -43,10 +38,9 @@ interface Props {
   // this prop), so without this every upload silently recorded 0s regardless
   // of the clip's real length.
   initialVideoDurationSec?: number;
-  targetLabel?: string; // set when recording for a specific required task (e.g. "Squat")
 }
 
-export default function CameraScreen({ pickOnMount, testMode, onVideoConfirmed, onBack, initialVideoUri, initialVideoDurationSec, targetLabel }: Props) {
+export default function CameraScreen({ pickOnMount, testMode, onVideoConfirmed, onBack, initialVideoUri, initialVideoDurationSec }: Props) {
   const { accentColor, accentOn } = useSettings();
   const insets = useSafeAreaInsets();
   const liveCamRef = useRef<LiveCameraHandle>(null);
@@ -200,18 +194,6 @@ export default function CameraScreen({ pickOnMount, testMode, onVideoConfirmed, 
           <Text style={[styles.reviewHeaderText, { color: accentColor }]}>READY TO RUMBLE?</Text>
         </View>
 
-        {/* Not a SafeAreaView: the header bar above already accounts for the
-            safe area, so this just sits a fixed distance below its bottom
-            edge — a second independent safe-area inset here would double-
-            count and push this row down twice as far as intended. */}
-        {targetLabel && (
-          <View style={[styles.reviewTopBar, { top: insets.top + REVIEW_HEADER_BAR_CONTENT_HEIGHT }]} pointerEvents="box-none">
-            <View style={styles.targetPill}>
-              <Text style={styles.targetPillText}>{targetLabel.toUpperCase()}</Text>
-            </View>
-          </View>
-        )}
-
         <View
           style={[styles.reviewActions, { bottom: VIDEO_BOTTOM_CHROME_HEIGHT + insets.bottom + spacing.xl }]}
           pointerEvents="box-none"
@@ -273,17 +255,13 @@ export default function CameraScreen({ pickOnMount, testMode, onVideoConfirmed, 
             <Text style={styles.iconText}>←</Text>
           </Pressable>
 
-          {/* recording timer, or which required task this is while not yet recording */}
-          {isRecording && recordingTime !== null ? (
+          {/* recording timer while recording */}
+          {isRecording && recordingTime !== null && (
             <View style={styles.timerPill}>
               <View style={styles.recDot} />
               <Text style={styles.timerText}>{fmt(RECORD_SECONDS - recordingTime)}</Text>
             </View>
-          ) : targetLabel ? (
-            <View style={styles.targetPill}>
-              <Text style={styles.targetPillText}>{targetLabel.toUpperCase()}</Text>
-            </View>
-          ) : null}
+          )}
 
           <Pressable onPress={() => liveCamRef.current?.flipCamera()} style={styles.iconBtn} disabled={isRecording || countdown !== null}>
             <Text style={styles.iconText}>⇄</Text>
@@ -328,10 +306,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: spacing.md,
   },
-  // Target-pill row, positioned (via inline `top`) a fixed distance below
-  // the "READY TO RUMBLE" header bar. paddingLeft: spacing.md (16pt) is the
-  // standard iOS/Material screen-edge content margin.
-  reviewTopBar: { position: 'absolute', left: 0, right: 0, paddingTop: spacing.md, paddingLeft: spacing.md },
   // Branded header bar — mirrors VideoPlayer's own bottom "APeX" bar (same
   // colors.bg fill as the screen behind it, so it blends in rather than
   // standing out as a separate panel), text colored with the app's selected
@@ -408,13 +382,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#EF4444',
   },
   timerText: { color: '#fff', fontSize: 15, fontWeight: '600', fontVariant: ['tabular-nums'] },
-  targetPill: {
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-  },
-  targetPillText: { color: colors.primary, fontSize: 12, fontWeight: '700', letterSpacing: 1 },
 
   // error
   errorOverlay: {

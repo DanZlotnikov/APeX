@@ -135,3 +135,56 @@ def render_skeleton_frames(
 
         out[i] = cv2.cvtColor(canvas, cv2.COLOR_BGR2RGB)
     return out
+
+
+def _wrap_text(message: str, font, font_scale: float, thickness: int, max_width: int) -> list[str]:
+    """Greedy word-wrap: as many words per line as fit within max_width."""
+    words = message.split()
+    lines: list[str] = []
+    line = ""
+    for word in words:
+        candidate = f"{line} {word}".strip()
+        (w, _), _ = cv2.getTextSize(candidate, font, font_scale, thickness)
+        if w > max_width and line:
+            lines.append(line)
+            line = word
+        else:
+            line = candidate
+    if line:
+        lines.append(line)
+    return lines
+
+
+def render_message_frames(message: str, num_frames: int, canvas_w: int = 960, canvas_h: int = 720) -> np.ndarray:
+    """Static (non-animated) centered text panel, same visual language as
+    render_skeleton_frames (dark navy background, teal text) — used in
+    place of the skeleton+counter render when there's nothing meaningful to
+    show (no person detected, or no exercise recognized), so the video
+    doesn't imply a real pose/rep count was reconstructed when it wasn't.
+
+    Renders a single frame and repeats it num_frames times — cheaper than
+    render_skeleton_frames since there's no per-frame projection or
+    drawing, just one canvas reused for the whole clip's duration.
+    """
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = 0.9
+    thickness = 2
+    margin = 40
+    max_width = canvas_w - 2 * margin
+
+    lines = _wrap_text(message, font, font_scale, thickness, max_width)
+    line_heights = [cv2.getTextSize(line, font, font_scale, thickness)[0][1] for line in lines]
+    line_gap = 16
+    total_h = sum(line_heights) + line_gap * (len(lines) - 1)
+
+    canvas = np.full((canvas_h, canvas_w, 3), BG_COLOR, dtype=np.uint8)
+    y = (canvas_h - total_h) // 2 + line_heights[0]
+    for line, line_h in zip(lines, line_heights):
+        (line_w, _), _ = cv2.getTextSize(line, font, font_scale, thickness)
+        x = max(margin, (canvas_w - line_w) // 2)
+        cv2.putText(canvas, line, (x, y), font, font_scale, TEXT_COLOR, thickness, cv2.LINE_AA)
+        y += line_h + line_gap
+
+    frame_rgb = cv2.cvtColor(canvas, cv2.COLOR_BGR2RGB)
+    num_frames = max(1, num_frames)
+    return np.broadcast_to(frame_rgb, (num_frames, canvas_h, canvas_w, 3)).copy()

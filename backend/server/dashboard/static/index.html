@@ -18,8 +18,22 @@
   </div>
   <div class="status-bar">
     <span class="conn-indicator" id="connIndicator"><span class="dot"></span><span id="connLabel">Connecting&hellip;</span></span>
-    <span class="mode-badge" id="modeBadge">&mdash;</span>
-    <button class="toggle-btn" id="toggleModeBtn" disabled>Toggle Mode</button>
+    <div class="server-control">
+      <button class="server-action-btn" id="serverActionBtn" disabled>
+        <span class="server-dot" id="serverDot"></span>
+        <span id="serverActionLabel">&hellip;</span>
+      </button>
+      <div class="mode-selector">
+        <button class="mode-dropdown-toggle" id="modeDropdownToggle" disabled>
+          <span id="modeCurrentLabel">&mdash;</span>
+          <span class="caret">&#9662;</span>
+        </button>
+        <div class="mode-dropdown-menu" id="modeDropdownMenu">
+          <button class="mode-option" data-mode="continuous">Continuous</button>
+          <button class="mode-option" data-mode="30min">Every 30 min</button>
+        </div>
+      </div>
+    </div>
   </div>
 </header>
 

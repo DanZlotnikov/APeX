@@ -7,7 +7,7 @@ import { getProfile, getSession, logout, signIn } from './src/api/auth';
 import { getAthleteById } from './src/api/athletes';
 import { addNotificationTapListener, registerForPushNotifications } from './src/api/pushNotifications';
 import { syncLocalDataFromServer } from './src/api/sync';
-import { AthleteViewModel, TargetExercise } from './src/api/types';
+import { AthleteViewModel } from './src/api/types';
 import { generateJobId, uploadAndQueueVideoJob } from './src/api/videoJobs';
 import CameraScreen from './src/screens/CameraScreen';
 import DashboardScreen from './src/screens/DashboardScreen';
@@ -58,7 +58,6 @@ function AppInner() {
   // CameraScreen's videoDurationSec stayed null and every upload silently
   // recorded duration_sec=0, regardless of the clip's real length.
   const [uploadedDurationSec, setUploadedDurationSec] = useState<number | null>(null);
-  const [targetExercise, setTargetExercise] = useState<TargetExercise | null>(null);
   const [testMode] = useState(false);
 
   // Manager flow
@@ -151,7 +150,6 @@ function AppInner() {
   function goToCamera() {
     setUploadedUri(null);
     setUploadedDurationSec(null);
-    setTargetExercise(null);
     setAthleteScreen('camera');
   }
 
@@ -173,20 +171,9 @@ function AppInner() {
         }
         setUploadedUri(asset.uri);
         setUploadedDurationSec(asset.duration != null ? asset.duration / 1000 : null);
-        setTargetExercise(null);
         setAthleteScreen('camera');
       }
     } catch {}
-  }
-
-  // Tapping a required task on the dashboard: same live-camera flow as
-  // goToCamera, but carrying which exercise this attempt is for so
-  // AnalysisScreen can compare what was actually performed against it.
-  function goToCameraForTask(target: TargetExercise) {
-    setUploadedUri(null);
-    setUploadedDurationSec(null);
-    setTargetExercise(target);
-    setAthleteScreen('camera');
   }
 
   // Tapping confirm (✓) on the review screen returns to the dashboard
@@ -195,7 +182,7 @@ function AppInner() {
   // caller. CameraScreen used to await this and block the review screen on
   // the network round-trip; now it doesn't wait at all, so this function is
   // synchronous from CameraScreen's point of view. Local values that
-  // setTargetExercise(null)/etc. below would otherwise clear are captured
+  // setUploadedUri(null)/etc. below would otherwise clear are captured
   // into consts first.
   //
   // The job id is generated HERE, up front, instead of letting
@@ -212,18 +199,16 @@ function AppInner() {
       return;
     }
     const athleteId = userId;
-    const targetExerciseKey = targetExercise?.key ?? null;
     const jobId = generateJobId();
 
     setUploadedUri(null);
-    setTargetExercise(null);
     setAthleteScreen('dashboard');
 
-    addLocalUpload({ id: jobId, durationSec, targetExerciseKey });
+    addLocalUpload({ id: jobId, durationSec });
 
     void (async () => {
       try {
-        await uploadAndQueueVideoJob({ jobId, athleteId, localUri: uri, durationSec, targetExerciseKey });
+        await uploadAndQueueVideoJob({ jobId, athleteId, localUri: uri, durationSec });
         // Deliberately does NOT call removeLocalUpload here on success.
         // This component isn't a descendant of VideoJobsProvider, so it has
         // no way to push the freshly-uploaded real job into the shared
@@ -322,7 +307,6 @@ function AppInner() {
               teamId={teamId ?? undefined}
               onRecord={goToCamera}
               onUpload={() => void handleUpload()}
-              onSelectTask={goToCameraForTask}
               onLogout={handleAthleteLogout}
               jumpToProcessingSignal={processingDeepLinkToken}
             />
@@ -336,9 +320,8 @@ function AppInner() {
               testMode={testMode}
               initialVideoUri={uploadedUri ?? undefined}
               initialVideoDurationSec={uploadedDurationSec ?? undefined}
-              targetLabel={targetExercise?.label}
               onVideoConfirmed={handleVideoConfirmed}
-              onBack={() => { setUploadedUri(null); setUploadedDurationSec(null); setTargetExercise(null); setAthleteScreen('dashboard'); }}
+              onBack={() => { setUploadedUri(null); setUploadedDurationSec(null); setAthleteScreen('dashboard'); }}
             />
           </FadeScreen>
         )}

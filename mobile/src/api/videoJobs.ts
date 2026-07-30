@@ -8,7 +8,6 @@
 import { decode as decodeBase64 } from 'base64-arraybuffer';
 import * as FileSystem from 'expo-file-system/legacy';
 import { Platform } from 'react-native';
-import { PipelineExerciseKey } from '../utils/pipelineExercise';
 import { deleteVideo, readJSON, resolveVideo, saveVideo, writeJSON } from '../utils/storage';
 import { supabase } from './supabase';
 
@@ -100,7 +99,6 @@ export interface VideoJob {
   cancelRequested: boolean;
   rawVideoPath: string;
   resultVideoPath: string | null;
-  targetExerciseKey: PipelineExerciseKey | null;
   exerciseType: string | null;
   analysis: VideoJobAnalysis | null;
   durationSec: number;
@@ -111,7 +109,7 @@ export interface VideoJob {
 
 const SELECT_COLUMNS =
   'id, athlete_id, status, cancel_requested, raw_video_path, result_video_path, ' +
-  'target_exercise_key, exercise_type, analysis_json, duration_sec, recorded_at, error_message, created_at';
+  'exercise_type, analysis_json, duration_sec, recorded_at, error_message, created_at';
 
 function fromRow(r: any): VideoJob {
   return {
@@ -121,7 +119,6 @@ function fromRow(r: any): VideoJob {
     cancelRequested: r.cancel_requested,
     rawVideoPath: r.raw_video_path,
     resultVideoPath: r.result_video_path,
-    targetExerciseKey: r.target_exercise_key,
     exerciseType: r.exercise_type,
     analysis: r.analysis_json,
     durationSec: r.duration_sec,
@@ -242,19 +239,17 @@ const VIDEO_MIME_BY_EXT: Record<string, string> = {
 // bucket layout is raw/{athleteId}/{jobId}.<ext>, matching the RLS policies
 // in migration 009; the backend worker always downloads to a fixed local
 // filename regardless of this extension, so it's safe to reflect the
-// clip's real container here rather than hardcoding .mp4). targetExerciseKey
-// is set when this recording was made for a specific Today's Task tile;
-// omit/null for a free record/upload. jobId: pass a pre-generated one (see
-// generateJobId) to reuse across an optimistic local-upload entry and this
-// call's real row; omitted/undefined generates a fresh one as before.
+// clip's real container here rather than hardcoding .mp4). jobId: pass a
+// pre-generated one (see generateJobId) to reuse across an optimistic
+// local-upload entry and this call's real row; omitted/undefined generates
+// a fresh one as before.
 export async function uploadAndQueueVideoJob(params: {
   athleteId: string;
   localUri: string;
   durationSec: number;
-  targetExerciseKey?: PipelineExerciseKey | null;
   jobId?: string;
 }): Promise<VideoJob> {
-  const { athleteId, localUri, durationSec, targetExerciseKey } = params;
+  const { athleteId, localUri, durationSec } = params;
   const jobId = params.jobId ?? generateJobId();
   const ext = (localUri.split('.').pop()?.split('?')[0] || 'mp4').toLowerCase();
   const contentType = VIDEO_MIME_BY_EXT[ext] ?? 'video/mp4';
@@ -311,7 +306,6 @@ export async function uploadAndQueueVideoJob(params: {
       raw_video_path: path,
       duration_sec: durationSec,
       recorded_at: new Date().toISOString(),
-      target_exercise_key: targetExerciseKey ?? null,
     })
     .select(SELECT_COLUMNS)
     .single();

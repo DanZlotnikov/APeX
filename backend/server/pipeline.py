@@ -30,7 +30,10 @@ import numpy as np  # noqa: E402
 
 import worker  # noqa: E402
 from exercises import stabilize_grip_point  # noqa: E402
-from skeleton_renderer import render_skeleton_frames  # noqa: E402
+from skeleton_renderer import render_message_frames, render_skeleton_frames  # noqa: E402
+
+PERSON_NOT_DETECTED_MSG = "PERSON NOT DETECTED"
+NO_EXERCISE_DETECTED_MSG = "NO EXERCISE DETECTED"
 
 PANEL_HEIGHT = 720
 CROP_PAD_FRAC = 0.18  # padding around the athlete's full range-of-motion bbox
@@ -156,31 +159,54 @@ def process_video_two_panel(
 
     r = worker.run_core_pipeline(models, video_path, preprocess_dir, log_prefix="[server]", cancel_check=cancel_check)
 
-    # Left panel: original frames, no overlay, cropped to the athlete's full
-    # range of motion across the whole clip (see compute_union_crop_box),
-    # then bounded to a sane on-screen shape (see clamp_box_aspect / MAX_PANEL_ASPECT).
-    box = clamp_box_aspect(compute_union_crop_box(r["bbx_xys"], r["W"], r["H"]))
+    # Left panel: original frames, no overlay. Normally cropped to the
+    # athlete's full range of motion across the whole clip (see
+    # compute_union_crop_box) — but when no person was ever detected
+    # (r["person_detected"] is False), bbx_xys is a fabricated placeholder
+    # box (see detect_and_track), not a real crop region, so this falls back
+    # to the full, uncropped frame instead. Either way the box is bounded to
+    # a sane on-screen shape (see clamp_box_aspect / MAX_PANEL_ASPECT).
+    if r["person_detected"]:
+        box = clamp_box_aspect(compute_union_crop_box(r["bbx_xys"], r["W"], r["H"]))
+    else:
+        box = clamp_box_aspect((0, 0, r["W"], r["H"]))
     orig_frames = read_video_np(str(video_path))
     left_panel = crop_and_resize_original(orig_frames, box, target_h=PANEL_HEIGHT)
     del orig_frames
 
-    # Right panel: joints + bones + 3D grid + rep-counter HUD. Sized to match
-    # the left panel's own width exactly (derived from the athlete's actual
-    # crop-box aspect ratio, not a fixed value) — a hardcoded canvas_w here
-    # previously produced mismatched panel sizes for any video whose crop
-    # aspect wasn't coincidentally close to 960:720 (confirmed on a portrait
-    # mobile clip: the real crop came out much narrower than 960, so the two
-    # panels never matched). Grip-stabilize pull-ups so the body visibly
-    # rises to fixed hands instead of the hands appearing to move — see
-    # stabilize_grip_point's docstring for why.
+    # Right panel: joints + bones + 3D grid + rep-counter HUD — UNLESS
+    # there's nothing real to show it for: no person was ever detected
+    # (run_core_pipeline already skipped the whole pose pipeline in that
+    # case) or a person was found but no exercise was recognized
+    # (timeline["key"] is None, the same "nothing counted" shape
+    # run_biomechanical_analysis already uses). Rendering the animated
+    # skeleton in either case would imply a real reconstruction happened
+    # when it didn't — confirmed on real footage: a static, empty-floor
+    # clip with no person in it produced a hallucinated skeleton and a
+    # phantom rep count. A static message panel instead makes that failure
+    # mode visible in the video itself rather than silently producing a
+    # misleading result. Sized to match the left panel's own width exactly,
+    # same as the skeleton render (see its own comment for why that
+    # matters) — a hardcoded canvas_w here previously produced mismatched
+    # panel sizes for any video whose crop aspect wasn't coincidentally
+    # close to 960:720 (confirmed on a portrait mobile clip: the real crop
+    # came out much narrower than 960, so the two panels never matched).
     panel_w = left_panel.shape[2]
-    render_joints = r["joints_np"]
-    if r["timeline"]["key"] == "pull_up":
-        render_joints = stabilize_grip_point(r["joints_np"])
-    right_panel = render_skeleton_frames(
-        render_joints, r["timeline"]["key"], r["timeline"]["cumulative"],
-        canvas_w=panel_w, canvas_h=PANEL_HEIGHT,
-    )
+    if not r["person_detected"]:
+        right_panel = render_message_frames(PERSON_NOT_DETECTED_MSG, left_panel.shape[0], canvas_w=panel_w, canvas_h=PANEL_HEIGHT)
+    elif r["timeline"]["key"] is None:
+        right_panel = render_message_frames(NO_EXERCISE_DETECTED_MSG, left_panel.shape[0], canvas_w=panel_w, canvas_h=PANEL_HEIGHT)
+    else:
+        # Grip-stabilize pull-ups so the body visibly rises to fixed hands
+        # instead of the hands appearing to move — see stabilize_grip_point's
+        # docstring for why.
+        render_joints = r["joints_np"]
+        if r["timeline"]["key"] == "pull_up":
+            render_joints = stabilize_grip_point(r["joints_np"])
+        right_panel = render_skeleton_frames(
+            render_joints, r["timeline"]["key"], r["timeline"]["cumulative"],
+            canvas_w=panel_w, canvas_h=PANEL_HEIGHT,
+        )
 
     combined = combine_two_panel(left_panel, right_panel)
     output_path = output_dir / "two_panel.mp4"
@@ -196,6 +222,7 @@ def process_video_two_panel(
         "active_exercise": r["timeline"]["key"],
         "analysis": r["analysis"],
         "frames": r["L"],
+        "person_detected": r["person_detected"],
         "timing_s": {
             "preproc": round(r["t_preproc"], 1),
             "inference": round(r["t_inference"], 1),

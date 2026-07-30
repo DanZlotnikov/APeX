@@ -82,18 +82,6 @@ export interface ExerciseReadiness {
   passed: boolean | null;   // null = never tested; else today's summed reps meet target AND readiness isn't in the "at risk" band (or, if not tested today, the most recent reading isn't)
 }
 
-// A required task the athlete tapped on the dashboard, carried through
-// Camera → Analysis so the analysis screen can compare what was actually
-// performed against what was asked for. requiredRepsByKey covers every
-// exercise the athlete has required today (not just the tapped one) so a
-// mismatch (e.g. jump instead of squat) can still be checked against ITS
-// own requirement — see AnalysisScreen's target-vs-actual resolution.
-export interface TargetExercise {
-  key: PipelineExerciseKey;
-  label: string;
-  requiredRepsByKey: Partial<Record<PipelineExerciseKey, number>>;
-}
-
 export interface AthleteViewModel {
   id: string;
   name: string;

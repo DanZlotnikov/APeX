@@ -20,14 +20,11 @@
  * prunes an entry the moment a real job with the same id shows up, so
  * there's no separate "swap" step, just a clean handoff.
  */
-import { PipelineExerciseKey } from '../utils/pipelineExercise';
-
 export interface LocalUpload {
   id: string;
   status: 'uploading' | 'failed';
   durationSec: number;
   recordedAt: string;
-  targetExerciseKey: PipelineExerciseKey | null;
   errorMessage: string | null;
 }
 
@@ -49,10 +46,10 @@ export function getLocalUploadsSnapshot(): LocalUpload[] {
   return uploads;
 }
 
-export function addLocalUpload(params: { id: string; durationSec: number; targetExerciseKey: PipelineExerciseKey | null }): void {
+export function addLocalUpload(params: { id: string; durationSec: number }): void {
   uploads = [
     ...uploads,
-    { id: params.id, status: 'uploading', durationSec: params.durationSec, recordedAt: new Date().toISOString(), targetExerciseKey: params.targetExerciseKey, errorMessage: null },
+    { id: params.id, status: 'uploading', durationSec: params.durationSec, recordedAt: new Date().toISOString(), errorMessage: null },
   ];
   emit();
 }
