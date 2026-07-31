@@ -1,12 +1,10 @@
-import { useFocusEffect } from '@react-navigation/native';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { getTeamAthletes } from '../../api/athletes';
-import { getTeamRoutine } from '../../api/teamRoutine';
 import { supabase } from '../../api/supabase';
 import { AthleteViewModel, TeamStatsViewModel } from '../../api/types';
 import { colors, spacing } from '../../theme';
-import { exerciseLabel } from '../../utils/pipelineExercise';
+import { exerciseLabel, PIPELINE_EXERCISE_KEYS } from '../../utils/pipelineExercise';
 import AthleteMonitoringTable, { ExerciseColumn } from './components/AthleteMonitoringTable';
 import ComplianceCard from './components/ComplianceCard';
 import TeamReadinessCard from './components/TeamReadinessCard';
@@ -54,13 +52,20 @@ export default function ManagerDashboard({ teamId, onAthleteSelect }: Props) {
 
   const loadAthletes = useCallback(async () => {
     try {
-      const [data, configs] = await Promise.all([
-        getTeamAthletes(teamRef.current),
-        getTeamRoutine(teamRef.current),
-      ]);
+      const data = await getTeamAthletes(teamRef.current);
       setAthletes(data);
+      // Columns are the union of whatever's active across the roster, in
+      // canonical order — each athlete now has their own individual routine
+      // (migration 021), so there's no single team-wide list to read this
+      // from anymore. A given athlete's cell just reads "—" for a column
+      // that isn't in their own routine (see AthleteMonitoringTable's
+      // exerciseValue).
+      const active = new Set<string>();
+      for (const a of data) {
+        for (const e of a.perExerciseReadiness) active.add(e.key);
+      }
       setExerciseColumns(
-        configs.filter((c) => c.enabled).map((c) => ({ key: c.exerciseType, label: exerciseLabel(c.exerciseType) })),
+        PIPELINE_EXERCISE_KEYS.filter((k) => active.has(k)).map((k) => ({ key: k, label: exerciseLabel(k) })),
       );
     } catch (e) {
       console.warn('Failed to load athletes', e);
@@ -72,10 +77,10 @@ export default function ManagerDashboard({ teamId, onAthleteSelect }: Props) {
   useEffect(() => {
     void loadAthletes();
 
-    // Realtime: refresh on new sessions, and on any change to what's required
-    // per athlete (team-wide toggle in ManagerRoutineScreen, or a per-athlete
-    // assignment override) — so a manager ticking an exercise on/off there
-    // is reflected here immediately, not just on next mount/session.
+    // Realtime: refresh on new sessions, and on any change to an athlete's
+    // individual routine (added/removed/reps changed on their own Routine
+    // tab in AthleteDetailPreview) — so that's reflected here immediately,
+    // not just on next mount/session.
     // NOTE: Supabase → Database → Replication must have these tables enabled.
     //
     // Topic includes the manager's own user id, not just teamId:
@@ -101,12 +106,7 @@ export default function ManagerDashboard({ teamId, onAthleteSelect }: Props) {
         )
         .on(
           'postgres_changes',
-          { event: '*', schema: 'public', table: 'athlete_exercise_assignments' },
-          () => { void loadAthletes(); },
-        )
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'team_routines' },
+          { event: '*', schema: 'public', table: 'athlete_routines' },
           () => { void loadAthletes(); },
         )
         .subscribe();
@@ -117,14 +117,6 @@ export default function ManagerDashboard({ teamId, onAthleteSelect }: Props) {
       if (channel) void supabase.removeChannel(channel);
     };
   }, [loadAthletes, teamId]);
-
-  // Switching tabs (e.g. Exercises → Athletes) doesn't unmount this screen,
-  // so it won't pick up an assignment/config change made on the Exercises
-  // tab on its own — refetch on every focus so it can't go stale just by
-  // tabbing away and back. This is the dependable path; the realtime
-  // subscription above is best-effort on top of it (requires Replication to
-  // be enabled for those tables in the Supabase dashboard).
-  useFocusEffect(useCallback(() => { void loadAthletes(); }, [loadAthletes]));
 
   // Injured athletes get their own inspection-only table below (see
   // AthleteMonitoringTable's colorMode='neutral') and drop out of team-wide

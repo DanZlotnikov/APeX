@@ -1,21 +1,20 @@
 import { DarkTheme, NavigationContainer, useNavigationContainerRef } from '@react-navigation/native';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createMaterialTopTabNavigator } from '@react-navigation/material-top-tabs';
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { StyleSheet, View } from 'react-native';
 import AppBar from './dashboard/AppBar';
+import IndividualRoutineScreen from './IndividualRoutineScreen';
 import OverviewScreen from './dashboard/OverviewScreen';
 import PerformanceScreen, { PerformanceSub } from './dashboard/PerformanceScreen';
-import RoutineScreen from './dashboard/RoutineScreen';
 import SettingsScreen from './dashboard/SettingsScreen';
+import FloatingTabBar from '../components/FloatingTabBar';
 import ProcessingBanner from '../components/ProcessingBanner';
 import UploadFailedBanner from '../components/UploadFailedBanner';
 import { removeLocalUploadsByStatus } from '../state/localUploads';
-import { useSettings } from '../state/SettingsContext';
 import { useVideoJobsContext } from '../state/VideoJobsContext';
 import { colors } from '../theme';
 
-const Tab = createBottomTabNavigator();
+const Tab = createMaterialTopTabNavigator();
 
 // ︎ = variation selector-15: forces text rendering, prevents iOS emoji substitution
 const GLYPH: Record<string, string> = { Overview: '◉︎', Performance: '≡︎', Routine: '☑︎' };
@@ -36,15 +35,10 @@ interface Props {
 }
 
 export default function DashboardScreen({ userId, teamId, onRecord, onUpload, onLogout, jumpToProcessingSignal }: Props) {
-  const { accentColor } = useSettings();
-  const insets = useSafeAreaInsets();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [performanceSub, setPerformanceSub] = useState<PerformanceSub>('history');
   const navRef = useNavigationContainerRef();
   const { processingCount, failedUploads, processingIncreaseSignal } = useVideoJobsContext();
-
-  // Floating, fully-rounded tab bar lifted off the bottom edge.
-  const tabBarStyle = [styles.tabBar, { marginBottom: (insets.bottom || 0) + 12 }];
 
   function goToProcessing() {
     setPerformanceSub('processing');
@@ -74,27 +68,22 @@ export default function DashboardScreen({ userId, teamId, onRecord, onUpload, on
       <View style={styles.body}>
         <NavigationContainer ref={navRef} theme={navTheme}>
           <Tab.Navigator
-            screenOptions={({ route }) => ({
-              headerShown: false,
-              tabBarActiveTintColor: accentColor,
-              tabBarInactiveTintColor: colors.muted,
-              tabBarStyle: tabBarStyle,
-              tabBarItemStyle: styles.tabItem,
-              tabBarLabelStyle: styles.tabLabel,
-              tabBarLabelPosition: 'below-icon',
-              tabBarIcon: ({ color }) => (
-                <Text style={[styles.glyph, { color }]}>{GLYPH[route.name] ?? '•'}</Text>
-              ),
-            })}
+            tabBarPosition="bottom"
+            tabBar={(props) => <FloatingTabBar {...props} glyphs={GLYPH} />}
+            screenOptions={{
+              lazy: true,
+              swipeEnabled: false,
+              animationEnabled: true,
+            }}
           >
             <Tab.Screen name="Overview">
-              {() => <OverviewScreen userId={userId} teamId={teamId} />}
+              {() => <OverviewScreen userId={userId} />}
             </Tab.Screen>
             <Tab.Screen name="Performance">
               {() => <PerformanceScreen userId={userId} sub={performanceSub} onSubChange={setPerformanceSub} />}
             </Tab.Screen>
             <Tab.Screen name="Routine">
-              {() => <RoutineScreen userId={userId} teamId={teamId} />}
+              {() => <IndividualRoutineScreen athleteId={userId} readOnly={!!teamId} />}
             </Tab.Screen>
           </Tab.Navigator>
         </NavigationContainer>
@@ -115,23 +104,4 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
   body: { flex: 1 },
   settingsOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: colors.bg },
-  tabBar: {
-    height: 62,
-    marginHorizontal: 16,
-    borderRadius: 32,
-    borderWidth: 1,
-    borderTopWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surfaceHigh,
-    paddingTop: 0,
-    paddingBottom: 0,
-    shadowColor: '#000',
-    shadowOpacity: 0.35,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 12,
-  },
-  tabItem: { marginTop: 3, flex: 1, height: 60, alignItems: 'center', justifyContent: 'center', borderRadius: 24 },
-  tabLabel: { fontSize: 10, fontWeight: '700', letterSpacing: 1, marginTop: -2 },
-  glyph: { fontSize: 18, lineHeight: 20 },
 });

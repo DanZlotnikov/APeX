@@ -1,5 +1,4 @@
-import { getEffectiveRoutines, EffectiveRoutineEntry } from './teamRoutine';
-import { getRoutine } from './routine';
+import { getRoutine, getRoutinesForAthletes, RoutineSetting } from './routine';
 import { supabase } from './supabase';
 import { AthleteProfileData, AthleteStatus, AthleteViewModel, ExerciseReadiness } from './types';
 import { AT_RISK_READINESS_FLOOR } from '../utils/readiness';
@@ -17,14 +16,14 @@ export async function getTeamAthletes(teamId: string): Promise<AthleteViewModel[
 
   const athleteIds = profiles.map((p) => p.id);
 
-  const [sessionsRes, resolvedRoutines] = await Promise.all([
+  const [sessionsRes, routinesByAthlete] = await Promise.all([
     supabase
       .from('sessions')
       .select('id, athlete_id, exercise_type, recorded_at, rep_count, readiness_score')
       .in('athlete_id', athleteIds)
       .order('recorded_at', { ascending: false })
       .limit(400),
-    getEffectiveRoutines(teamId, athleteIds),
+    getRoutinesForAthletes(athleteIds),
   ]);
 
   if (sessionsRes.error) throw sessionsRes.error;
@@ -40,22 +39,20 @@ export async function getTeamAthletes(teamId: string): Promise<AthleteViewModel[
     const aps     = p.athlete_profiles as any;
     const athSess = sessionsByAthlete.get(p.id) ?? [];
     return buildViewModel(
-      p.id, p.full_name, aps, athSess, resolvedRoutines.get(p.id) ?? [],
+      p.id, p.full_name, aps, athSess, routinesByAthlete.get(p.id) ?? [],
       p.injured, p.injury_started_at, p.stats_reset_at,
     );
   });
 }
 
-// Works for both a team athlete (resolved from their manager's team routine
-// + any per-athlete override — migration 018) and an individual athlete
-// (resolved from their own athlete_routines, exactly what they see/edit on
-// their own Routine screen) — same buildViewModel either way, so "the
-// readiness assessment" is identical in shape for every athlete regardless
-// of team membership (see MANAGER_MODULE_AUDIT.md section 2).
+// Works identically for a team athlete (routine set by their manager) and an
+// individual athlete (routine set by themselves) — both are just
+// athlete_routines rows for this athlete_id (migration 021), so
+// buildViewModel doesn't need to know or care which case this is.
 export async function getAthleteById(athleteId: string): Promise<AthleteViewModel | null> {
   const { data: profile } = await supabase
     .from('profiles')
-    .select('id, full_name, team_id, injured, injury_started_at, stats_reset_at, athlete_profiles(height_cm, weight_kg, position, date_of_birth)')
+    .select('id, full_name, injured, injury_started_at, stats_reset_at, athlete_profiles(height_cm, weight_kg, position, date_of_birth)')
     .eq('id', athleteId)
     .single();
 
@@ -68,9 +65,7 @@ export async function getAthleteById(athleteId: string): Promise<AthleteViewMode
       .eq('athlete_id', athleteId)
       .order('recorded_at', { ascending: false })
       .limit(200),
-    profile.team_id
-      ? getEffectiveRoutines(profile.team_id, [athleteId]).then((m) => m.get(athleteId) ?? [])
-      : getRoutine(athleteId, null),
+    getRoutine(athleteId),
   ]);
   if (sessionsRes.error) throw sessionsRes.error;
 
@@ -110,7 +105,7 @@ function buildViewModel(
   fullName: string,
   ap: any,
   allSessions: any[], // ordered newest → oldest (recorded_at descending)
-  routine: EffectiveRoutineEntry[], // this athlete's resolved routine — up to 6 entries
+  routine: RoutineSetting[], // this athlete's routine — up to 6 entries
   injured: boolean,
   injuryStartedAt: string | null,
   statsResetAt: string | null,

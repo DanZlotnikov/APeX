@@ -49,12 +49,6 @@ export interface DbNotification {
   created_at: string;
 }
 
-export interface DbAthleteExerciseAssignment {
-  athlete_id: string;
-  exercise_type: PipelineExerciseKey;
-  assigned: boolean;
-}
-
 // ── View models (for UI consumption) ──────────────────────────────────────────
 
 export type AthleteStatus = 'green' | 'yellow' | 'red';

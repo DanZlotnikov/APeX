@@ -17,10 +17,9 @@ import { colors, spacing } from '../../theme';
 
 interface Props {
   userId?: string;
-  teamId?: string;
 }
 
-export default function OverviewScreen({ userId, teamId }: Props) {
+export default function OverviewScreen({ userId }: Props) {
   const { profile, settings, accentColor } = useSettings();
   const [sessions, setSessions]       = useState<SessionHistoryEntry[]>([]);
   const [routine, setRoutine]         = useState<RoutineSetting[]>([]);
@@ -43,7 +42,7 @@ export default function OverviewScreen({ userId, teamId }: Props) {
         getSessionHistory(userId)
           .then((s) => active && setSessions(s))
           .catch((e) => console.warn('[APeX] Failed to load session history:', e));
-        getRoutine(userId, teamId ?? null)
+        getRoutine(userId)
           .then((r) => active && setRoutine(r))
           .catch((e) => console.warn('[APeX] Failed to load routine:', e));
       } else {
@@ -61,7 +60,7 @@ export default function OverviewScreen({ userId, teamId }: Props) {
       }
 
       return () => { active = false; };
-    }, [userId, teamId]),
+    }, [userId]),
   );
 
   // Readiness here is the SAME manager-derived number the team dashboard

@@ -43,8 +43,8 @@ export type PipelineExerciseKey = 'squat' | 'jump' | 'pullup' | 'deadlift' | 'pu
 export const PIPELINE_EXERCISE_KEYS: PipelineExerciseKey[] = ['squat', 'jump', 'pullup', 'deadlift', 'push_up', 'ab_crunch'];
 
 // The pipeline's raw exercise keys -> the bridged vocabulary every table
-// (sessions.exercise_type, athlete_routines.exercise_type, team_routines.
-// exercise_type) actually stores — mirrors save_video_job's own CASE mapping
+// (sessions.exercise_type, athlete_routines.exercise_type) actually stores —
+// mirrors save_video_job's own CASE mapping
 // (migration 018) exactly, so a completed-but-not-yet-saved job resolves to
 // the SAME key saving it will produce. squat/deadlift/push_up/ab_crunch's
 // raw key already equals their bridged one, so only these two need mapping.
