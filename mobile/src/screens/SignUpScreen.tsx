@@ -15,7 +15,8 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { lookupTeamByCode, signUpAthlete, signUpManager } from '../api/auth';
 import { getProfile } from '../api/auth';
-import { colors, spacing } from '../theme';
+import { useSettings } from '../state/SettingsContext';
+import { ACCENTS, colors, spacing } from '../theme';
 
 const PRIVACY_POLICY_URL = 'https://danzlotnikov.github.io/APeX/privacy-policy.html';
 
@@ -29,7 +30,12 @@ type Step = 'role' | 'form';
 
 export default function SignUpScreen({ onSuccess, onBack }: Props) {
   const insets = useSafeAreaInsets();
+  const { accentColor, accentOn } = useSettings();
   const fade   = useRef(new Animated.Value(0)).current;
+  // Manager's role color is an intentional fixed violet, distinct from the
+  // athlete's accent-following color — this is the correct-contrast text for
+  // it, same as accentOn is for accentColor.
+  const managerOn = ACCENTS.violet.on;
 
   const [step,        setStep]        = useState<Step>('role');
   const [role,        setRole]        = useState<Role | null>(null);
@@ -108,8 +114,8 @@ export default function SignUpScreen({ onSuccess, onBack }: Props) {
         {/* ── Header ── */}
         <View style={styles.header}>
           <Pressable onPress={onBack} style={({ pressed }) => [styles.back, pressed && { opacity: 0.5 }]}>
-            <Text style={styles.backArrow}>←</Text>
-            <Text style={styles.backLabel}>Sign in</Text>
+            <Text style={[styles.backArrow, { color: accentColor }]}>←</Text>
+            <Text style={[styles.backLabel, { color: accentColor }]}>Sign in</Text>
           </Pressable>
           <Text style={styles.title}>CREATE ACCOUNT</Text>
           <View style={styles.back} />
@@ -134,7 +140,7 @@ export default function SignUpScreen({ onSuccess, onBack }: Props) {
                   label="ATHLETE"
                   description="Join a team and track your movement data"
                   icon="◉"
-                  color={colors.primary}
+                  color={accentColor}
                   onPress={() => selectRole('athlete')}
                 />
               </View>
@@ -146,7 +152,7 @@ export default function SignUpScreen({ onSuccess, onBack }: Props) {
             <View style={styles.formSection}>
               {/* Role badge */}
               <View style={styles.roleBadge}>
-                <Text style={[styles.roleBadgeText, { color: role === 'manager' ? '#B794F6' : colors.primary }]}>
+                <Text style={[styles.roleBadgeText, { color: role === 'manager' ? '#B794F6' : accentColor }]}>
                   {role === 'manager' ? '⊞  MANAGER' : '◉  ATHLETE'}
                 </Text>
                 <Pressable onPress={() => { setStep('role'); setError(''); }}>
@@ -171,7 +177,7 @@ export default function SignUpScreen({ onSuccess, onBack }: Props) {
                     placeholderTextColor={colors.muted}
                     autoCapitalize="characters"
                     autoCorrect={false}
-                    selectionColor={colors.primary}
+                    selectionColor={accentColor}
                     maxLength={8}
                   />
                   {codePreview === null && inviteCode.length >= 4 && (
@@ -203,7 +209,7 @@ export default function SignUpScreen({ onSuccess, onBack }: Props) {
               </Text>
               <Text style={styles.disclaimer}>
                 By creating an account, you agree to our{' '}
-                <Text style={styles.disclaimerLink} onPress={() => void Linking.openURL(PRIVACY_POLICY_URL)}>
+                <Text style={[styles.disclaimerLink, { color: accentColor }]} onPress={() => void Linking.openURL(PRIVACY_POLICY_URL)}>
                   Privacy Policy
                 </Text>.
               </Text>
@@ -213,14 +219,14 @@ export default function SignUpScreen({ onSuccess, onBack }: Props) {
                 disabled={loading}
                 style={({ pressed }) => [
                   styles.submitBtn,
-                  { backgroundColor: role === 'manager' ? '#B794F6' : colors.primary },
+                  { backgroundColor: role === 'manager' ? '#B794F6' : accentColor },
                   loading && styles.submitBtnDisabled,
                   pressed && !loading && { opacity: 0.8 },
                 ]}
               >
                 {loading
-                  ? <ActivityIndicator color={colors.bg} size="small" />
-                  : <Text style={styles.submitBtnText}>
+                  ? <ActivityIndicator color={role === 'manager' ? managerOn : accentOn} size="small" />
+                  : <Text style={[styles.submitBtnText, { color: role === 'manager' ? managerOn : accentOn }]}>
                       {role === 'manager' ? 'CREATE TEAM' : inviteCode.trim() ? 'JOIN TEAM' : 'CREATE ACCOUNT'}
                     </Text>}
               </Pressable>
@@ -259,6 +265,7 @@ function Field({
   label: string; value: string; onChange: (v: string) => void; placeholder: string;
   keyboardType?: any; autoCapitalize?: any; secureTextEntry?: boolean;
 }) {
+  const { accentColor } = useSettings();
   return (
     <View style={styles.field}>
       <Text style={styles.fieldLabel}>{label}</Text>
@@ -272,7 +279,7 @@ function Field({
         autoCapitalize={autoCapitalize ?? 'words'}
         autoCorrect={false}
         secureTextEntry={secureTextEntry}
-        selectionColor={colors.primary}
+        selectionColor={accentColor}
       />
     </View>
   );
@@ -291,8 +298,8 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   back:      { width: 80, flexDirection: 'row', alignItems: 'center', gap: 4 },
-  backArrow: { color: colors.primary, fontSize: 18, fontWeight: '700' },
-  backLabel: { color: colors.primary, fontSize: 13, fontWeight: '700' },
+  backArrow: { fontSize: 18, fontWeight: '700' },
+  backLabel: { fontSize: 13, fontWeight: '700' },
   title:     { color: colors.text, fontSize: 13, fontWeight: '900', letterSpacing: 2.5 },
 
   content: { gap: spacing.lg },
@@ -356,7 +363,7 @@ const styles = StyleSheet.create({
 
   errorText: { color: '#FF3B30', fontSize: 12, fontWeight: '600', textAlign: 'center' },
   disclaimer: { color: colors.muted, fontSize: 10.5, fontWeight: '500', lineHeight: 15, textAlign: 'center', marginTop: spacing.xs },
-  disclaimerLink: { color: colors.primary, fontWeight: '700', textDecorationLine: 'underline' },
+  disclaimerLink: { fontWeight: '700', textDecorationLine: 'underline' },
 
   submitBtn: {
     borderRadius: 12,
@@ -365,5 +372,5 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
   submitBtnDisabled: { opacity: 0.5 },
-  submitBtnText:     { color: colors.bg, fontSize: 14, fontWeight: '900', letterSpacing: 2 },
+  submitBtnText:     { fontSize: 14, fontWeight: '900', letterSpacing: 2 },
 });

@@ -1,14 +1,27 @@
-import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
-import { VideoJobAnalysis } from '../api/videoJobs';
+import React, { useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { JointCheck, JointRomCheck, VideoJobAnalysis } from '../api/videoJobs';
 import { exerciseLabel, readinessPctFromAnalysis } from '../utils/pipelineExercise';
 import { colors, riskColor, spacing } from '../theme';
+import MetricInfoModal from './MetricInfoModal';
 import ReadinessGauge from './ReadinessGauge';
+import RepBreakdownModal from './RepBreakdownModal';
 
 interface Props {
   analysis: VideoJobAnalysis | null;
   fallbackExerciseType?: string | null;
   repCount: number;
+}
+
+interface BreakdownTarget {
+  kind: 'balance' | 'rom';
+  check: JointCheck | JointRomCheck;
+}
+
+interface InfoTarget {
+  label: string;
+  description: string;
+  research: string[];
 }
 
 function severityStatus(s: 'ok' | 'watch' | 'at_risk'): 'green' | 'yellow' | 'red' {
@@ -38,11 +51,22 @@ function readinessLabelFor(pct: number): string {
  * readinessLabelFor above. Shared by the Processing tab's completed-job
  * card and Performance > History's session detail — same shape, same
  * rendering either way.
+ *
+ * Each metric row is tappable two ways: the row itself opens a per-rep
+ * breakdown (RepBreakdownModal), and its "?" badge opens an explainer
+ * (MetricInfoModal) — both full-screen/popup Modals rather than pushed nav
+ * screens, since this component is rendered from several independent
+ * navigation stacks (Processing tab, and every History-stack duplicate) and
+ * a Modal works identically regardless of which one currently hosts it.
  */
 export default function BiomechanicsReport({ analysis, fallbackExerciseType, repCount }: Props) {
   const balance = analysis?.analyses?.balance ?? null;
   const rom = analysis?.analyses?.rom ?? null;
   const exerciseType = analysis?.exercise ?? fallbackExerciseType ?? null;
+  const repWindows = analysis?.reps ?? [];
+
+  const [breakdownFor, setBreakdownFor] = useState<BreakdownTarget | null>(null);
+  const [infoFor, setInfoFor] = useState<InfoTarget | null>(null);
 
   const readinessPct = readinessPctFromAnalysis(analysis);
 
@@ -64,20 +88,16 @@ export default function BiomechanicsReport({ analysis, fallbackExerciseType, rep
                 <Text style={styles.balanceScore}>{Math.round(balance.overall_balance_pct)}%</Text>
               </View>
 
-              {balance.joint_checks.map((jc) => {
-                const color = riskColor(severityStatus(jc.severity));
-                return (
-                  <View key={jc.id} style={[styles.jointRow, jc.informational && styles.jointRowInformational]}>
-                    <View style={styles.jointTop}>
-                      <Text style={styles.jointLabel} numberOfLines={1}>{jc.label}</Text>
-                      <Text style={[styles.jointPct, { color }]}>{Math.round(jc.balance_pct)}%</Text>
-                    </View>
-                    <View style={styles.jointTrack}>
-                      <View style={[styles.jointFill, { width: `${Math.max(0, Math.min(100, jc.balance_pct))}%`, backgroundColor: color }]} />
-                    </View>
-                  </View>
-                );
-              })}
+              {balance.joint_checks.map((jc) => (
+                <JointRow
+                  key={jc.id}
+                  check={jc}
+                  pctValue={jc.balance_pct}
+                  color={riskColor(severityStatus(jc.severity))}
+                  onPressRow={() => setBreakdownFor({ kind: 'balance', check: jc })}
+                  onPressInfo={() => setInfoFor({ label: jc.label, description: jc.description, research: jc.research })}
+                />
+              ))}
             </View>
           )}
 
@@ -88,20 +108,16 @@ export default function BiomechanicsReport({ analysis, fallbackExerciseType, rep
                 <Text style={styles.balanceScore}>{Math.round(rom.overall_rom_pct)}%</Text>
               </View>
 
-              {rom.joint_checks.map((jc) => {
-                const color = riskColor(severityStatus(jc.severity));
-                return (
-                  <View key={jc.id} style={[styles.jointRow, jc.informational && styles.jointRowInformational]}>
-                    <View style={styles.jointTop}>
-                      <Text style={styles.jointLabel} numberOfLines={1}>{jc.label}</Text>
-                      <Text style={[styles.jointPct, { color }]}>{Math.round(jc.rom_pct)}%</Text>
-                    </View>
-                    <View style={styles.jointTrack}>
-                      <View style={[styles.jointFill, { width: `${Math.max(0, Math.min(100, jc.rom_pct))}%`, backgroundColor: color }]} />
-                    </View>
-                  </View>
-                );
-              })}
+              {rom.joint_checks.map((jc) => (
+                <JointRow
+                  key={jc.id}
+                  check={jc}
+                  pctValue={jc.rom_pct}
+                  color={riskColor(severityStatus(jc.severity))}
+                  onPressRow={() => setBreakdownFor({ kind: 'rom', check: jc })}
+                  onPressInfo={() => setInfoFor({ label: jc.label, description: jc.description, research: jc.research })}
+                />
+              ))}
             </View>
           )}
         </>
@@ -110,9 +126,70 @@ export default function BiomechanicsReport({ analysis, fallbackExerciseType, rep
           <Text style={styles.noDataText}>No readiness data for this exercise yet.</Text>
         </View>
       )}
+
+      {breakdownFor && (
+        <RepBreakdownModal
+          visible
+          onClose={() => setBreakdownFor(null)}
+          kind={breakdownFor.kind}
+          check={breakdownFor.check}
+          reps={repWindows}
+        />
+      )}
+      {infoFor && (
+        <MetricInfoModal
+          visible
+          onClose={() => setInfoFor(null)}
+          label={infoFor.label}
+          description={infoFor.description}
+          research={infoFor.research}
+        />
+      )}
     </View>
   );
 }
+
+function JointRow({
+  check, pctValue, color, onPressRow, onPressInfo,
+}: {
+  check: JointCheck | JointRomCheck;
+  pctValue: number;
+  color: string;
+  onPressRow: () => void;
+  onPressInfo: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPressRow}
+      style={({ pressed }) => [
+        styles.jointRow,
+        check.informational && styles.jointRowInformational,
+        pressed && styles.jointRowPressed,
+      ]}
+    >
+      <View style={styles.jointTop}>
+        <Text style={styles.jointLabel} numberOfLines={1}>{check.label}</Text>
+        <View style={styles.jointTopRight}>
+          <Text style={[styles.jointPct, { color }]}>{Math.round(pctValue)}%</Text>
+          {/* Nested Pressable — RN's responder system gives the touch to
+              this one, not the row's own onPress, when tapped directly. */}
+          <Pressable
+            hitSlop={8}
+            onPress={onPressInfo}
+            style={({ pressed }) => [styles.infoBadge, pressed && styles.pressed]}
+          >
+            <Text style={styles.infoBadgeText}>?</Text>
+          </Pressable>
+        </View>
+      </View>
+      <View style={styles.jointTrack}>
+        <View style={[styles.jointFill, { width: `${Math.max(0, Math.min(100, pctValue))}%`, backgroundColor: color }]} />
+      </View>
+    </Pressable>
+  );
+}
+
+const INFO_BADGE_SIZE = 18;
 
 const styles = StyleSheet.create({
   headRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
@@ -135,11 +212,21 @@ const styles = StyleSheet.create({
   balanceScore: { color: colors.text, fontSize: 16, fontWeight: '900' },
 
   jointRow: { marginTop: spacing.sm },
+  jointRowPressed: { opacity: 0.7 },
   jointRowInformational: { opacity: 0.6 },
   jointTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   jointLabel: { flex: 1, color: colors.text, fontSize: 13, fontWeight: '600' },
+  jointTopRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   jointPct: { fontSize: 13, fontWeight: '800', marginLeft: spacing.sm },
   jointTrack: { height: 4, backgroundColor: colors.surfaceHigh, borderRadius: 2, overflow: 'hidden', marginTop: 6 },
   jointFill: { height: 4, borderRadius: 2 },
   informationalNote: { color: colors.muted, fontSize: 10, marginTop: 3, fontStyle: 'italic' },
+
+  pressed: { opacity: 0.5 },
+  infoBadge: {
+    width: INFO_BADGE_SIZE, height: INFO_BADGE_SIZE, borderRadius: INFO_BADGE_SIZE / 2,
+    borderWidth: 1.5, borderColor: colors.muted,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  infoBadgeText: { color: colors.muted, fontSize: 11, fontWeight: '800', includeFontPadding: false, marginTop: -1 },
 });

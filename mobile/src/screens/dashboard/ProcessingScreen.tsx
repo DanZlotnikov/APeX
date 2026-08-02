@@ -155,6 +155,7 @@ function isAlreadyHandledError(e: unknown): boolean {
 // that was silently dropped for RLS reasons — see migration 013) still had
 // the row.
 export default function ProcessingScreen({ userId }: Props) {
+  const { accentColor } = useSettings();
   const { jobs, loading, refetch, localUploads } = useVideoJobsContext();
   const uploadingLocalUploads = localUploads.filter((u) => u.status === 'uploading');
 
@@ -175,7 +176,7 @@ export default function ProcessingScreen({ userId }: Props) {
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <Text style={styles.kicker}>PROCESSING</Text>
         {loading ? (
-          <ActivityIndicator color={colors.primary} style={styles.loading} />
+          <ActivityIndicator color={accentColor} style={styles.loading} />
         ) : isEmpty ? (
           <Text style={styles.empty}>Nothing in progress. Record or upload a video to get started.</Text>
         ) : (
@@ -371,6 +372,7 @@ function FailedCard({ job, userId }: CardProps) {
 
 // HANDOFF item 6 — two-panel video + full analysis, Save/Discard.
 function CompletedCard({ job, userId }: CardProps) {
+  const { accentColor, accentOn } = useSettings();
   const { markPendingRemoval, unmarkPendingRemoval, removeJobLocally } = useVideoJobsContext();
   const { animatedStyle, playExit, playEnter } = useCardExitAnimation();
   const { guard, reset } = useActionGuard();
@@ -467,8 +469,8 @@ function CompletedCard({ job, userId }: CardProps) {
           <Pressable onPress={handleDiscard} disabled={busy} style={({ pressed }) => [styles.discardBtn, pressed && styles.pressed]}>
             <Text style={styles.discardText}>DISCARD</Text>
           </Pressable>
-          <Pressable onPress={handleSave} disabled={busy} style={({ pressed }) => [styles.saveBtn, pressed && styles.pressed]}>
-            <Text style={styles.saveText}>SAVE</Text>
+          <Pressable onPress={handleSave} disabled={busy} style={({ pressed }) => [styles.saveBtn, { backgroundColor: accentColor }, pressed && styles.pressed]}>
+            <Text style={[styles.saveText, { color: accentOn }]}>SAVE</Text>
           </Pressable>
         </View>
       </View>
@@ -521,10 +523,10 @@ const styles = StyleSheet.create({
   },
   discardText: { color: colors.danger, fontSize: 12, fontWeight: '800', letterSpacing: 1.5 },
   saveBtn: {
-    flex: 1, backgroundColor: colors.primary, borderRadius: 10,
+    flex: 1, borderRadius: 10,
     alignItems: 'center', paddingVertical: spacing.sm + 2,
   },
-  saveText: { color: colors.primaryText, fontSize: 12, fontWeight: '800', letterSpacing: 1.5 },
+  saveText: { fontSize: 12, fontWeight: '800', letterSpacing: 1.5 },
 
   pressed: { opacity: 0.6 },
 });

@@ -3,6 +3,7 @@ import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-nat
 import { getTeamAthletes } from '../../api/athletes';
 import { supabase } from '../../api/supabase';
 import { AthleteViewModel, TeamStatsViewModel } from '../../api/types';
+import { useSettings } from '../../state/SettingsContext';
 import { colors, spacing } from '../../theme';
 import { exerciseLabel, getPipelineExerciseKeys } from '../../utils/pipelineExercise';
 import AthleteMonitoringTable, { ExerciseColumn } from './components/AthleteMonitoringTable';
@@ -45,6 +46,7 @@ function computeTeamStats(athletes: AthleteViewModel[], injuredCount: number): T
 }
 
 export default function ManagerDashboard({ teamId, onAthleteSelect }: Props) {
+  const { accentColor } = useSettings();
   const [athletes,        setAthletes]        = useState<AthleteViewModel[]>([]);
   const [exerciseColumns, setExerciseColumns] = useState<ExerciseColumn[]>([]);
   const [loading,         setLoading]         = useState(true);
@@ -130,7 +132,7 @@ export default function ManagerDashboard({ teamId, onAthleteSelect }: Props) {
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator color={colors.primary} size="large" />
+        <ActivityIndicator color={accentColor} size="large" />
       </View>
     );
   }

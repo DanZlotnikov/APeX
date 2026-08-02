@@ -1,19 +1,21 @@
 import React, { useEffect, useRef } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { VIDEO_PLAYER_HTML } from './html';
+import { useSettings } from '../../state/SettingsContext';
+import { getVideoPlayerHtml } from './html';
 
 interface Props {
   videoUri: string;
 }
 
 export default function VideoPlayer({ videoUri }: Props) {
+  const { accentColor } = useSettings();
   const containerRef = useRef<any>(null);
 
   useEffect(() => {
     const el: HTMLElement | null = containerRef.current;
     if (!el) return;
 
-    const blob = new Blob([VIDEO_PLAYER_HTML], { type: 'text/html' });
+    const blob = new Blob([getVideoPlayerHtml(accentColor)], { type: 'text/html' });
     const blobSrc = URL.createObjectURL(blob);
 
     const iframe = document.createElement('iframe');
@@ -40,7 +42,7 @@ export default function VideoPlayer({ videoUri }: Props) {
       URL.revokeObjectURL(blobSrc);
       if (el.contains(iframe)) el.removeChild(iframe);
     };
-  }, [videoUri]);
+  }, [videoUri, accentColor]);
 
   return <View ref={containerRef} style={styles.container} />;
 }

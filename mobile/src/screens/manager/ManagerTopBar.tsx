@@ -15,6 +15,7 @@ import * as notifApi from '../../api/notifications';
 import { supabase } from '../../api/supabase';
 import { NotificationViewModel } from '../../api/types';
 import * as teamsApi from '../../api/teams';
+import { useSettings } from '../../state/SettingsContext';
 import { colors, spacing } from '../../theme';
 
 const SEVERITY_CONFIG = {
@@ -37,6 +38,7 @@ export default function ManagerTopBar({
   screen, onBack, teamId, managerId, onNotifNavigate, onSettings, onLogout,
 }: Props) {
   const insets = useSafeAreaInsets();
+  const { accentColor } = useSettings();
   const [notifOpen,  setNotifOpen]  = useState(false);
   const [teamName,   setTeamName]   = useState('');
   const [notifs,     setNotifs]     = useState<NotificationViewModel[]>([]);
@@ -131,8 +133,8 @@ export default function ManagerTopBar({
           </View>
         ) : (
           <Pressable onPress={onBack} style={({ pressed }) => [styles.backBtn, pressed && styles.pressed]}>
-            <Text style={styles.backArrow}>←</Text>
-            <Text style={styles.backLabel}>Dashboard</Text>
+            <Text style={[styles.backArrow, { color: accentColor }]}>←</Text>
+            <Text style={[styles.backLabel, { color: accentColor }]}>Dashboard</Text>
           </Pressable>
         )}
 
@@ -182,6 +184,7 @@ interface DropdownProps {
 }
 
 function NotificationsDropdown({ open, onClose, insetTop, notifs, readIds, onNotifPress, onClearAll }: DropdownProps) {
+  const { accentColor } = useSettings();
   const translateY = useRef(new Animated.Value(-20)).current;
   const opacity    = useRef(new Animated.Value(0)).current;
 
@@ -255,7 +258,7 @@ function NotificationsDropdown({ open, onClose, insetTop, notifs, readIds, onNot
                       {n.message}
                     </Text>
                     {hasLink && !isRead && (
-                      <Text style={styles.alertLink}>Tap to view athlete →</Text>
+                      <Text style={[styles.alertLink, { color: accentColor }]}>Tap to view athlete →</Text>
                     )}
                   </View>
                   {n.timestamp && (
@@ -317,8 +320,8 @@ const styles = StyleSheet.create({
   teamName:  { color: colors.text, fontSize: 18, fontWeight: '900', letterSpacing: 0.5 },
   date:      { color: colors.muted, fontSize: 11, fontWeight: '600', marginTop: 2 },
   backBtn:   { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 },
-  backArrow: { color: colors.primary, fontSize: 18, fontWeight: '700' },
-  backLabel: { color: colors.primary, fontSize: 13, fontWeight: '700' },
+  backArrow: { fontSize: 18, fontWeight: '700' },
+  backLabel: { fontSize: 13, fontWeight: '700' },
   barRight:  { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
 
   iconBtn: {
@@ -374,7 +377,7 @@ const styles = StyleSheet.create({
   alertBody:        { flex: 1, gap: 2 },
   alertMessage:     { color: colors.text, fontSize: 12, fontWeight: '500', lineHeight: 16 },
   alertMessageRead: { color: colors.muted },
-  alertLink:        { color: colors.primary, fontSize: 10, fontWeight: '700', letterSpacing: 0.3 },
+  alertLink:        { fontSize: 10, fontWeight: '700', letterSpacing: 0.3 },
   alertTime:        { color: colors.muted, fontSize: 10, fontWeight: '600' },
   alertTimeRead:    { opacity: 0.5 },
 

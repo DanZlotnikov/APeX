@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSettings } from '../state/SettingsContext';
 import { colors, spacing } from '../theme';
 
 // App-styled confirm dialog — a drop-in replacement for Alert.alert's confirm
@@ -34,6 +35,7 @@ export function confirmAsync(title: string, message: string, options?: ConfirmOp
 }
 
 export function ConfirmDialogHost() {
+  const { accentColor } = useSettings();
   const [request, setRequest] = useState<ConfirmRequest | null>(null);
   const opacity = useRef(new Animated.Value(0)).current;
   const scale   = useRef(new Animated.Value(0.95)).current;
@@ -60,7 +62,7 @@ export function ConfirmDialogHost() {
 
   if (!request) return null;
 
-  const confirmColor = request.destructive ? colors.danger : colors.primary;
+  const confirmColor = request.destructive ? colors.danger : accentColor;
 
   return (
     <Modal visible transparent animationType="none" onRequestClose={() => respond(false)}>

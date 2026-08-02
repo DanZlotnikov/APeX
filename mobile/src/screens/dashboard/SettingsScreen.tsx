@@ -162,7 +162,7 @@ export default function SettingsScreen({ onLogout }: Props) {
             physician before beginning any exercise program.
           </Text>
           <Pressable onPress={() => void Linking.openURL(PRIVACY_POLICY_URL)} style={styles.aboutLinkRow}>
-            <Text style={styles.aboutLink}>Privacy Policy</Text>
+            <Text style={[styles.aboutLink, { color: accentColor }]}>Privacy Policy</Text>
           </Pressable>
         </View>
 
@@ -301,5 +301,5 @@ const styles = StyleSheet.create({
 
   aboutText: { color: colors.muted, fontSize: 12, lineHeight: 18, paddingVertical: spacing.sm },
   aboutLinkRow: { borderTopWidth: 1, borderTopColor: colors.border, paddingVertical: spacing.sm },
-  aboutLink: { color: colors.primary, fontSize: 13, fontWeight: '700' },
+  aboutLink: { fontSize: 13, fontWeight: '700' },
 });

@@ -73,6 +73,8 @@ def _evaluate_check(joints_np: np.ndarray, reps: list[dict], check: JointRomChec
         "severity": worst_severity,
         "watch_threshold_pct": check.watch_threshold_pct,
         "at_risk_threshold_pct": check.at_risk_threshold_pct,
+        "description": check.description,
+        "research": list(check.research),
         "reps": rep_results,
     }
 

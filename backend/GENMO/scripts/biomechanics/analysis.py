@@ -53,16 +53,32 @@ def run_biomechanical_analysis(
         or None if no exercise was confidently detected.
 
     Returns a stable-shape report:
-        {"exercise": <key or None>, "rep_count": int, "analyses": {<method>: {...}, ...}}
+        {"exercise": <key or None>, "rep_count": int, "analyses": {<method>: {...}, ...},
+         "reps": [{"rep": int, "start_sec": float, "end_sec": float, "duration_sec": float}, ...]}
     `analyses` only contains methods that actually produced a result for this
     clip (e.g. no balance profile registered for an exercise, or 0 reps) —
     a method being absent means "not applicable here", not "failed".
+
+    `reps` is the canonical {start,end} timing for every detected rep,
+    independent of which analysis method(s) ran — a balance check only ever
+    samples one frame per rep (no start/end pair of its own), so this is the
+    only place a per-rep duration or the rest between consecutive reps can
+    come from. Used by the mobile app's per-rep breakdown modal.
     """
     if exercise_key is None:
-        return {"exercise": None, "rep_count": 0, "analyses": {}}
+        return {"exercise": None, "rep_count": 0, "analyses": {}, "reps": []}
 
     reps = get_exercise_reps(joints_np, exercise_key, fps=fps, incam_joints=incam_joints)
-    report = {"exercise": exercise_key, "rep_count": len(reps), "analyses": {}}
+    rep_windows = [
+        {
+            "rep": i,
+            "start_sec": round(r["start"] / fps, 2),
+            "end_sec": round(r["end"] / fps, 2),
+            "duration_sec": round((r["end"] - r["start"]) / fps, 2),
+        }
+        for i, r in enumerate(reps)
+    ]
+    report = {"exercise": exercise_key, "rep_count": len(reps), "analyses": {}, "reps": rep_windows}
     for name, analyzer in _ANALYZERS.items():
         result = analyzer(joints_np, exercise_key, reps, fps)
         if result is not None:

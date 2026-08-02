@@ -6,8 +6,14 @@
  * identical in shape):
  *   host → page  : postMessage({ type:'loadVideo', uri })
  *   page → host  : postMessage({ type:'ready' })
+ *
+ * A function of the user's accent color, not a static string — the scrub
+ * bar's fill/thumb otherwise stays teal regardless of the chosen accent
+ * (this is the WebView/iframe player used on web; VideoPlayer.native.tsx's
+ * scrub bar already reads accentColor directly as a normal RN style).
  */
-export const VIDEO_PLAYER_HTML = `<!DOCTYPE html>
+export function getVideoPlayerHtml(accentColor: string): string {
+  return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -42,13 +48,13 @@ export const VIDEO_PLAYER_HTML = `<!DOCTYPE html>
   #pbtn svg{display:block;}
   #sk{
     flex:1;height:3px;cursor:pointer;
-    accent-color:#00D4BC;
+    accent-color:${accentColor};
     -webkit-appearance:none;appearance:none;
     background:rgba(255,255,255,.25);border-radius:2px;
   }
   #sk::-webkit-slider-thumb{
     -webkit-appearance:none;width:14px;height:14px;
-    border-radius:50%;background:#00D4BC;cursor:pointer;
+    border-radius:50%;background:${accentColor};cursor:pointer;
   }
   #tm{
     color:rgba(255,255,255,.8);
@@ -201,3 +207,4 @@ postUp({ type: 'ready' });
 </script>
 </body>
 </html>`;
+}

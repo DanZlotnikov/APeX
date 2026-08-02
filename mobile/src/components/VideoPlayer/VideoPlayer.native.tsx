@@ -227,7 +227,7 @@ export default function VideoPlayer({ videoUri, fitContainer = false, avoidHomeI
           {avoidHomeIndicator && (
             <View style={[styles.bottomBar, { paddingBottom: insets.bottom }]} pointerEvents="none">
               <View style={styles.bottomBarRow}>
-                <Text style={styles.bottomBarText}>APeX</Text>
+                <Text style={[styles.bottomBarText, { color: accentColor }]}>APeX</Text>
               </View>
             </View>
           )}
@@ -294,7 +294,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   bottomBarText: {
-    color: colors.primary,
     fontSize: 14,
     fontWeight: '900',
     letterSpacing: 3,

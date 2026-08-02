@@ -160,7 +160,7 @@ export default function OverviewScreen({ userId }: Props) {
               {routineProgress.rows.map((row) => (
                 <View key={row.exerciseType} style={styles.routineRow}>
                   <View style={styles.routineExerciseCol}>
-                    <View style={[styles.taskDot, row.completed && styles.taskDotDone]} />
+                    <View style={[styles.taskDot, row.completed && { backgroundColor: accentColor, borderColor: accentColor }]} />
                     <Text style={styles.routineExerciseLabel} numberOfLines={1}>{row.label}</Text>
                   </View>
                   <Text style={[styles.routineCell, styles.routineSetsCol]}>{row.completedSets}/{row.requiredSets}</Text>
@@ -235,7 +235,6 @@ const styles = StyleSheet.create({
     borderWidth: 1.5, borderColor: colors.muted,
     marginRight: spacing.sm,
   },
-  taskDotDone: { backgroundColor: colors.primary, borderColor: colors.primary },
 
   bigRow: { flexDirection: 'row', alignItems: 'flex-start', marginTop: spacing.sm },
   big: { fontSize: 52, fontWeight: '900', lineHeight: 56 },

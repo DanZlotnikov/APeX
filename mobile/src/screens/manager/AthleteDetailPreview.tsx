@@ -7,6 +7,7 @@ import LineTrend from '../../components/charts/LineTrend';
 import FloatingTabBar from '../../components/FloatingTabBar';
 import { markAthleteInjured, markAthleteRecovered } from '../../api/athletes';
 import { AthleteViewModel } from '../../api/types';
+import { useSettings } from '../../state/SettingsContext';
 import { colors, spacing } from '../../theme';
 import { confirmAsync } from '../../utils/confirm';
 import { readinessColor as colorForReadiness } from '../../utils/readiness';
@@ -102,6 +103,7 @@ function AthleteProfileStack({ athlete, onStatusChanged }: Props) {
 
 function AthleteProfileTab({ athlete, onStatusChanged }: Props) {
   const navigation = useNavigation<any>();
+  const { accentColor } = useSettings();
   const readinessColor = colorForReadiness(athlete.readiness);
   const [marking, setMarking] = useState(false);
   const [markError, setMarkError] = useState<string | null>(null);
@@ -253,11 +255,11 @@ function AthleteProfileTab({ athlete, onStatusChanged }: Props) {
               <Pressable
                 onPress={handleMarkRecovered}
                 disabled={marking}
-                style={({ pressed }) => [styles.recoverBtn, (pressed || marking) && styles.recoverBtnPressed]}
+                style={({ pressed }) => [styles.recoverBtn, { borderColor: accentColor }, (pressed || marking) && styles.recoverBtnPressed]}
               >
                 {marking
-                  ? <ActivityIndicator color={colors.primary} size="small" />
-                  : <Text style={styles.recoverBtnText}>MARK AS RECOVERED</Text>}
+                  ? <ActivityIndicator color={accentColor} size="small" />
+                  : <Text style={[styles.recoverBtnText, { color: accentColor }]}>MARK AS RECOVERED</Text>}
               </Pressable>
               {markError && <Text style={styles.injuryError}>{markError}</Text>}
             </View>
@@ -374,7 +376,6 @@ const styles = StyleSheet.create({
 
   recoverBtn: {
     borderWidth: 1.5,
-    borderColor: colors.primary,
     borderRadius: 10,
     paddingVertical: 12,
     paddingHorizontal: spacing.xl,
@@ -382,8 +383,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     minWidth: 200,
   },
-  recoverBtnPressed: { backgroundColor: 'rgba(0,212,188,0.1)' },
-  recoverBtnText: { color: colors.primary, fontSize: 12, fontWeight: '800', letterSpacing: 1.5 },
+  recoverBtnPressed: { opacity: 0.7 },
+  recoverBtnText: { fontSize: 12, fontWeight: '800', letterSpacing: 1.5 },
 
   injuredBanner: {
     flexDirection: 'row',

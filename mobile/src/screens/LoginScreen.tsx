@@ -12,6 +12,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSettings } from '../state/SettingsContext';
 import { colors, spacing } from '../theme';
 
 export type LoginRole = 'athlete' | 'manager';
@@ -23,6 +24,7 @@ interface Props {
 
 export default function LoginScreen({ onLogin, onSignUp }: Props) {
   const insets = useSafeAreaInsets();
+  const { accentColor, accentOn } = useSettings();
   const fade   = useRef(new Animated.Value(0)).current;
   const slideY = useRef(new Animated.Value(20)).current;
 
@@ -66,7 +68,7 @@ export default function LoginScreen({ onLogin, onSignUp }: Props) {
       >
         {/* ── Brand ─────────────────────────────────────────────── */}
         <Animated.View style={[styles.brand, { opacity: fade, transform: [{ translateY: slideY }] }]}>
-          <Text style={styles.wordmark}>APeX</Text>
+          <Text style={[styles.wordmark, { color: accentColor }]}>APeX</Text>
           <Text style={styles.tagline}>ATHLETIC PERFORMANCE EXCELLENCE</Text>
           <View style={styles.divider} />
           <Text style={styles.sub}>Movement analysis · Readiness tracking · Balance and range insights</Text>
@@ -85,7 +87,7 @@ export default function LoginScreen({ onLogin, onSignUp }: Props) {
               keyboardType="email-address"
               autoCapitalize="none"
               autoCorrect={false}
-              selectionColor={colors.primary}
+              selectionColor={accentColor}
             />
           </View>
 
@@ -98,7 +100,7 @@ export default function LoginScreen({ onLogin, onSignUp }: Props) {
               placeholder="••••••••"
               placeholderTextColor={colors.muted}
               secureTextEntry
-              selectionColor={colors.primary}
+              selectionColor={accentColor}
               onSubmitEditing={handleLogin}
               returnKeyType="go"
             />
@@ -111,18 +113,19 @@ export default function LoginScreen({ onLogin, onSignUp }: Props) {
             disabled={loading || !email.trim() || !password}
             style={({ pressed }) => [
               styles.loginBtn,
+              { backgroundColor: accentColor },
               (loading || !email.trim() || !password) && styles.loginBtnDisabled,
               pressed && !loading && styles.loginBtnPressed,
             ]}
           >
             {loading
-              ? <ActivityIndicator color={colors.bg} size="small" />
-              : <Text style={styles.loginBtnText}>LOG IN</Text>}
+              ? <ActivityIndicator color={accentOn} size="small" />
+              : <Text style={[styles.loginBtnText, { color: accentOn }]}>LOG IN</Text>}
           </Pressable>
 
           <Pressable onPress={onSignUp} style={styles.signUpLink}>
             <Text style={styles.signUpLinkText}>
-              Don't have an account? <Text style={styles.signUpLinkAccent}>Create one</Text>
+              Don't have an account? <Text style={[styles.signUpLinkAccent, { color: accentColor }]}>Create one</Text>
             </Text>
           </Pressable>
         </Animated.View>
@@ -142,7 +145,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     paddingVertical: spacing.xl,
   },
-  wordmark: { color: colors.primary, fontSize: 64, fontWeight: '900', letterSpacing: 6 },
+  wordmark: { fontSize: 64, fontWeight: '900', letterSpacing: 6 },
   tagline:  { color: colors.muted, fontSize: 10, fontWeight: '700', letterSpacing: 3, textAlign: 'center' },
   divider:  { width: 40, height: 1, backgroundColor: colors.border, marginVertical: spacing.sm },
   sub:      { color: colors.muted, fontSize: 12, fontWeight: '500', textAlign: 'center', lineHeight: 18, opacity: 0.7 },
@@ -171,7 +174,6 @@ const styles = StyleSheet.create({
   },
 
   loginBtn: {
-    backgroundColor: colors.primary,
     borderRadius: 12,
     paddingVertical: 15,
     alignItems: 'center',
@@ -179,9 +181,9 @@ const styles = StyleSheet.create({
   },
   loginBtnDisabled: { opacity: 0.45 },
   loginBtnPressed:  { opacity: 0.8 },
-  loginBtnText:     { color: colors.bg, fontSize: 14, fontWeight: '900', letterSpacing: 2 },
+  loginBtnText:     { fontSize: 14, fontWeight: '900', letterSpacing: 2 },
 
   signUpLink: { alignItems: 'center', paddingVertical: spacing.sm },
   signUpLinkText:   { color: colors.muted, fontSize: 13, fontWeight: '500' },
-  signUpLinkAccent: { color: colors.primary, fontWeight: '700' },
+  signUpLinkAccent: { fontWeight: '700' },
 });

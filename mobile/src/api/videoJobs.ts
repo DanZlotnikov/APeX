@@ -34,6 +34,8 @@ export interface JointCheck {
   severity: 'ok' | 'watch' | 'at_risk';
   watch_threshold_pct: number;
   at_risk_threshold_pct: number;
+  description: string;
+  research: string[];
   reps: JointCheckRep[];
 }
 
@@ -72,6 +74,8 @@ export interface JointRomCheck {
   severity: 'ok' | 'watch' | 'at_risk';
   watch_threshold_pct: number;
   at_risk_threshold_pct: number;
+  description: string;
+  research: string[];
   reps: JointRomCheckRep[];
 }
 
@@ -83,6 +87,13 @@ export interface RomReport {
   limited_joints: unknown[];
 }
 
+export interface RepWindow {
+  rep: number;
+  start_sec: number;
+  end_sec: number;
+  duration_sec: number;
+}
+
 export interface VideoJobAnalysis {
   exercise: string | null;
   rep_count: number;
@@ -90,6 +101,11 @@ export interface VideoJobAnalysis {
     balance?: BalanceReport;
     rom?: RomReport;
   };
+  // Canonical per-rep timing, independent of which analysis method ran —
+  // see backend/GENMO/scripts/biomechanics/analysis.py's
+  // run_biomechanical_analysis. Optional: absent on any session saved
+  // before this field existed.
+  reps?: RepWindow[];
 }
 
 export interface VideoJob {

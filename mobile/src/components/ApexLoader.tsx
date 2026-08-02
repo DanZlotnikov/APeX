@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { Animated, StyleSheet, Text, View } from 'react-native';
+import { useSettings } from '../state/SettingsContext';
 import { colors } from '../theme';
 
 interface Props {
@@ -14,6 +15,7 @@ interface Props {
  * filling the whole screen.
  */
 export default function ApexLoader({ size = 56 }: Props) {
+  const { accentColor } = useSettings();
   const pulse = useRef(new Animated.Value(0)).current;
   const loopRef = useRef<Animated.CompositeAnimation | null>(null);
 
@@ -37,11 +39,11 @@ export default function ApexLoader({ size = 56 }: Props) {
       <Animated.View
         style={[
           styles.ring,
-          { width: ringSize, height: ringSize, borderRadius: ringSize / 2, transform: [{ scale: ringScale }], opacity: ringOpacity },
+          { borderColor: accentColor, width: ringSize, height: ringSize, borderRadius: ringSize / 2, transform: [{ scale: ringScale }], opacity: ringOpacity },
         ]}
       />
       <View style={[styles.inner, { width: size, height: size, borderRadius: size / 2 }]}>
-        <Text style={[styles.wordmark, { fontSize: size * 0.24 }]}>APeX</Text>
+        <Text style={[styles.wordmark, { color: accentColor, fontSize: size * 0.24 }]}>APeX</Text>
       </View>
     </View>
   );

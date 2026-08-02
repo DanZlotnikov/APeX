@@ -244,6 +244,32 @@ async def _fetch(client: httpx.AsyncClient, url: str, key: str, table: str, para
     return resp.json()
 
 
+# Same formula as save_video_job (SQL, migration 016/018) and mobile's
+# readinessPctFromAnalysis (pipelineExercise.ts) — average of L/R balance and
+# range-of-motion percentages, whichever is present. A video_jobs row has
+# this in analysis_json well before it graduates to a sessions row (which
+# stores it directly as readiness_score/rep_count instead); reusing the same
+# math here is what lets a completed-but-not-yet-saved job show real numbers
+# instead of "—" in this table.
+def _readiness_from_analysis(analysis: Optional[dict]) -> Optional[float]:
+    if not analysis:
+        return None
+    analyses = analysis.get("analyses") or {}
+    balance_pct = (analyses.get("balance") or {}).get("overall_balance_pct")
+    rom_pct = (analyses.get("rom") or {}).get("overall_rom_pct")
+    if balance_pct is not None and rom_pct is not None:
+        return round((balance_pct + rom_pct) / 2)
+    if balance_pct is not None:
+        return round(balance_pct)
+    if rom_pct is not None:
+        return round(rom_pct)
+    return None
+
+
+def _rep_count_from_analysis(analysis: Optional[dict]) -> Optional[int]:
+    return analysis.get("rep_count") if analysis else None
+
+
 @app.get("/api/jobs")
 async def get_jobs() -> dict:
     url, key = _supabase_config()
@@ -267,14 +293,17 @@ async def get_jobs() -> dict:
 
     items = []
     for j in video_jobs:
+        analysis = j.get("analysis_json")
         items.append({
             "id": j["id"], "kind": "video_job", "status": j["status"],
             "athlete_id": j["athlete_id"], "athlete_name": profiles.get(j["athlete_id"], "Unknown"),
             "exercise_type": j.get("exercise_type") or j.get("target_exercise_key"),
             "recorded_at": j.get("recorded_at"), "created_at": j.get("created_at"),
             "started_at": j.get("started_at"), "completed_at": j.get("completed_at"),
-            "error_message": j.get("error_message"), "analysis_json": j.get("analysis_json"),
-            "readiness_score": None, "rep_count": None, "duration_sec": j.get("duration_sec"),
+            "error_message": j.get("error_message"), "analysis_json": analysis,
+            "readiness_score": _readiness_from_analysis(analysis),
+            "rep_count": _rep_count_from_analysis(analysis),
+            "duration_sec": j.get("duration_sec"),
         })
     for s in sessions:
         items.append({

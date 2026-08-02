@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import LineTrend from '../../../components/charts/LineTrend';
 import { AthleteViewModel } from '../../../api/types';
+import { useSettings } from '../../../state/SettingsContext';
 import { colors, spacing } from '../../../theme';
 import { PipelineExerciseKey } from '../../../utils/pipelineExercise';
 import { readinessColor } from '../../../utils/readiness';
@@ -90,8 +91,9 @@ function TableRow({
   onPress: () => void;
   colorMode: ColorMode;
 }) {
+  const { accentColor } = useSettings();
   const actionLabel = a.status === 'green' ? 'View' : 'Review';
-  const actionColor = a.status === 'green' ? colors.muted : colors.primary;
+  const actionColor = a.status === 'green' ? colors.muted : accentColor;
   const [hovered, setHovered] = useState(false);
 
   return (
@@ -147,8 +149,9 @@ function AthleteCard({
   onPress: () => void;
   colorMode: ColorMode;
 }) {
+  const { accentColor } = useSettings();
   const actionLabel = a.status === 'green' ? 'View' : 'Review';
-  const actionColor = a.status === 'green' ? colors.muted : colors.primary;
+  const actionColor = a.status === 'green' ? colors.muted : accentColor;
   const [hovered, setHovered] = useState(false);
 
   return (

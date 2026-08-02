@@ -76,7 +76,7 @@ export default function ManagerSettings({ teamId, onLogout }: Props) {
   if (teamName === null) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator color={colors.primary} />
+        <ActivityIndicator color={accentColor} />
       </View>
     );
   }
@@ -94,7 +94,7 @@ export default function ManagerSettings({ teamId, onLogout }: Props) {
               value={teamName}
               onChangeText={setTeamName}
               placeholderTextColor={colors.muted}
-              selectionColor={colors.primary}
+              selectionColor={accentColor}
             />
           </View>
         </View>
@@ -104,7 +104,7 @@ export default function ManagerSettings({ teamId, onLogout }: Props) {
           <View style={styles.card}>
             <Text style={styles.fieldLabel}>SHARE THIS CODE WITH ATHLETES</Text>
             <View style={styles.codeRow}>
-              <Text selectable style={styles.codeText}>{inviteCode || '——'}</Text>
+              <Text selectable style={[styles.codeText, { color: accentColor }]}>{inviteCode || '——'}</Text>
               <Pressable
                 onPress={() => void handleRegenerate()}
                 disabled={regenerating}
@@ -115,7 +115,7 @@ export default function ManagerSettings({ teamId, onLogout }: Props) {
                 ]}
               >
                 {regenerating
-                  ? <ActivityIndicator color={colors.primary} size="small" />
+                  ? <ActivityIndicator color={accentColor} size="small" />
                   : <Text style={styles.regenBtnText}>↺  REGENERATE</Text>}
               </Pressable>
             </View>
@@ -194,7 +194,7 @@ export default function ManagerSettings({ teamId, onLogout }: Props) {
               should consult a physician before beginning any exercise program.
             </Text>
             <Pressable onPress={() => void Linking.openURL(PRIVACY_POLICY_URL)} style={styles.aboutLinkRow}>
-              <Text style={styles.aboutLink}>Privacy Policy</Text>
+              <Text style={[styles.aboutLink, { color: accentColor }]}>Privacy Policy</Text>
             </Pressable>
           </View>
         </View>
@@ -334,7 +334,7 @@ const styles = StyleSheet.create({
   saveNoteText: { color: colors.muted, fontSize: 11, fontWeight: '500', fontStyle: 'italic' },
 
   codeRow:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: spacing.sm, marginBottom: spacing.sm },
-  codeText: { color: colors.primary, fontSize: 28, fontWeight: '900', letterSpacing: 6, fontVariant: ['tabular-nums'] },
+  codeText: { fontSize: 28, fontWeight: '900', letterSpacing: 6, fontVariant: ['tabular-nums'] },
   codeNote: { color: colors.muted, fontSize: 11, fontWeight: '500', lineHeight: 16, marginBottom: spacing.sm },
   regenBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
@@ -350,5 +350,5 @@ const styles = StyleSheet.create({
 
   aboutText: { color: colors.muted, fontSize: 12, lineHeight: 18 },
   aboutLinkRow: { borderTopWidth: 1, borderTopColor: colors.border, paddingVertical: spacing.sm, marginTop: spacing.xs },
-  aboutLink: { color: colors.primary, fontSize: 13, fontWeight: '700' },
+  aboutLink: { fontSize: 13, fontWeight: '700' },
 });
