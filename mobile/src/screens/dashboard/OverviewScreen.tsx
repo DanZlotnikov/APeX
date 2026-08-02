@@ -1,8 +1,8 @@
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import React, { useCallback, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { getAthleteById } from '../../api/athletes';
-import { getRoutine, RoutineSetting } from '../../api/routine';
+import { getRoutine, RoutineExercise } from '../../api/routine';
 import { getSessionHistory, SessionHistoryEntry } from '../../api/sessions';
 import { AthleteViewModel } from '../../api/types';
 import LineTrend from '../../components/charts/LineTrend';
@@ -20,9 +20,10 @@ interface Props {
 }
 
 export default function OverviewScreen({ userId }: Props) {
+  const navigation = useNavigation<any>();
   const { profile, settings, accentColor } = useSettings();
   const [sessions, setSessions]       = useState<SessionHistoryEntry[]>([]);
-  const [routine, setRoutine]         = useState<RoutineSetting[]>([]);
+  const [routine, setRoutine]         = useState<RoutineExercise[]>([]);
   const [athlete, setAthlete]         = useState<AthleteViewModel | null>(null);
   const [loading, setLoading]         = useState(true);
   const { jobs } = useVideoJobsContext();
@@ -98,10 +99,19 @@ export default function OverviewScreen({ userId }: Props) {
           <ProfileStat label="SESSIONS" value={String(sessions.length)} />
         </View>
 
-        <View style={styles.card}>
+        {/* Tap through to the full per-exercise Readiness screen
+            (screens/dashboard/ReadinessScreen.tsx) — this card itself is
+            unchanged, just now an entry point. */}
+        <Pressable
+          onPress={() => navigation.navigate('Readiness')}
+          style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
+        >
           <View style={styles.cardHead}>
             <Text style={styles.cardTitle}>READINESS TREND</Text>
-            {delta && <DeltaChip delta={delta} />}
+            <View style={styles.cardHeadRight}>
+              {delta && <DeltaChip delta={delta} />}
+              <Text style={styles.cardChevron}>›</Text>
+            </View>
           </View>
 
           {loading ? (
@@ -123,7 +133,7 @@ export default function OverviewScreen({ userId }: Props) {
           ) : (
             <Text style={styles.empty}>No sessions yet. Complete a required exercise to start tracking your readiness.</Text>
           )}
-        </View>
+        </Pressable>
 
         <View style={styles.card}>
           <Text style={styles.cardTitle}>TODAY'S ROUTINE</Text>
@@ -144,7 +154,7 @@ export default function OverviewScreen({ userId }: Props) {
 
               <View style={styles.routineHeaderRow}>
                 <Text style={[styles.routineHeaderCell, styles.routineExerciseCol]}>EXERCISE</Text>
-                <Text style={[styles.routineHeaderCell, styles.routineRepsCol]}>REPS</Text>
+                <Text style={[styles.routineHeaderCell, styles.routineSetsCol]}>SETS</Text>
                 <Text style={[styles.routineHeaderCell, styles.routineReadinessCol]}>READINESS</Text>
               </View>
               {routineProgress.rows.map((row) => (
@@ -153,7 +163,7 @@ export default function OverviewScreen({ userId }: Props) {
                     <View style={[styles.taskDot, row.completed && styles.taskDotDone]} />
                     <Text style={styles.routineExerciseLabel} numberOfLines={1}>{row.label}</Text>
                   </View>
-                  <Text style={[styles.routineCell, styles.routineRepsCol]}>{row.completedReps}/{row.targetReps}</Text>
+                  <Text style={[styles.routineCell, styles.routineSetsCol]}>{row.completedSets}/{row.requiredSets}</Text>
                   <Text style={[styles.routineCell, styles.routineReadinessCol]}>
                     {row.readinessPct != null ? `${row.readinessPct}%` : '—'}
                   </Text>
@@ -214,7 +224,10 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     padding: spacing.md,
   },
+  cardPressed: { opacity: 0.7 },
   cardHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  cardHeadRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  cardChevron: { color: colors.muted, fontSize: 18, fontWeight: '400' },
   cardTitle: { color: colors.muted, fontSize: 11, fontWeight: '700', letterSpacing: 2, marginBottom: spacing.xs },
 
   taskDot: {
@@ -238,7 +251,7 @@ const styles = StyleSheet.create({
   routineCell: { color: colors.text, fontSize: 13, fontWeight: '700' },
   routineExerciseCol: { flex: 2, flexDirection: 'row', alignItems: 'center' },
   routineExerciseLabel: { color: colors.text, fontSize: 13, fontWeight: '700', flexShrink: 1 },
-  routineRepsCol: { flex: 1, textAlign: 'center' },
+  routineSetsCol: { flex: 1, textAlign: 'center' },
   routineReadinessCol: { flex: 1, textAlign: 'right' },
 
   miniStats: { flexDirection: 'row', marginTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.md },

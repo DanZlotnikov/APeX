@@ -112,10 +112,11 @@ export interface SessionHistoryEntry {
   recordedAt: string;
   resultVideoPath: string | null;
   biomechanics: VideoJobAnalysis | null;
+  durationSec: number | null;
 }
 
 const HISTORY_COLUMNS =
-  'id, exercise_type, rep_count, readiness_score, recorded_at, result_video_path, biomechanics_json';
+  'id, exercise_type, rep_count, readiness_score, recorded_at, result_video_path, biomechanics_json, duration_sec';
 
 function fromHistoryRow(r: any): SessionHistoryEntry {
   return {
@@ -126,6 +127,7 @@ function fromHistoryRow(r: any): SessionHistoryEntry {
     recordedAt: r.recorded_at,
     resultVideoPath: r.result_video_path,
     biomechanics: r.biomechanics_json,
+    durationSec: r.duration_sec,
   };
 }
 
@@ -136,6 +138,30 @@ export async function getSessionHistory(athleteId: string): Promise<SessionHisto
     .eq('athlete_id', athleteId)
     .not('biomechanics_json', 'is', null)
     .order('recorded_at', { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map(fromHistoryRow);
+}
+
+// Paginated variant for the Readiness screen's scroll-to-load-more history
+// list — same "new-pipeline sessions only" scope as getSessionHistory
+// above, optionally narrowed to one exercise. `offset`/`limit` map directly
+// to a Postgres range; the caller (ReadinessScreen) treats a page shorter
+// than `limit` as "no more to load".
+export async function getSessionHistoryPage(
+  athleteId: string,
+  exerciseType: string | null,
+  offset: number,
+  limit: number,
+): Promise<SessionHistoryEntry[]> {
+  let query = supabase
+    .from('sessions')
+    .select(HISTORY_COLUMNS)
+    .eq('athlete_id', athleteId)
+    .not('biomechanics_json', 'is', null)
+    .order('recorded_at', { ascending: false })
+    .range(offset, offset + limit - 1);
+  if (exerciseType) query = query.eq('exercise_type', exerciseType);
+  const { data, error } = await query;
   if (error) throw error;
   return (data ?? []).map(fromHistoryRow);
 }

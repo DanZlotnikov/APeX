@@ -71,16 +71,18 @@ export interface NotificationViewModel {
 export interface ExerciseReadiness {
   key: PipelineExerciseKey;
   label: string;
-  readiness: number | null; // most recent session's readiness_score for this exercise (any day)
-  testedToday: boolean;     // whether at least one session for this exercise was recorded today
-  passed: boolean | null;   // null = never tested; else today's summed reps meet target AND readiness isn't in the "at risk" band (or, if not tested today, the most recent reading isn't)
+  readiness: number | null;    // avg readiness_score across today's COMPLETED sets only; null if none completed today
+  requiredSets: number;        // sets required by the routine for this exercise
+  completedSets: number;       // sets completed today (see utils/routineSets.ts's positional matching)
+  attemptedToday: boolean;     // whether at least one session for this exercise was recorded today
+  completedToday: boolean;     // completedSets >= requiredSets (all required sets done today)
 }
 
 export interface AthleteViewModel {
   id: string;
   name: string;
   status: AthleteStatus;
-  readiness: number; // average of perExerciseReadiness (exercises with data only)
+  readiness: number; // today's avg over every required exercise; a not-fully-completed exercise counts as 0, not dropped
   perExerciseReadiness: ExerciseReadiness[];
   lastTestDate: string;
   lastTestTime: string | null;

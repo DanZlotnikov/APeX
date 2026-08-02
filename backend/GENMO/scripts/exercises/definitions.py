@@ -20,11 +20,11 @@ Nearly every repetitive exercise actually decomposes into the same shape:
 a PRIMARY SIGNAL that cycles through a range of motion once per rep, plus
 optional COROBORATION checks that must also hold for a cycle to count. Once
 you see it that way, three generic strategies (see counting.py) cover all
-7 exercises:
+6 exercises:
 
   THRESHOLD_CROSSING — signal descends below an adaptive "depth" threshold
-    then climbs back above a "stand" threshold. Used by squat, deadlift,
-    push-up: exercises with a clear top and bottom position.
+    then climbs back above a "stand" threshold. Used by squat, push-up:
+    exercises with a clear top and bottom position.
   SWING_DETECTOR — running local-extremum (zigzag/prominence) detector:
     a rep confirms once the signal has swung by MIN_DROP from a tracked
     peak, then back by MIN_DROP from the resulting trough. Used by pull-up
@@ -50,10 +50,12 @@ lying). analyze.py classifies each clip's dominant orientation ONCE, then
 only evaluates exercises whose orientation matches — an ab crunch (lying)
 and a squat (standing) can never be confused because they're never even
 compared. Exercises that legitimately share an orientation (squat vs.
-deadlift vs. vertical jump, all STANDING) still need a real discriminator;
-each declares a `priority` and an optional `discriminator` for exactly this
-case (see squat/deadlift/vertical_jump below and DISCRIMINATORS in
-counting.py).
+vertical jump, both STANDING) still need a tie-break; each declares a
+`priority` for exactly this case (see squat/vertical_jump below and
+_resolve_standing in analyze.py). Deadlift used to share STANDING with
+these two and needed a real discriminator (ROM-ratio based, see git
+history) to avoid being confused with squat — removed from the pipeline
+entirely rather than kept as a 3-way ambiguity.
 """
 from __future__ import annotations
 
@@ -126,7 +128,6 @@ class ExerciseDefinition:
     valid_frame_check: tuple[str, str, str] | None = None
     corroboration_signal: str | None = None
     corroboration_delta_param: str | None = None
-    discriminator: str | None = None
     priority: int = 0
 
     def param(self, param_id: str) -> float:

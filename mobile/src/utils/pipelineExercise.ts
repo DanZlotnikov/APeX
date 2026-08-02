@@ -1,54 +1,52 @@
 /**
- * Display labels for the new pipeline's exercise_type vocabulary — squat/jump/
- * pullup are the bridged keys (see RAW_TO_BRIDGED below); deadlift/push_up/
- * ab_crunch are the pipeline's own raw keys, which already coincide with
- * their bridged form. Used by Performance/History, the Processing tab, and
- * the manager module — all share this one vocabulary now (see
- * MANAGER_MODULE_AUDIT.md).
+ * The app's exercise vocabulary — which exercises exist, their display
+ * labels, and the bridged/raw key mapping — is sourced from Supabase (see
+ * api/exercises.ts, supabase/migrations/023_exercises_registry.sql) rather
+ * than hardcoded here, so disabling/relabeling/reordering/re-enabling any
+ * exercise the pipeline already detects is a data change, not an app-store
+ * release. This file just wraps that cache for the rest of the app (Performance/
+ * History, the Processing tab, the manager module, the routine screens),
+ * which all share this one vocabulary.
  *
- * Both the bridged AND raw forms are listed for every exercise, even where
- * that's a duplicate entry — `video_jobs.analysis_json.exercise` and
- * `video_jobs.exercise_type` are always the pipeline's RAW key
- * (squat|deadlift|vertical_jump|pull_up|push_up|ab_crunch; see migration
- * 009's comment), never the bridged one, so any call site passing either of
- * those straight into exerciseLabel() was showing the raw "vertical_jump"/
- * "pull_up" string verbatim — confirmed in production (a completed pull-up
- * card's header literally read "pull_up"). Only vertical_jump/pull_up were
- * actually missing before; every other raw key already coincided with its
- * bridged form and so happened to resolve correctly by accident.
+ * Bridged vs. raw: `sessions.exercise_type` / `athlete_routine_sets.exercise_type`
+ * always store the BRIDGED key; `video_jobs.exercise_type` /
+ * `video_jobs.analysis_json.exercise` always store the pipeline's own RAW
+ * key (see migration 009's comment) — identical for most exercises, but
+ * different for vertical_jump/pull_up (bridged: jump/pullup). Passing a raw
+ * key straight into exerciseLabel() without resolving it first is exactly
+ * the bug that once made a completed pull-up card's header read "pull_up"
+ * verbatim — resolveJobExerciseKey() below is the fix, unchanged by the
+ * move to a DB-driven registry.
  */
-const LABELS: Record<string, string> = {
-  squat: 'Squat',
-  jump: 'Vertical Jump',
-  vertical_jump: 'Vertical Jump',
-  pullup: 'Pull-Up',
-  pull_up: 'Pull-Up',
-  deadlift: 'Deadlift',
-  push_up: 'Push-Up',
-  ab_crunch: 'Ab Crunch',
-};
+import { ExerciseInfo, getAvailableExercises, getCachedExercisesSync } from '../api/exercises';
+
+// Loosened from a fixed string-literal union now that the actual set of
+// keys is DB-driven, not a fixed compile-time list — callers that need the
+// CURRENT list at a point in time should call getPipelineExerciseKeys()
+// (always complete/correct) rather than assume a fixed set.
+export type PipelineExerciseKey = string;
 
 export function exerciseLabel(exerciseType: string | null | undefined): string {
   if (!exerciseType) return 'Exercise';
-  return LABELS[exerciseType] ?? exerciseType;
+  const match = getCachedExercisesSync().find((e) => e.key === exerciseType);
+  return match?.label ?? exerciseType;
 }
 
-// All 6 exercises the detection pipeline knows about, in the same bridged
-// vocabulary sessions.exercise_type / video_jobs.exercise_type use (see
-// migration 009's comment) — the canonical list for the Routine feature
-// (migration 014), which covers every pipeline exercise, not just the older
-// squat/jump/pullup-only manager-module catalog in exerciseMetrics.ts.
-export type PipelineExerciseKey = 'squat' | 'jump' | 'pullup' | 'deadlift' | 'push_up' | 'ab_crunch';
+// Every currently-enabled exercise key, in display (sort_order) order —
+// replaces the old static PIPELINE_EXERCISE_KEYS constant. Async because
+// the registry is fetched from Supabase; memoized (api/exercises.ts), so
+// this resolves instantly after the first real call anywhere in the app.
+export async function getPipelineExerciseKeys(): Promise<PipelineExerciseKey[]> {
+  const list = await getAvailableExercises();
+  return list.map((e) => e.key);
+}
 
-export const PIPELINE_EXERCISE_KEYS: PipelineExerciseKey[] = ['squat', 'jump', 'pullup', 'deadlift', 'push_up', 'ab_crunch'];
-
-// The pipeline's raw exercise keys -> the bridged vocabulary every table
-// (sessions.exercise_type, athlete_routines.exercise_type) actually stores —
-// mirrors save_video_job's own CASE mapping
-// (migration 018) exactly, so a completed-but-not-yet-saved job resolves to
-// the SAME key saving it will produce. squat/deadlift/push_up/ab_crunch's
-// raw key already equals their bridged one, so only these two need mapping.
-const RAW_TO_BRIDGED: Record<string, string> = { vertical_jump: 'jump', pull_up: 'pullup' };
+// Same as getPipelineExerciseKeys(), but returns the full ExerciseInfo
+// (label included) for call sites building a picker/list that need both —
+// avoids a second cache lookup per row.
+export async function getAvailableExerciseInfos(): Promise<ExerciseInfo[]> {
+  return getAvailableExercises();
+}
 
 // Resolves which exercise a completed video_jobs row actually turned out to
 // be, in the bridged vocabulary above. Used by the Routine feature's
@@ -56,7 +54,8 @@ const RAW_TO_BRIDGED: Record<string, string> = { vertical_jump: 'jump', pull_up:
 // sessions.exercise_type is populated.
 export function resolveJobExerciseKey(job: { exerciseType: string | null }): string | null {
   if (!job.exerciseType) return null;
-  return RAW_TO_BRIDGED[job.exerciseType] ?? job.exerciseType;
+  const match = getCachedExercisesSync().find((e) => e.rawKey === job.exerciseType);
+  return match?.key ?? job.exerciseType;
 }
 
 // Readiness = the average of L/R balance and range of motion when both are

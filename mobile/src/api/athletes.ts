@@ -1,8 +1,10 @@
-import { getRoutine, getRoutinesForAthletes, RoutineSetting } from './routine';
+import { getCachedExercisesSync } from './exercises';
+import { getRoutine, getRoutinesForAthletes, RoutineExercise } from './routine';
 import { supabase } from './supabase';
 import { AthleteProfileData, AthleteStatus, AthleteViewModel, ExerciseReadiness } from './types';
 import { AT_RISK_READINESS_FLOOR } from '../utils/readiness';
-import { exerciseLabel, PIPELINE_EXERCISE_KEYS } from '../utils/pipelineExercise';
+import { exerciseLabel } from '../utils/pipelineExercise';
+import { AttemptForMatching, matchAttemptsToSets } from '../utils/routineSets';
 
 export async function getTeamAthletes(teamId: string): Promise<AthleteViewModel[]> {
   const { data: profiles, error: profErr } = await supabase
@@ -105,7 +107,7 @@ function buildViewModel(
   fullName: string,
   ap: any,
   allSessions: any[], // ordered newest → oldest (recorded_at descending)
-  routine: RoutineSetting[], // this athlete's routine — up to 6 entries
+  routine: RoutineExercise[], // this athlete's routine — up to 6 entries
   injured: boolean,
   injuryStartedAt: string | null,
   statsResetAt: string | null,
@@ -130,52 +132,51 @@ function buildViewModel(
     .reverse()
     .map((s) => s.readiness_score ?? 0);
 
+  // Safe to read synchronously here: by the time buildViewModel runs, its
+  // caller has already awaited getRoutine/getRoutinesForAthletes, which
+  // themselves await getPipelineExerciseKeys() — the cache this reads is
+  // guaranteed populated (see api/exercises.ts).
   const routineByKey = new Map(routine.map((r) => [r.exerciseType, r]));
-  const activeExercises = PIPELINE_EXERCISE_KEYS.filter((k) => routineByKey.get(k)?.enabled);
+  const enabledKeys = getCachedExercisesSync().map((e) => e.key);
+  const activeExercises = enabledKeys.filter((k) => (routineByKey.get(k)?.sets.length ?? 0) > 0);
 
   const perExerciseReadiness: ExerciseReadiness[] = activeExercises.map((key) => {
     const cfg = routineByKey.get(key)!;
-    // sessions is newest → oldest, so the first match for this exercise is
-    // the most recent one, whenever it was recorded.
     const sessionsForKey = sessions.filter((s) => s.exercise_type === key);
-    const latestSession  = sessionsForKey[0] ?? null;
-    const testedToday    = !!latestSession && (latestSession.recorded_at as string).startsWith(today);
+    const todaysSessions = sessionsForKey.filter((s) => (s.recorded_at as string).startsWith(today));
+    const attemptedToday = todaysSessions.length > 0;
 
-    if (!latestSession) {
-      return { key, label: exerciseLabel(key), readiness: null, testedToday: false, passed: null };
-    }
+    // Every attempt today is its own separate session row (migration 017) —
+    // hand ALL of them to matchAttemptsToSets, which positionally matches
+    // each against the routine's ordered sets (utils/routineSets.ts). Only
+    // readiness_score, the same balance+ROM average an individual athlete
+    // sees (migration 018), factors in here — no per-metric threshold.
+    const attempts: AttemptForMatching[] = todaysSessions.map((s) => ({
+      recordedAt: s.recorded_at,
+      repCount: s.rep_count ?? 0,
+      readinessPct: s.readiness_score ?? null,
+    }));
+    const match = matchAttemptsToSets(cfg.sets, attempts);
 
-    // Every attempt today is its own separate session row (migration 017,
-    // same fix mobile/src/utils/routineProgress.ts already applies on the
-    // athlete-facing side) — sum today's reps across ALL of them rather than
-    // just the latest attempt, so an athlete who split their reps across two
-    // clips isn't marked as having failed the requirement.
-    const repsForCheck = testedToday
-      ? sessionsForKey
-          .filter((s) => (s.recorded_at as string).startsWith(today))
-          .reduce((sum, s) => sum + (s.rep_count ?? 0), 0)
-      : latestSession.rep_count ?? 0;
-
-    const readiness    = latestSession.readiness_score ?? null;
-    const repsOk        = repsForCheck >= cfg.targetReps;
-    // Readiness is sessions.readiness_score directly — the same balance+ROM
-    // average an individual athlete sees, not a manager-tunable per-metric
-    // threshold (see migration 018 / MANAGER_MODULE_AUDIT.md sections 2, 3,
-    // 6). "Passed" means today's reading isn't in the "at risk" band, using
-    // the exact same bands readinessColor renders everywhere else.
-    const readinessOk   = readiness == null || readiness >= AT_RISK_READINESS_FLOOR;
-
-    return { key, label: exerciseLabel(key), readiness, testedToday, passed: repsOk && readinessOk };
+    return {
+      key,
+      label: exerciseLabel(key),
+      readiness: match.avgReadiness,
+      requiredSets: match.requiredSets,
+      completedSets: match.completedSets,
+      attemptedToday,
+      completedToday: match.completedToday,
+    };
   });
 
   // Overall readiness is an average across every active (required) exercise,
-  // not just the ones actually tested — an exercise that's missing or wasn't
-  // tested today contributes 0 rather than being dropped from the average,
-  // so a single good test can't read as a perfect overall score while other
-  // required exercises are outstanding.
+  // not just the ones completed — an exercise that's missing or not fully
+  // completed today contributes 0 rather than being dropped from the
+  // average, so a single good exercise can't read as a perfect overall score
+  // while other required exercises are outstanding.
   const readiness = activeExercises.length
     ? Math.round(
-        perExerciseReadiness.reduce((sum, e) => sum + (e.testedToday ? e.readiness ?? 0 : 0), 0) / activeExercises.length,
+        perExerciseReadiness.reduce((sum, e) => sum + (e.completedToday ? e.readiness ?? 0 : 0), 0) / activeExercises.length,
       )
     : 0;
 
@@ -186,15 +187,21 @@ function buildViewModel(
     ? new Date(latest.recorded_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
     : null;
 
-  // Missing today: active (required) exercises with no session recorded today
-  const missingTests = perExerciseReadiness.filter((e) => !e.testedToday).length;
+  // Missing today: active (required) exercises not fully completed today —
+  // "completed" means every required set, not merely attempted (see
+  // supabase/migrations/022_routine_sets.sql).
+  const missingTests = perExerciseReadiness.filter((e) => !e.completedToday).length;
 
-  // Status: REVIEW if no history yet or any required exercise's most recent
-  // attempt failed (reps/readiness); WATCH if everything so far passes but
-  // today's tests aren't all done; else READY.
-  const anyFailed = perExerciseReadiness.some((e) => e.passed === false);
+  // Status: RED if there's no history yet, or a required exercise is either
+  // fully completed with an at-risk readiness reading, or was attempted
+  // today but left incomplete (a real, current problem) — YELLOW if
+  // everything attempted so far is fine but some exercises haven't been
+  // started yet today — else GREEN.
+  const anyAtRisk = perExerciseReadiness.some((e) =>
+    e.completedToday ? (e.readiness != null && e.readiness < AT_RISK_READINESS_FLOOR) : e.attemptedToday,
+  );
   let status: AthleteStatus = 'green';
-  if (sessions.length === 0 || anyFailed) status = 'red';
+  if (sessions.length === 0 || anyAtRisk) status = 'red';
   else if (missingTests > 0) status = 'yellow';
 
   // Physical profile

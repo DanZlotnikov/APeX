@@ -1,11 +1,14 @@
 import { DarkTheme, NavigationContainer, useNavigationContainerRef } from '@react-navigation/native';
 import { createMaterialTopTabNavigator } from '@react-navigation/material-top-tabs';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import React, { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import AppBar from './dashboard/AppBar';
+import HistoryDetailScreen from './dashboard/HistoryDetailScreen';
 import IndividualRoutineScreen from './IndividualRoutineScreen';
 import OverviewScreen from './dashboard/OverviewScreen';
 import PerformanceScreen, { PerformanceSub } from './dashboard/PerformanceScreen';
+import ReadinessScreen from './dashboard/ReadinessScreen';
 import SettingsScreen from './dashboard/SettingsScreen';
 import FloatingTabBar from '../components/FloatingTabBar';
 import ProcessingBanner from '../components/ProcessingBanner';
@@ -15,6 +18,29 @@ import { useVideoJobsContext } from '../state/VideoJobsContext';
 import { colors } from '../theme';
 
 const Tab = createMaterialTopTabNavigator();
+const OverviewStackNav = createNativeStackNavigator();
+
+// Wraps OverviewScreen in its own local stack (same pattern
+// PerformanceScreen.tsx's HistoryStack already uses) so tapping its
+// "READINESS TREND" card can push a Readiness screen while Overview stays a
+// peer of the other top-tabs. HistoryDetail is duplicated here rather than
+// shared cross-stack with Performance's own copy — same duplication
+// Performance/History already has between the athlete and manager surfaces.
+function OverviewStack({ userId }: { userId?: string }) {
+  return (
+    <OverviewStackNav.Navigator screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
+      <OverviewStackNav.Screen name="OverviewMain">
+        {() => <OverviewScreen userId={userId} />}
+      </OverviewStackNav.Screen>
+      <OverviewStackNav.Screen name="Readiness">
+        {() => <ReadinessScreen athleteId={userId} backLabel="Overview" />}
+      </OverviewStackNav.Screen>
+      <OverviewStackNav.Screen name="HistoryDetail">
+        {() => <HistoryDetailScreen userId={userId} />}
+      </OverviewStackNav.Screen>
+    </OverviewStackNav.Navigator>
+  );
+}
 
 // ︎ = variation selector-15: forces text rendering, prevents iOS emoji substitution
 const GLYPH: Record<string, string> = { Overview: '◉︎', Performance: '≡︎', Routine: '☑︎' };
@@ -77,7 +103,7 @@ export default function DashboardScreen({ userId, teamId, onRecord, onUpload, on
             }}
           >
             <Tab.Screen name="Overview">
-              {() => <OverviewScreen userId={userId} />}
+              {() => <OverviewStack userId={userId} />}
             </Tab.Screen>
             <Tab.Screen name="Performance">
               {() => <PerformanceScreen userId={userId} sub={performanceSub} onSubChange={setPerformanceSub} />}

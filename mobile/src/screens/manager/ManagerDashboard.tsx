@@ -4,7 +4,7 @@ import { getTeamAthletes } from '../../api/athletes';
 import { supabase } from '../../api/supabase';
 import { AthleteViewModel, TeamStatsViewModel } from '../../api/types';
 import { colors, spacing } from '../../theme';
-import { exerciseLabel, PIPELINE_EXERCISE_KEYS } from '../../utils/pipelineExercise';
+import { exerciseLabel, getPipelineExerciseKeys } from '../../utils/pipelineExercise';
 import AthleteMonitoringTable, { ExerciseColumn } from './components/AthleteMonitoringTable';
 import ComplianceCard from './components/ComplianceCard';
 import TeamReadinessCard from './components/TeamReadinessCard';
@@ -64,8 +64,9 @@ export default function ManagerDashboard({ teamId, onAthleteSelect }: Props) {
       for (const a of data) {
         for (const e of a.perExerciseReadiness) active.add(e.key);
       }
+      const keys = await getPipelineExerciseKeys();
       setExerciseColumns(
-        PIPELINE_EXERCISE_KEYS.filter((k) => active.has(k)).map((k) => ({ key: k, label: exerciseLabel(k) })),
+        keys.filter((k) => active.has(k)).map((k) => ({ key: k, label: exerciseLabel(k) })),
       );
     } catch (e) {
       console.warn('Failed to load athletes', e);

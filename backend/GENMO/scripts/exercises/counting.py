@@ -151,6 +151,7 @@ def count_flight_phase(
     takeoff_fraction: float,
     landing_fraction: float,
     min_flight_sec: float,
+    max_flight_sec: float,
 ) -> list[Rep]:
     """Takeoff/landing detection for airborne exercises (vertical jump).
 
@@ -165,7 +166,16 @@ def count_flight_phase(
 
     `min_flight_sec` rejects landmark-noise blips (e.g. a heel rise at the
     bottom of a squat can momentarily nudge the height signal) — a genuine
-    airborne phase lasts much longer than one noisy frame.
+    airborne phase lasts much longer than one noisy frame. `max_flight_sec`
+    rejects the opposite failure: a *sustained* height-signal drift (e.g.
+    depth/pose-estimation error across an entire squat's multi-second
+    descend-hold-ascend) can stay above takeoff_t continuously for seconds,
+    which min_flight_sec alone can't catch since it only floors the
+    duration. No human vertical jump's actual airborne phase gets anywhere
+    close to a second (even an elite ~1.2m standing vertical is under 1s of
+    true flight time), so any candidate exceeding this is categorically not
+    a jump — a real detection error further downstream (e.g. squat's own
+    threshold-crossing missing depth on the same clip), not a jump to award.
     """
     L = len(height_signal)
     if L < 10:
@@ -189,7 +199,8 @@ def count_flight_phase(
             if rise > peak_val:
                 peak_val, peak_idx = rise, i
             if rise < landing_t:
-                if times[i] - times[takeoff_idx] >= min_flight_sec:
+                flight_sec = times[i] - times[takeoff_idx]
+                if min_flight_sec <= flight_sec <= max_flight_sec:
                     reps.append({"start": takeoff_idx, "bottom": peak_idx, "end": i})
                 in_flight = False
     return reps

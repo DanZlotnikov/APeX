@@ -9,10 +9,10 @@ import { confirmAsync } from '../../utils/confirm';
 
 const PRIVACY_POLICY_URL = 'https://danzlotnikov.github.io/APeX/privacy-policy.html';
 
-// Exercise-related routine settings (which exercises, target reps) are now
-// per-athlete — set on each athlete's own "Routine" tab in
-// AthleteDetailPreview.tsx, backed by athlete_routines (see
-// supabase/migrations/021_individual_routines.sql) — not this screen.
+// Exercise-related routine settings (which exercises, sets, target reps per
+// set) are now per-athlete — set on each athlete's own "Routine" tab in
+// AthleteDetailPreview.tsx, backed by athlete_routine_sets (see
+// supabase/migrations/022_routine_sets.sql) — not this screen.
 
 const ACCENT_KEYS = Object.keys(ACCENTS) as AccentKey[];
 const FONT_OPTS: { key: FontScaleKey; label: string }[] = [

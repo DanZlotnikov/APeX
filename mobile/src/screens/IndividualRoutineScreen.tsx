@@ -3,10 +3,12 @@ import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import PrimaryButton from '../components/PrimaryButton';
 import RepStepper from '../components/RepStepper';
-import { addOrUpdateRoutineExercise, getRoutine, removeRoutineExercise, RoutineSetting } from '../api/routine';
+import {
+  addExercise, addSet, getRoutine, removeExercise, removeSet, RoutineExercise, updateSetReps,
+} from '../api/routine';
 import { useSettings } from '../state/SettingsContext';
 import { colors, spacing } from '../theme';
-import { exerciseLabel, PIPELINE_EXERCISE_KEYS, PipelineExerciseKey } from '../utils/pipelineExercise';
+import { exerciseLabel, getPipelineExerciseKeys, PipelineExerciseKey } from '../utils/pipelineExercise';
 
 interface Props {
   athleteId?: string;
@@ -16,26 +18,30 @@ interface Props {
   readOnly: boolean;
 }
 
-const DEFAULT_TARGET_REPS = 5;
+const DEFAULT_SET_REPS = 3;
 // Roughly 2/3 of RepStepper's own BTN_SIZE (36) — see removeBtn's style comment.
 const REMOVE_BTN_SIZE = 24;
 
 // Shared by both the athlete's own "Routine" tab (DashboardScreen) and the
 // manager's per-athlete "Routine" tab (AthleteDetailPreview) — same
-// component, same look/behavior either way, just readOnly differs (see
-// supabase/migrations/021_individual_routines.sql: an athlete_routines row
-// IS the routine now, no more team-wide default + per-athlete override).
+// component, same look/behavior either way, just readOnly differs. Each
+// exercise is now a list of ordered sets, each with its own rep target (see
+// supabase/migrations/022_routine_sets.sql) — presence of >=1 set row IS the
+// exercise being "in the routine", same convention the old flat-target model
+// already used for whole exercises.
 export default function IndividualRoutineScreen({ athleteId, readOnly }: Props) {
   const { accentColor } = useSettings();
-  const [routine, setRoutine] = useState<RoutineSetting[]>([]);
+  const [routine, setRoutine] = useState<RoutineExercise[]>([]);
+  const [allKeys, setAllKeys] = useState<PipelineExerciseKey[]>([]);
   const [loading, setLoading] = useState(true);
   const [addOpen, setAddOpen] = useState(false);
 
   const load = useCallback(async () => {
     if (!athleteId) { setLoading(false); return; }
     try {
-      const r = await getRoutine(athleteId);
+      const [r, keys] = await Promise.all([getRoutine(athleteId), getPipelineExerciseKeys()]);
       setRoutine(r);
+      setAllKeys(keys);
     } catch (e) {
       console.warn('[APeX] Failed to load routine:', e);
     } finally {
@@ -45,24 +51,23 @@ export default function IndividualRoutineScreen({ athleteId, readOnly }: Props) 
 
   useFocusEffect(useCallback(() => { void load(); }, [load]));
 
-  const activeEntries = routine.filter((r) => r.enabled);
-  const availableKeys = PIPELINE_EXERCISE_KEYS.filter(
+  const activeEntries = routine.filter((r) => r.sets.length > 0);
+  const availableKeys = allKeys.filter(
     (k) => !activeEntries.some((r) => r.exerciseType === k),
   );
 
-  // Picking an exercise adds it immediately at the default rep target and
-  // closes the modal right away — the reps can then be adjusted on its card
-  // via the same RepStepper every other row already uses, no separate
-  // "set reps before adding" step.
+  // Picking an exercise adds it immediately with one set at the default rep
+  // target and closes the modal right away — sets can then be tuned or added
+  // to on its card via the same controls every other row already uses.
   async function handlePickExercise(key: PipelineExerciseKey) {
     if (!athleteId) return;
     setAddOpen(false);
     setRoutine((prev) => [
       ...prev.filter((r) => r.exerciseType !== key),
-      { exerciseType: key, enabled: true, targetReps: DEFAULT_TARGET_REPS },
+      { exerciseType: key, sets: [{ index: 0, targetReps: DEFAULT_SET_REPS }] },
     ]);
     try {
-      await addOrUpdateRoutineExercise(athleteId, key, DEFAULT_TARGET_REPS);
+      await addExercise(athleteId, key);
     } catch (e) {
       console.warn('[APeX] Failed to add routine exercise:', e);
       Alert.alert('Could not add exercise', 'Something went wrong. Please try again.');
@@ -70,16 +75,52 @@ export default function IndividualRoutineScreen({ athleteId, readOnly }: Props) 
     }
   }
 
-  async function updateReps(key: PipelineExerciseKey, reps: number) {
+  async function handleAddSet(key: PipelineExerciseKey) {
     if (!athleteId) return;
-    const prevEntry = routine.find((r) => r.exerciseType === key);
-    setRoutine((prev) => prev.map((r) => (r.exerciseType === key ? { ...r, targetReps: reps } : r)));
+    const exercise = routine.find((r) => r.exerciseType === key);
+    if (!exercise) return;
+    const newIndex = exercise.sets.length ? Math.max(...exercise.sets.map((s) => s.index)) + 1 : 0;
+    setRoutine((prev) => prev.map((r) => (
+      r.exerciseType === key ? { ...r, sets: [...r.sets, { index: newIndex, targetReps: DEFAULT_SET_REPS }] } : r
+    )));
     try {
-      await addOrUpdateRoutineExercise(athleteId, key, reps);
+      await addSet(athleteId, key, exercise.sets);
     } catch (e) {
-      console.warn('[APeX] Failed to update reps:', e);
-      if (prevEntry) setRoutine((prev) => prev.map((r) => (r.exerciseType === key ? prevEntry : r)));
+      console.warn('[APeX] Failed to add set:', e);
+      setRoutine((prev) => prev.map((r) => (r.exerciseType === key ? exercise : r)));
+      Alert.alert('Could not add set', 'Something went wrong. Please try again.');
+    }
+  }
+
+  async function updateSetTargetReps(key: PipelineExerciseKey, setIndex: number, reps: number) {
+    if (!athleteId) return;
+    const prevExercise = routine.find((r) => r.exerciseType === key);
+    setRoutine((prev) => prev.map((r) => (
+      r.exerciseType === key
+        ? { ...r, sets: r.sets.map((s) => (s.index === setIndex ? { ...s, targetReps: reps } : s)) }
+        : r
+    )));
+    try {
+      await updateSetReps(athleteId, key, setIndex, reps);
+    } catch (e) {
+      console.warn('[APeX] Failed to update set reps:', e);
+      if (prevExercise) setRoutine((prev) => prev.map((r) => (r.exerciseType === key ? prevExercise : r)));
       Alert.alert('Could not save', 'Something went wrong updating the rep target. Please try again.');
+    }
+  }
+
+  async function deleteSet(key: PipelineExerciseKey, setIndex: number) {
+    if (!athleteId) return;
+    const prevExercise = routine.find((r) => r.exerciseType === key);
+    setRoutine((prev) => prev.map((r) => (
+      r.exerciseType === key ? { ...r, sets: r.sets.filter((s) => s.index !== setIndex) } : r
+    )));
+    try {
+      await removeSet(athleteId, key, setIndex);
+    } catch (e) {
+      console.warn('[APeX] Failed to remove set:', e);
+      if (prevExercise) setRoutine((prev) => prev.map((r) => (r.exerciseType === key ? prevExercise : r)));
+      Alert.alert('Could not remove set', 'Something went wrong removing this set. Please try again.');
     }
   }
 
@@ -88,7 +129,7 @@ export default function IndividualRoutineScreen({ athleteId, readOnly }: Props) 
     const prevRoutine = routine;
     setRoutine((prev) => prev.filter((r) => r.exerciseType !== key));
     try {
-      await removeRoutineExercise(athleteId, key);
+      await removeExercise(athleteId, key);
     } catch (e) {
       console.warn('[APeX] Failed to remove routine exercise:', e);
       setRoutine(prevRoutine);
@@ -107,8 +148,8 @@ export default function IndividualRoutineScreen({ athleteId, readOnly }: Props) 
         <Text style={styles.title}>Daily exercises</Text>
         <Text style={styles.subtitle}>
           {readOnly
-            ? "Your manager controls your routine — exercises and rep targets are set for you."
-            : 'Add exercises and set how many reps you want done each day. Tap × to remove one.'}
+            ? "Your manager controls your routine — exercises, sets and reps are set for you."
+            : 'Add exercises, then add sets and set how many reps each set needs.'}
         </Text>
         {!readOnly && availableKeys.length > 0 && (
           <PrimaryButton label="+ Add Exercise" onPress={() => setAddOpen(true)} style={styles.addBtn} />
@@ -129,21 +170,46 @@ export default function IndividualRoutineScreen({ athleteId, readOnly }: Props) 
                   spans the card's full content width (including the blank
                   paddingRight reserved for the button below), so without
                   this it sits geometrically on top of the remove button's
-                  hit box and swallows touches meant for it — confirmed to
-                  be exactly why only a sliver of that box was ever
-                  reachable. A plain label never needs to intercept touches. */}
+                  hit box and swallows touches meant for it. A plain label
+                  never needs to intercept touches. */}
               <Text style={styles.exerciseLabel} pointerEvents="none">{exerciseLabel(entry.exerciseType)}</Text>
-              <View style={styles.stepperBlock}>
-                <RepStepper
-                  min={1}
-                  max={10}
-                  value={entry.targetReps}
-                  onChange={(v) => void updateReps(entry.exerciseType, v)}
-                  disabled={readOnly}
-                  accentColor={accentColor}
-                />
-                <Text style={styles.repsCaption}>REPS</Text>
-              </View>
+
+              {entry.sets.map((set, i) => (
+                <View key={set.index} style={styles.setRow}>
+                  <Text style={styles.setLabel}>SET {i + 1}</Text>
+                  <View style={styles.setStepperWrap}>
+                    <RepStepper
+                      min={1}
+                      max={10}
+                      value={set.targetReps}
+                      onChange={(v) => void updateSetTargetReps(entry.exerciseType, set.index, v)}
+                      disabled={readOnly}
+                      accentColor={accentColor}
+                    />
+                  </View>
+                  {/* Removing an exercise's last set is blocked here — use
+                      the exercise's own × below to remove the whole thing,
+                      so a single tap can't silently wipe it out. */}
+                  {!readOnly && entry.sets.length > 1 && (
+                    <Pressable
+                      onPress={() => void deleteSet(entry.exerciseType, set.index)}
+                      style={({ pressed }) => [styles.removeSetBtn, pressed && styles.pressed]}
+                    >
+                      <Text style={styles.removeSetBtnText}>−</Text>
+                    </Pressable>
+                  )}
+                </View>
+              ))}
+
+              {!readOnly && (
+                <Pressable
+                  onPress={() => void handleAddSet(entry.exerciseType)}
+                  style={({ pressed }) => [styles.addSetBtn, { borderColor: accentColor }, pressed && styles.pressed]}
+                >
+                  <Text style={[styles.addSetBtnText, { color: accentColor }]}>+ Add Set</Text>
+                </Pressable>
+              )}
+
               {/* Rendered last (not first) so it also paints in front for
                   hit-testing purposes — belt and suspenders alongside the
                   pointerEvents fix above. Same button as RepStepper's own
@@ -220,10 +286,65 @@ const styles = StyleSheet.create({
   },
   exerciseLabel: { color: colors.text, fontSize: 16, fontWeight: '800', paddingRight: REMOVE_BTN_SIZE + spacing.sm + spacing.xs },
 
+  setRow: { flexDirection: 'row', alignItems: 'center', marginTop: spacing.md },
+  setLabel: { color: colors.muted, fontSize: 10, fontWeight: '700', letterSpacing: 1.2, width: 48 },
+  // flex: 1 so it soaks up the row's remaining width, pinning the "-" button
+  // (a fixed-size sibling, not flexed) to the row's right edge without any
+  // absolute positioning.
+  setStepperWrap: { flex: 1 },
+
   // Exactly RepStepper's own +/- button (BTN_SIZE=36, borderWidth 1.5, no
   // background, no hitSlop) at half the size and in gray instead of the
   // accent color — that one is proven reliable to tap in practice, so this
-  // reuses the identical structure rather than a custom hit-area trick.
+  // reuses the identical structure rather than a custom hit-area trick. Same
+  // treatment as the exercise-level removeBtn below, just inline in the set
+  // row instead of absolutely positioned (no overlapping sibling here, so no
+  // hit-testing workaround needed).
+  removeSetBtn: {
+    width: REMOVE_BTN_SIZE,
+    height: REMOVE_BTN_SIZE,
+    borderRadius: REMOVE_BTN_SIZE / 2,
+    borderWidth: 1.5,
+    borderColor: colors.muted,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: spacing.sm,
+  },
+  removeSetBtnText: {
+    color: colors.muted,
+    fontSize: 14,
+    fontWeight: '800',
+    includeFontPadding: false,
+    marginTop: -1,
+  },
+
+  // Full-width dashed-outline row (Notion/Trello-style "+ Add" placeholder)
+  // rather than a small self-start pill — reads as a clear, intentional
+  // list-editor action instead of a stray floating button, and the dashed
+  // border alone signals "add a new item" without needing an extra divider
+  // line above it. marginTop is deliberately much larger than the spacing
+  // between set rows (spacing.md) so this reads as a distinct trailing
+  // action, not one more item in the list.
+  addSetBtn: {
+    marginTop: spacing.lg,
+    paddingVertical: spacing.sm + 2,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addSetBtnText: { fontSize: 13, fontWeight: '700', letterSpacing: 0.5 },
+
+  // Giving the text an explicit box matching the button (previous attempt)
+  // backfired on iOS — textAlignVertical is Android-only, so on iOS that
+  // just left the glyph top-aligned within its own now-full-size box
+  // instead of centered by the parent. Reverted to letting the text size
+  // naturally to its own content so the Pressable's alignItems/
+  // justifyContent: 'center' actually does the centering, with
+  // includeFontPadding: false (Android's extra font-metric padding around
+  // text) and a small manual nudge down — × commonly sits slightly above
+  // true center in most fonts' own glyph metrics.
   removeBtn: {
     position: 'absolute',
     top: spacing.sm,
@@ -236,15 +357,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // Giving the text an explicit box matching the button (previous attempt)
-  // backfired on iOS — textAlignVertical is Android-only, so on iOS that
-  // just left the glyph top-aligned within its own now-full-size box
-  // instead of centered by the parent. Reverted to letting the text size
-  // naturally to its own content so the Pressable's alignItems/
-  // justifyContent: 'center' actually does the centering, with
-  // includeFontPadding: false (Android's extra font-metric padding around
-  // text) and a small manual nudge down — × commonly sits slightly above
-  // true center in most fonts' own glyph metrics.
   removeBtnText: {
     color: colors.muted,
     fontSize: 14,
@@ -252,9 +364,6 @@ const styles = StyleSheet.create({
     includeFontPadding: false,
     marginTop: -1,
   },
-
-  stepperBlock: { flexDirection: 'row', alignItems: 'center', marginTop: spacing.md },
-  repsCaption: { color: colors.muted, fontSize: 10, fontWeight: '700', letterSpacing: 1.2, marginLeft: spacing.sm },
 
   backdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)' },
   modalCard: {

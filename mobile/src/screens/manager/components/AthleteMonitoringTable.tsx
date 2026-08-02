@@ -31,11 +31,12 @@ interface Props {
   colorMode?: ColorMode;
 }
 
-// Only surface a value if that exercise was actually tested today — no
-// falling back to an older session's score.
+// Only surface a value once that exercise's required sets are fully
+// completed today — no partial credit for an incomplete set, no falling
+// back to an older session's score (see supabase/migrations/022_routine_sets.sql).
 function exerciseValue(athlete: AthleteViewModel, key: PipelineExerciseKey): number | null {
   const e = athlete.perExerciseReadiness.find((ex) => ex.key === key);
-  return e?.testedToday ? e.readiness : null;
+  return e?.completedToday ? e.readiness : null;
 }
 
 export default function AthleteMonitoringTable({

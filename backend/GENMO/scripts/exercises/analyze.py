@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import numpy as np
 
-from . import discriminators
 from . import exercises as _exercises_data  # noqa: F401  registers every ExerciseDefinition on import
 from .counting import count_flight_phase, count_swing_detector, count_threshold_crossing
 from .definitions import EXERCISE_REGISTRY, BodyOrientation, CountingStrategy, exercises_for_orientation
@@ -94,34 +93,24 @@ def _run_exercise(defn, signals: dict, times: np.ndarray, flight_signals: tuple[
             takeoff_fraction=defn.param("takeoff_fraction"),
             landing_fraction=defn.param("landing_fraction"),
             min_flight_sec=defn.param("min_flight_sec"),
+            max_flight_sec=defn.param("max_flight_sec"),
         )
 
     raise ValueError(f"Unknown counting strategy: {defn.counting_strategy}")
 
 
 def _resolve_standing(signals: dict, reps_by_key: dict[str, list], defs: list) -> dict[str, list]:
-    """STANDING holds 3 exercises that can genuinely be confused with one
-    another: a jump's countermovement dip can look like a shallow squat,
-    and squat/deadlift share the same knee/hip-flexion signature. Real
+    """STANDING holds 2 exercises that can be confused with one another: a
+    jump's countermovement dip can look like a shallow squat. Real
     flight-phase evidence is stronger and less ambiguous than a threshold-
-    crossing guess, so a detected jump wins outright over both. Otherwise,
-    if squat and deadlift both register, the hip/knee ROM-ratio
-    discriminator breaks the tie (see discriminators.py).
+    crossing guess, so a detected jump wins outright over squat. (deadlift
+    used to share STANDING too and needed a real ROM-ratio discriminator
+    against squat — removed from the pipeline entirely, see exercises.py.)
     """
     jump_reps = reps_by_key.get("vertical_jump", [])
     if jump_reps:
-        return {"vertical_jump": jump_reps, "squat": [], "deadlift": []}
-
-    squat_reps = reps_by_key.get("squat", [])
-    deadlift_reps = reps_by_key.get("deadlift", [])
-    if squat_reps and deadlift_reps:
-        hip_dominant_ratio = EXERCISE_REGISTRY["deadlift"].param("hip_dominant_ratio")
-        winner = discriminators.hinge_vs_squat(signals, hip_dominant_ratio)
-        if winner == "squat":
-            deadlift_reps = []
-        else:
-            squat_reps = []
-    return {"vertical_jump": [], "squat": squat_reps, "deadlift": deadlift_reps}
+        return {"vertical_jump": jump_reps, "squat": []}
+    return {"vertical_jump": [], "squat": reps_by_key.get("squat", [])}
 
 
 def _resolve_by_priority(signals: dict, reps_by_key: dict[str, list], defs: list) -> dict[str, list]:

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LicenseRef-NVIDIA-OneWay-Noncommercial
 """
-The 7 supported exercises, as data. This is the file to open to see or
+The 6 supported exercises, as data. This is the file to open to see or
 change what the pipeline detects and how — see definitions.py for the
 dataclass shapes and the reasoning behind them.
 
@@ -8,8 +8,9 @@ Every numeric threshold below is either a direct research citation or an
 explicit note on why it's adapted/estimated where the literature doesn't
 give a precise pose-estimation-ready number. squat and vertical_jump keep
 their existing, previously-validated citations; pull_up's citations are new
-(the prior version had none); deadlift, push_up, and ab_crunch are new
-exercises entirely.
+(the prior version had none); push_up and ab_crunch are new exercises
+entirely. (deadlift was briefly reintroduced here and has since been
+removed for good — see git history and analyze.py's _resolve_standing.)
 """
 from __future__ import annotations
 
@@ -62,70 +63,19 @@ register(ExerciseDefinition(
             "How close to standing (knee extended) counts as 'back up', "
             "confirming the rep.",
         ),
-        "torso_lean_max_deg": TunableParam(
-            "torso_lean_max_deg", "Max torso lean", "deg", 40, 15, 70, 5,
-            "Torso lean from vertical must stay under this at depth — an "
-            "upright torso is what makes it a squat rather than a hip hinge.",
-        ),
     },
-    corroboration=(("torso_lean", "lt", "torso_lean_max_deg"),),
-    discriminator="hinge_vs_squat",
-    priority=50,
-))
-
-# ═══════════════════════════════════════════════════════════════════════════
-# DEADLIFT
-# ═══════════════════════════════════════════════════════════════════════════
-# A hip hinge is defined by the hips shifting back and the torso rotating
-# forward from the hip, while the knees stay close to vertical (5-20 deg of
-# soft bend) — hip flexion dominates, knee flexion is minimal (FitnessRec;
-# sciencewatch.blog hip-hinge biomechanics guide). That ratio — not a single
-# absolute torso-lean cutoff — is what actually distinguishes a hinge from a
-# squat; a fixed cutoff is exactly what caused deadlift to be pulled from
-# the mobile app entirely (see mobile/src/utils/exerciseAnalyzer.ts's header
-# comment). No peer-reviewed source was found giving a precise degrees-based
-# hip-angle ROM standard for the deadlift specifically (unlike squat's
-# well-quantified depth literature) — min_rom_deg/depth_fraction/
-# stand_fraction below mirror squat's adaptive-ROM pattern rather than a
-# literature-specified number, since the qualitative hinge criteria above
-# don't translate to one.
-register(ExerciseDefinition(
-    key="deadlift",
-    label="Deadlift",
-    short_label="DEADLIFT",
-    description="Hip hinge: hips travel back and the torso rotates forward "
-                 "from the hip while the knees stay close to vertical, then "
-                 "return to a fully upright lockout.",
-    research=(
-        "FitnessRec — hip hinge technique for athletes",
-        "sciencewatch.blog — deadlift hip-hinge biomechanics guide",
-        "PowerliftingTechnique.com — hip position for deadlifts",
-    ),
-    orientation=BodyOrientation.STANDING,
-    primary_signal="hip_angle",
-    counting_strategy=CountingStrategy.THRESHOLD_CROSSING,
-    params={
-        "min_rom_deg": TunableParam(
-            "min_rom_deg", "Minimum range of motion", "deg", 30, 15, 60, 1,
-            "Hip-angle change required before a rep counts — filters "
-            "incidental hip movement (e.g. adjusting stance) from a real hinge.",
-        ),
-        "depth_fraction": TunableParam(
-            "depth_fraction", "Depth threshold", "fraction of ROM", 0.25, 0.05, 0.5, 0.05,
-            "How close to this clip's deepest observed hip flexion counts "
-            "as 'at the bottom'.",
-        ),
-        "stand_fraction": TunableParam(
-            "stand_fraction", "Lockout threshold", "fraction of ROM", 0.55, 0.3, 0.9, 0.05,
-            "How close to fully upright counts as lockout, confirming the rep.",
-        ),
-        "hip_dominant_ratio": TunableParam(
-            "hip_dominant_ratio", "Hip/knee dominance ratio", "ratio", 1.3, 1.0, 3.0, 0.1,
-            "How much more the hip must move than the knee (by range of "
-            "motion) to be classified as a hinge rather than a squat.",
-        ),
-    },
-    discriminator="hinge_vs_squat",
+    # No corroboration gate: this used to require torso_lean to stay under a
+    # fixed 40deg at the depth-crossing frame specifically to rule out a hip
+    # hinge (deadlift) — but that absolute cutoff could itself get crossed by
+    # ordinary pose-estimation noise or a slightly deeper forward lean,
+    # silently zeroing out a real squat rep with no partial credit (confirmed
+    # against real clips: squat scored 0 while a sibling STANDING exercise
+    # won by default — see backend_run.log evidence for job f92db09b...).
+    # Now that deadlift is gone, squat has nothing left to be confused with
+    # besides vertical_jump (already handled by real flight-phase evidence,
+    # see count_flight_phase's max_flight_sec) — so this gate no longer
+    # serves any purpose and only cost real detections. min_rom_deg/
+    # depth_fraction/stand_fraction on knee_angle alone is squat's signal now.
     priority=50,
 ))
 
@@ -175,8 +125,21 @@ register(ExerciseDefinition(
             "Rejects landmark-noise blips (e.g. a heel rise mid-squat) — a "
             "real airborne phase lasts much longer than one noisy frame.",
         ),
+        # No human standing vertical jump gets anywhere near 1s of true
+        # airtime (t = 2*sqrt(2h/g); even an elite ~1.2m jump is ~0.99s) —
+        # this catches the opposite failure from min_flight_sec: a sustained
+        # height-signal drift across a multi-second squat rep (not a single
+        # noisy frame) staying above the takeoff threshold long enough to
+        # clear min_flight_sec too. Confirmed against a real misclassified
+        # clip where a squat's ~3.8s bottom phase registered as one "flight".
+        "max_flight_sec": TunableParam(
+            "max_flight_sec", "Maximum flight duration", "sec", 1.0, 0.5, 1.5, 0.05,
+            "Rejects candidate flight phases no real jump could produce — "
+            "almost always a sustained pose-tracking drift during a "
+            "different, longer-duration exercise (e.g. a squat).",
+        ),
     },
-    priority=100,  # real flight evidence beats the squat/deadlift threshold-crossing guess
+    priority=100,  # real flight evidence beats squat's threshold-crossing guess
 ))
 
 # ═══════════════════════════════════════════════════════════════════════════

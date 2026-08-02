@@ -187,7 +187,7 @@
   function exerciseLabel(key) {
     const labels = {
       squat: 'Squat', jump: 'Vertical Jump', vertical_jump: 'Vertical Jump',
-      pullup: 'Pull-Up', pull_up: 'Pull-Up', deadlift: 'Deadlift',
+      pullup: 'Pull-Up', pull_up: 'Pull-Up',
       push_up: 'Push-Up', ab_crunch: 'Ab Crunch',
     };
     return labels[key] || key || '—';

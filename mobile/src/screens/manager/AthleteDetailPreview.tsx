@@ -1,4 +1,4 @@
-import { DarkTheme, NavigationContainer } from '@react-navigation/native';
+import { DarkTheme, NavigationContainer, useNavigation } from '@react-navigation/native';
 import { createMaterialTopTabNavigator } from '@react-navigation/material-top-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import React, { useState } from 'react';
@@ -12,10 +12,12 @@ import { confirmAsync } from '../../utils/confirm';
 import { readinessColor as colorForReadiness } from '../../utils/readiness';
 import HistoryDetailScreen from '../dashboard/HistoryDetailScreen';
 import HistoryScreen from '../dashboard/HistoryScreen';
+import ReadinessScreen from '../dashboard/ReadinessScreen';
 import IndividualRoutineScreen from '../IndividualRoutineScreen';
 
 const Tab = createMaterialTopTabNavigator();
 const HistoryStackNav = createNativeStackNavigator();
+const ProfileStackNav = createNativeStackNavigator();
 
 // ︎ = variation selector-15: forces text rendering, prevents iOS emoji substitution
 // Routine reuses the same glyph as the athlete-side Routine tab
@@ -51,7 +53,7 @@ export default function AthleteDetailPreview({ athlete, onStatusChanged }: Props
         }}
       >
         <Tab.Screen name="Profile">
-          {() => <AthleteProfileTab athlete={athlete} onStatusChanged={onStatusChanged} />}
+          {() => <AthleteProfileStack athlete={athlete} onStatusChanged={onStatusChanged} />}
         </Tab.Screen>
         <Tab.Screen name="History">
           {() => <AthleteHistoryTab athleteId={athlete.id} />}
@@ -77,7 +79,29 @@ function AthleteHistoryTab({ athleteId }: { athleteId: string }) {
   );
 }
 
+// Wraps AthleteProfileTab in its own local stack (same pattern
+// AthleteHistoryTab above already uses) so tapping its "READINESS TREND"
+// card can push a Readiness screen while Profile stays a peer of the other
+// top-tabs. HistoryDetail is duplicated here rather than shared cross-stack
+// with History's own copy — same duplication already established above.
+function AthleteProfileStack({ athlete, onStatusChanged }: Props) {
+  return (
+    <ProfileStackNav.Navigator screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
+      <ProfileStackNav.Screen name="ProfileMain">
+        {() => <AthleteProfileTab athlete={athlete} onStatusChanged={onStatusChanged} />}
+      </ProfileStackNav.Screen>
+      <ProfileStackNav.Screen name="Readiness">
+        {() => <ReadinessScreen athleteId={athlete.id} backLabel="Profile" />}
+      </ProfileStackNav.Screen>
+      <ProfileStackNav.Screen name="HistoryDetail">
+        {() => <HistoryDetailScreen userId={athlete.id} canDelete={false} />}
+      </ProfileStackNav.Screen>
+    </ProfileStackNav.Navigator>
+  );
+}
+
 function AthleteProfileTab({ athlete, onStatusChanged }: Props) {
+  const navigation = useNavigation<any>();
   const readinessColor = colorForReadiness(athlete.readiness);
   const [marking, setMarking] = useState(false);
   const [markError, setMarkError] = useState<string | null>(null);
@@ -155,22 +179,30 @@ function AthleteProfileTab({ athlete, onStatusChanged }: Props) {
           <ProfileCell label="AGE"      value={String(athlete.profile.age)} />
         </View>
 
-        {/* ── Readiness trend ── */}
+        {/* ── Readiness trend — tap through to the full per-exercise
+            Readiness screen (screens/dashboard/ReadinessScreen.tsx); this
+            card itself is unchanged, just now an entry point. ── */}
         {history.length > 0 && (
-          <View style={styles.card}>
+          <Pressable
+            onPress={() => navigation.navigate('Readiness')}
+            style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
+          >
             <View style={styles.cardHead}>
               <Text style={styles.cardTitle}>READINESS TREND</Text>
-              {history.length >= 2 && (
-                <View style={[
-                  styles.trendBadge,
-                  {
-                    borderColor:       trendColor,
-                    backgroundColor:   trendPositive ? 'rgba(0,212,188,0.08)' : 'rgba(255,59,48,0.08)',
-                  },
-                ]}>
-                  <Text style={[styles.trendBadgeText, { color: trendColor }]}>{trendLabel} vs prev</Text>
-                </View>
-              )}
+              <View style={styles.cardHeadRight}>
+                {history.length >= 2 && (
+                  <View style={[
+                    styles.trendBadge,
+                    {
+                      borderColor:       trendColor,
+                      backgroundColor:   trendPositive ? 'rgba(0,212,188,0.08)' : 'rgba(255,59,48,0.08)',
+                    },
+                  ]}>
+                    <Text style={[styles.trendBadgeText, { color: trendColor }]}>{trendLabel} vs prev</Text>
+                  </View>
+                )}
+                <Text style={styles.cardChevron}>›</Text>
+              </View>
             </View>
 
             <View style={styles.trendMiniStats}>
@@ -189,7 +221,7 @@ function AthleteProfileTab({ athlete, onStatusChanged }: Props) {
               startLabel="Last 30 days"
               endLabel="Today"
             />
-          </View>
+          </Pressable>
         )}
 
         {/* ── Last test ── */}
@@ -295,7 +327,10 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     gap: spacing.sm,
   },
+  cardPressed: { opacity: 0.7 },
   cardHead:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  cardHeadRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  cardChevron: { color: colors.muted, fontSize: 18, fontWeight: '400' },
   cardTitle: { color: colors.muted, fontSize: 11, fontWeight: '700', letterSpacing: 2 },
   cardValue: { color: colors.text,  fontSize: 15, fontWeight: '700' },
 
