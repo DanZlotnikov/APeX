@@ -261,7 +261,7 @@
     if (filtered.length === 0) {
       const tr = document.createElement('tr');
       tr.className = 'empty-row';
-      tr.innerHTML = '<td colspan="10">No requests match the current filters.</td>';
+      tr.innerHTML = '<td colspan="9">No requests match the current filters.</td>';
       jobsBody.appendChild(tr);
       return;
     }
@@ -275,7 +275,6 @@
       tr.innerHTML =
         '<td><span class="status-pill ' + j.status + '"><span class="status-dot"></span>' + j.status + '</span></td>' +
         '<td class="athlete">' + escapeHtml(athleteDisplayName(j)) + '</td>' +
-        '<td class="athlete-id">' + escapeHtml(j.athlete_id || '—') + '</td>' +
         '<td>' + escapeHtml(exerciseLabel(j.exercise_type)) + '</td>' +
         '<td class="muted">' + (j.rep_count != null ? j.rep_count : '—') + '</td>' +
         '<td class="muted">' + (j.readiness_score != null ? j.readiness_score + '%' : '—') + '</td>' +

@@ -254,29 +254,36 @@ register_rom(ExerciseRomProfile(
 # stayed, so a technically good rep can score well on both checks at once
 # instead of only one.
 #
-# target_rom_deg=80 is a synthesized estimate, not a single directly-cited
-# figure — no padel-specific study measuring this exact angle (elbow-
-# shoulder-hip, start-to-contact) was found. It's built from the closest
-# real data point available: tennis-forehand research measuring shoulder
-# horizontal abduction during just the wind-up phase at ~30-40deg (Holland
-# Osteopathy's shoulder-biomechanics review, below) — the forward swing back
-# through neutral to contact necessarily adds substantially more excursion
-# on top of that wind-up alone, so 80deg (roughly double the wind-up figure)
-# is a rounded, deliberately conservative "average and sensible" full-swing
-# estimate pending real padel motion-capture data to replace it with.
+# target_rom_deg history: 80 originally (a "double the wind-up figure"
+# guess) -> 45 after checking against a real 2026-08-03 reference clip (4
+# reps; shoulder_angle achieved 0/33.4/26.1/33.7deg, that first rep a
+# spurious near-zero-length detection at the very start of the clip, not a
+# real stroke) showed 80 was roughly 2-3x too high — that clip's own
+# fullest reps only reached ~34deg. 45 gave that clip ~52% overall ROM.
+# Per explicit instruction to make this specific clip read as a ~80%
+# readiness score (a deliberate calibration anchor, not a literature
+# figure), lowered again to 29 -> ~80% rom_avg on that same clip (the
+# spurious rep still scores 0%, the three real reps land at 115/90/116%,
+# clipped nowhere near the 130% ceiling). 29 happens to sit right at the
+# bottom of the wind-up-phase citation below (~30-40deg) rather than
+# "wind-up plus forward swing", which is at least directionally consistent
+# with that source, but the specific value was picked to hit the target
+# score, not derived from it. Tighten again once more real clips (ideally
+# including known-poor technique for contrast) are available.
 register_rom(ExerciseRomProfile(
     exercise_key="stroke",
     checks=(
         JointRomCheck(
             id="swing_rom", label="Swing range", joint="SHOULDER",
             signal="shoulder_angle", start_selector="start", end_selector="bottom",
-            target_rom_deg=80.0, watch_threshold_pct=70.0, at_risk_threshold_pct=45.0,
+            target_rom_deg=29.0, watch_threshold_pct=70.0, at_risk_threshold_pct=45.0,
             research=(
                 "Holland Osteopathy — shoulder biomechanics in tennis: wind-up-phase "
                 "shoulder horizontal abduction of ~30-40deg generates the torque for the "
-                "stroke; target_rom_deg is a synthesized full-swing (wind-up + forward "
-                "swing to contact) estimate built from that figure, not a single directly-"
-                "cited total — no padel-specific study measuring this exact angle exists yet.",
+                "stroke; target_rom_deg has been revised twice against a real 2026-08-03 "
+                "test clip (see this file's module-level note above), most recently to "
+                "deliberately read that clip's own reps at ~80%, not derived from this "
+                "citation — it happens to land near its lower bound.",
                 "Padel-specific shoulder kinematics research (e.g. cross-sectional studies "
                 "of padel players' shoulder ROM during strokes) confirms strokes rely on "
                 "substantial shoulder rotation/horizontal ab-adduction, without pinning "

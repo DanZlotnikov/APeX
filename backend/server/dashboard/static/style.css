@@ -227,7 +227,6 @@ body { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
 .jobs-table td { padding: 0.55rem 0.9rem; white-space: nowrap; }
 .jobs-table td.athlete { font-weight: 600; color: var(--text-strong); }
 .jobs-table td.muted { color: var(--muted); font-size: 0.78rem; }
-.jobs-table td.athlete-id { color: var(--muted); font-size: 0.72rem; font-family: 'Cascadia Code', 'Consolas', monospace; }
 
 .status-pill {
   display: inline-flex; align-items: center; gap: 0.35rem;

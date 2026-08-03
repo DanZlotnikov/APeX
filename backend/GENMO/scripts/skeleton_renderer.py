@@ -17,6 +17,19 @@ import numpy as np
 
 from exercises.signals import SMPL_PARENTS
 
+# SMPL's terminal L_FOOT/R_FOOT joints (indices 10, 11) are estimated from
+# monocular video far less reliably than the rest of the skeleton — checked
+# directly against real padel footage (ffmpeg-extracted frames compared
+# frame-by-frame against the rendered skeleton) and the foot joint routinely
+# lands well outside where the athlete's actual foot is, sometimes flared
+# out when the real foot is neutral or turned in, and the error isn't a
+# fixed offset (so it isn't a coordinate/indexing bug to patch) — it's just
+# noisy from one frame to the next. Rather than draw a foot position that
+# actively contradicts the real video next to it, every leg here terminates
+# at the ankle. Don't re-add these without first confirming on real footage
+# that the underlying pose estimate has actually gotten more reliable.
+_SKIP_JOINTS = {10, 11}
+
 # APeX's own design language (see mobile/src/theme.ts): dark navy background,
 # teal accent — keeps this renderer visually consistent with the app.
 BG_COLOR = (28, 16, 7)        # BGR for #07101C
@@ -124,10 +137,12 @@ def render_skeleton_frames(
         pts2d = cam.project(joints[i]).astype(int)  # (22, 2)
 
         for j, parent in enumerate(SMPL_PARENTS):
-            if parent < 0:
+            if parent < 0 or j in _SKIP_JOINTS:
                 continue
             cv2.line(canvas, tuple(pts2d[j]), tuple(pts2d[parent]), BONE_COLOR, 3, cv2.LINE_AA)
         for j in range(22):
+            if j in _SKIP_JOINTS:
+                continue
             cv2.circle(canvas, tuple(pts2d[j]), 5, JOINT_COLOR, -1, cv2.LINE_AA)
 
         count = int(cumulative_counts[i]) if rep_key is not None else 0

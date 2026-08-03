@@ -83,6 +83,20 @@ def register_fixation(profile: ExerciseFixationProfile) -> ExerciseFixationProfi
 # informational=True for exactly that reason, the same convention
 # thresholds.py/rom_thresholds.py already use for engineering-estimate
 # (as opposed to literature-validated) checks.
+#
+# max_deviation history: 35 originally (blind guess, no footage) -> 65 after
+# checking against a real 2026-08-03 reference clip (4 reps, elbow_angle
+# deviation 13.6/46.9/49.6/18.1deg) showed 35 flattened half that clip's
+# reps to 0%. 65 gave that clip ~51% overall fixation — still read as
+# mediocre. Per explicit instruction to make this specific clip read as a
+# ~80% readiness score (a deliberate calibration anchor, not a literature
+# figure), raised again to 150 -> ~80% fixation_avg on that same clip
+# (91/71/69/89% per rep). 150 is close to the elbow's own full physiological
+# flexion-extension range (~150deg), i.e. this check is now lenient enough
+# that only a genuinely extreme, near-full-range elbow swing scores near 0 —
+# intentional per the "more forgiving" request, but means this check barely
+# discriminates within the normal range anymore. Tighten again if real
+# comparison footage (a known-poor-technique clip) shows it's too loose.
 register_fixation(ExerciseFixationProfile(
     exercise_key="stroke",
     checks=(
@@ -90,10 +104,12 @@ register_fixation(ExerciseFixationProfile(
             id="elbow_fixation", label="Elbow fixation", joint="ELBOW",
             signal="elbow_angle",
             window_start_selector="start", window_end_selector="end",
-            max_deviation=35.0, watch_threshold_pct=70.0, at_risk_threshold_pct=50.0,
+            max_deviation=150.0, watch_threshold_pct=70.0, at_risk_threshold_pct=50.0,
             research=(
-                "No padel-specific literature exists yet — max_deviation is an "
-                "engineering estimate pending real footage to tune against.",
+                "No padel-specific literature exists yet — max_deviation has been "
+                "revised twice against a real 2026-08-03 test clip (see this file's "
+                "module-level note above), most recently to deliberately read that "
+                "clip's own reps at ~80%, not from any external citation.",
             ),
             description="How little the elbow angle wanders across the whole stroke — "
                          "a padel groundstroke is meant to be shoulder-led, with the arm "
