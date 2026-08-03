@@ -89,6 +89,21 @@ def count_swing_detector(
     signal alone swinging from tracking noise with no real movement behind
     it (e.g. pull-up requires the wrist-to-hip distance to actually shrink,
     not just the elbow angle reading).
+
+    `extreme_confirmed`: direction always starts "down", using the clip's
+    very first frame as the initial reference. If the signal happens to
+    rise right from that first frame with no real dip beforehand (e.g. a
+    padel stroke clip that starts mid-reach rather than at rest), the old
+    version fired a rep the moment the rise alone cleared min_drop — a
+    "rep" confirmed by how the clip happened to start, not by any real
+    trough having occurred. That produced a spurious near-instant rep (seen
+    on real footage: a 13-frame "rep" in the first 0.4s of a clip),
+    incrementing the counter as a stroke *began* rather than after one
+    actually completed. extreme_confirmed only goes True once the tracked
+    extreme has been updated by a genuine observed move in the current
+    direction (not just inherited from initialization or the last
+    direction flip) — a rep only confirms once a real trough (or peak) was
+    actually seen, not assumed from the starting frame.
     """
     L = len(signal)
     mask = frame_valid_mask
@@ -108,6 +123,7 @@ def count_swing_detector(
     direction = "down"
     extreme_val = extreme_corro = 0.0
     extreme_idx = 0
+    extreme_confirmed = False
     ref_peak_val = ref_peak_corro = 0.0
     ref_peak_idx = 0
 
@@ -120,23 +136,30 @@ def count_swing_detector(
             extreme_val = ref_peak_val = v
             extreme_corro = ref_peak_corro = c
             extreme_idx = ref_peak_idx = i
+            extreme_confirmed = False
             continue
         if direction == "down":
             if v < extreme_val:
                 extreme_val, extreme_corro, extreme_idx = v, c, i
+                extreme_confirmed = True
             elif extreme_val > 0 and v - extreme_val >= min_drop:
-                if corroboration_signal is None or (ref_peak_corro - extreme_corro) >= corroboration_min_delta:
+                if extreme_confirmed and (
+                    corroboration_signal is None or (ref_peak_corro - extreme_corro) >= corroboration_min_delta
+                ):
                     reps.append({"start": ref_peak_idx, "bottom": extreme_idx, "end": i})
                 direction, extreme_val, extreme_corro, extreme_idx = "up", v, c, i
+                extreme_confirmed = False
         else:
             if v > extreme_val:
                 extreme_val, extreme_corro, extreme_idx = v, c, i
+                extreme_confirmed = True
             elif extreme_val - v >= min_drop:
                 ref_peak_val, ref_peak_corro, ref_peak_idx = extreme_val, extreme_corro, extreme_idx
                 direction, extreme_val, extreme_corro, extreme_idx = "down", v, c, i
+                extreme_confirmed = False
 
     # Clip may end mid-rep near the bottom — count an in-progress final rep.
-    if direction == "down" and ref_peak_val - extreme_val >= min_drop and (
+    if direction == "down" and extreme_confirmed and ref_peak_val - extreme_val >= min_drop and (
         corroboration_signal is None or (ref_peak_corro - extreme_corro) >= corroboration_min_delta
     ):
         reps.append({"start": ref_peak_idx, "bottom": extreme_idx, "end": extreme_idx})
