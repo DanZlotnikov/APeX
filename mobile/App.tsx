@@ -21,7 +21,6 @@ import { addLocalUpload, markLocalUploadFailed } from './src/state/localUploads'
 import { SettingsProvider, useSettings } from './src/state/SettingsContext';
 import { VideoJobsProvider } from './src/state/VideoJobsContext';
 import { ConfirmDialogHost } from './src/utils/confirm';
-import { configureSound } from './src/utils/sound';
 
 type Role = 'athlete' | 'manager';
 type AthleteScreen = 'dashboard' | 'camera';
@@ -40,7 +39,7 @@ function FadeScreen({ children }: { children: React.ReactNode }) {
 }
 
 function AppInner() {
-  const { settings, refreshProfile } = useSettings();
+  const { refreshProfile } = useSettings();
 
   const [role,           setRole]           = useState<Role | null>(null);
   const [userId,         setUserId]         = useState<string | null>(null);
@@ -63,14 +62,23 @@ function AppInner() {
   // Manager flow
   const [managerScreen,   setManagerScreen]   = useState<ManagerScreen>('manager-dashboard');
   const [selectedAthlete, setSelectedAthlete] = useState<AthleteViewModel | null>(null);
+  // Set when entering athlete detail from a notification tap ("Dan completed
+  // a squat test") so AthleteDetailPreview can deep-link straight to that
+  // session in its History tab instead of the default Profile tab. Cleared
+  // for the normal "tap an athlete row" entry path.
+  const [athleteNotifSessionId, setAthleteNotifSessionId] = useState<string | null>(null);
+  // Bumped on every "enter athlete detail" action (either path above) and
+  // used as AthleteDetailPreview's key — forces a fresh mount (and thus a
+  // fresh nested NavigationContainer honoring the values above) even when
+  // the manager taps a notification while already viewing an athlete, same
+  // reasoning as processingDeepLinkToken below for the athlete-side flow.
+  const [athleteEntrySeq, setAthleteEntrySeq] = useState(0);
 
   // Bumped on every tapped video-ready notification — DashboardScreen watches
   // this to jump to Performance > Processing (see checklist item 9). A
   // counter, not a boolean, so tapping a second notification while already on
   // the dashboard still re-triggers the jump.
   const [processingDeepLinkToken, setProcessingDeepLinkToken] = useState(0);
-
-  useEffect(() => { configureSound(settings.sound); }, [settings.sound]);
 
   // Push token registration is best-effort and safe to call once role/userId
   // settle, whether from a fresh sign-in or a restored session — see
@@ -241,14 +249,21 @@ function AppInner() {
   // ── Manager handlers ───────────────────────────────────────────────────────
   function handleAthleteSelect(athlete: AthleteViewModel) {
     setSelectedAthlete(athlete);
+    setAthleteNotifSessionId(null);
+    setAthleteEntrySeq((n) => n + 1);
     setManagerScreen('manager-athlete');
   }
 
-  async function handleNotifNavigate(athleteId: string | null) {
+  async function handleNotifNavigate(athleteId: string | null, sessionId: string | null) {
     if (!athleteId) return;
     try {
       const athlete = await getAthleteById(athleteId);
-      if (athlete) handleAthleteSelect(athlete);
+      if (athlete) {
+        setSelectedAthlete(athlete);
+        setAthleteNotifSessionId(sessionId);
+        setAthleteEntrySeq((n) => n + 1);
+        setManagerScreen('manager-athlete');
+      }
     } catch (e) {
       console.warn('Failed to load athlete for notification nav', e);
     }
@@ -341,7 +356,7 @@ function AppInner() {
           onBack={() => setManagerScreen('manager-dashboard')}
           teamId={teamId}
           managerId={userId}
-          onNotifNavigate={(id) => void handleNotifNavigate(id)}
+          onNotifNavigate={(id, sessionId) => void handleNotifNavigate(id, sessionId)}
           onSettings={() => setManagerScreen('manager-settings')}
           onLogout={handleManagerLogout}
         />
@@ -356,7 +371,9 @@ function AppInner() {
           {managerScreen === 'manager-athlete' && selectedAthlete && (
             <FadeScreen>
               <AthleteDetailPreview
+                key={athleteEntrySeq}
                 athlete={selectedAthlete}
+                initialSessionId={athleteNotifSessionId}
                 onStatusChanged={() => setManagerScreen('manager-dashboard')}
               />
             </FadeScreen>

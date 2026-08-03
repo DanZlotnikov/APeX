@@ -23,10 +23,14 @@ rep windows for that exercise; it returns the JSON-serializable report.
 No other file in this package or the rest of the pipeline needs to change —
 this function's signature and the report's top-level shape stay fixed.
 
-`rom` (see rom.py) is a further analyzer of this kind, not a "future" one —
-it scores how much of each exercise's expected joint range of motion a rep
-actually achieved, alongside balance's left/right symmetry. It's a normal
-citizen of _ANALYZERS like `balance`, just aimed at a different question.
+`rom` (see rom.py) and `fixation` (see fixation.py) are further analyzers of
+this kind, not "future" ones — rom scores how much of each exercise's
+expected joint range of motion a rep actually achieved, alongside balance's
+left/right symmetry; fixation scores how STEADY a joint stayed across the
+whole motion (less deviation = better), for exercises where controlled
+stillness matters more than range or symmetry (e.g. padel's stroke — the
+arm should stay close to fixed while the shoulder leads). Both are normal
+citizens of _ANALYZERS like `balance`, just aimed at different questions.
 """
 from __future__ import annotations
 
@@ -34,11 +38,12 @@ import numpy as np
 
 from exercises import get_exercise_reps
 
-from . import balance, rom
+from . import balance, fixation, rom
 
 _ANALYZERS = {
     "balance": balance.analyze_balance,
     "rom": rom.analyze_rom,
+    "fixation": fixation.analyze_fixation,
 }
 
 

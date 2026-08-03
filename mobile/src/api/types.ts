@@ -65,6 +65,7 @@ export interface NotificationViewModel {
   message: string;
   severity: 'info' | 'warning' | 'critical';
   athleteId: string | null;
+  sessionId: string | null;
   timestamp: string;
 }
 

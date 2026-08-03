@@ -315,7 +315,7 @@ async def get_jobs() -> dict:
             "error_message": None,
             "analysis_json": s.get("biomechanics_json") or s.get("analysis_json"),
             "readiness_score": s.get("readiness_score"), "rep_count": s.get("rep_count"),
-            "duration_sec": None,  # not retained once a video_jobs row graduates to a session
+            "duration_sec": s.get("duration_sec"),
         })
 
     items.sort(key=lambda x: x.get("created_at") or x.get("recorded_at") or "", reverse=True)

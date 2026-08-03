@@ -1,5 +1,5 @@
 /**
- * App-wide settings: accent theme, font-size scale, sound, units, and the
+ * App-wide settings: accent theme, font-size scale, units, and the
  * historical-comparison window. Loaded once from storage on mount and persisted
  * on every change. Also carries the athlete Profile so the dashboard and
  * overview can read/update it in one place.
@@ -18,7 +18,6 @@ export type Units = 'metric' | 'imperial';
 export interface Settings {
   accent: AccentKey;
   fontScale: FontScaleKey;
-  sound: boolean;
   units: Units;
   windowDays: number; // comparison / trend window
 }
@@ -26,7 +25,6 @@ export interface Settings {
 const DEFAULTS: Settings = {
   accent: 'teal',
   fontScale: 'M',
-  sound: false,
   units: 'metric',
   windowDays: 30,
 };

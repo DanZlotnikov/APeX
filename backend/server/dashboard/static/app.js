@@ -188,9 +188,18 @@
     const labels = {
       squat: 'Squat', jump: 'Vertical Jump', vertical_jump: 'Vertical Jump',
       pullup: 'Pull-Up', pull_up: 'Pull-Up',
-      push_up: 'Push-Up', ab_crunch: 'Ab Crunch',
+      push_up: 'Push-Up', ab_crunch: 'Ab Crunch', stroke: 'Padel Stroke',
     };
     return labels[key] || key || '—';
+  }
+
+  // Several test athletes share the same/similar display name (e.g. "Dan",
+  // "Dan Athlete", "Dan Test") — the first 4 chars of the UUID, appended in
+  // parens, is enough to tell them apart at a glance in the table without
+  // needing the full separate Athlete ID column for every lookup.
+  function athleteDisplayName(j) {
+    const name = j.athlete_name || 'Unknown';
+    return j.athlete_id ? name + ' (' + j.athlete_id.slice(0, 4) + ')' : name;
   }
 
   async function fetchJobs() {
@@ -230,7 +239,7 @@
       if (statusF && j.status !== statusF) return false;
       if (exerciseF && j.exercise_type !== exerciseF) return false;
       if (q) {
-        const hay = [j.athlete_name, j.exercise_type, j.id, j.status].join(' ').toLowerCase();
+        const hay = [j.athlete_name, j.athlete_id, j.exercise_type, j.id, j.status].join(' ').toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -252,7 +261,7 @@
     if (filtered.length === 0) {
       const tr = document.createElement('tr');
       tr.className = 'empty-row';
-      tr.innerHTML = '<td colspan="9">No requests match the current filters.</td>';
+      tr.innerHTML = '<td colspan="10">No requests match the current filters.</td>';
       jobsBody.appendChild(tr);
       return;
     }
@@ -265,7 +274,8 @@
         : '<td class="muted">' + fmtDuration(j.started_at, j.completed_at) + '</td>';
       tr.innerHTML =
         '<td><span class="status-pill ' + j.status + '"><span class="status-dot"></span>' + j.status + '</span></td>' +
-        '<td class="athlete">' + escapeHtml(j.athlete_name || 'Unknown') + '</td>' +
+        '<td class="athlete">' + escapeHtml(athleteDisplayName(j)) + '</td>' +
+        '<td class="athlete-id">' + escapeHtml(j.athlete_id || '—') + '</td>' +
         '<td>' + escapeHtml(exerciseLabel(j.exercise_type)) + '</td>' +
         '<td class="muted">' + (j.rep_count != null ? j.rep_count : '—') + '</td>' +
         '<td class="muted">' + (j.readiness_score != null ? j.readiness_score + '%' : '—') + '</td>' +
@@ -303,6 +313,7 @@
     const rows = [
       ['Status', job.status],
       ['Athlete', job.athlete_name],
+      ['Athlete ID', job.athlete_id],
       ['Exercise', exerciseLabel(job.exercise_type)],
       ['Reps', job.rep_count != null ? job.rep_count : '—'],
       ['Readiness', job.readiness_score != null ? job.readiness_score + '%' : '—'],

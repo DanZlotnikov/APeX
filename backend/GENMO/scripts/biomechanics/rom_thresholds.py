@@ -239,3 +239,53 @@ register_rom(ExerciseRomProfile(
         ),
     ),
 ))
+
+# ═══════════════════════════════════════════════════════════════════════════
+# PADEL STROKE
+# ═══════════════════════════════════════════════════════════════════════════
+# Uses shoulder_angle (elbow-shoulder-hip, see balance.py's SIGNAL_SPECS),
+# NOT elbow_angle — this exercise's fixation check (see
+# fixation_thresholds.py) already scores elbow_angle on "less change is
+# better" (a fixed elbow, shoulder-led swing is good technique); scoring a
+# ROM check "more change is better" on that SAME signal would give directly
+# contradictory feedback for the identical measurement. shoulder_angle
+# instead captures the swing's actual amplitude — how far the upper arm
+# swings via shoulder rotation — independent of how quiet the elbow itself
+# stayed, so a technically good rep can score well on both checks at once
+# instead of only one.
+#
+# target_rom_deg=80 is a synthesized estimate, not a single directly-cited
+# figure — no padel-specific study measuring this exact angle (elbow-
+# shoulder-hip, start-to-contact) was found. It's built from the closest
+# real data point available: tennis-forehand research measuring shoulder
+# horizontal abduction during just the wind-up phase at ~30-40deg (Holland
+# Osteopathy's shoulder-biomechanics review, below) — the forward swing back
+# through neutral to contact necessarily adds substantially more excursion
+# on top of that wind-up alone, so 80deg (roughly double the wind-up figure)
+# is a rounded, deliberately conservative "average and sensible" full-swing
+# estimate pending real padel motion-capture data to replace it with.
+register_rom(ExerciseRomProfile(
+    exercise_key="stroke",
+    checks=(
+        JointRomCheck(
+            id="swing_rom", label="Swing range", joint="SHOULDER",
+            signal="shoulder_angle", start_selector="start", end_selector="bottom",
+            target_rom_deg=80.0, watch_threshold_pct=70.0, at_risk_threshold_pct=45.0,
+            research=(
+                "Holland Osteopathy — shoulder biomechanics in tennis: wind-up-phase "
+                "shoulder horizontal abduction of ~30-40deg generates the torque for the "
+                "stroke; target_rom_deg is a synthesized full-swing (wind-up + forward "
+                "swing to contact) estimate built from that figure, not a single directly-"
+                "cited total — no padel-specific study measuring this exact angle exists yet.",
+                "Padel-specific shoulder kinematics research (e.g. cross-sectional studies "
+                "of padel players' shoulder ROM during strokes) confirms strokes rely on "
+                "substantial shoulder rotation/horizontal ab-adduction, without pinning "
+                "down one comparable total-excursion figure to cite directly.",
+            ),
+            description="How far the upper arm swings via shoulder rotation, from the "
+                         "ready stance to the peak of the swing — the stroke's actual "
+                         "amplitude, independent of how fixed the elbow itself stayed.",
+            informational=True,
+        ),
+    ),
+))

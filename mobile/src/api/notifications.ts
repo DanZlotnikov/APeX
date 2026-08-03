@@ -14,6 +14,7 @@ export async function getNotifications(teamId: string): Promise<NotificationView
     message:    n.message,
     severity:   n.severity as 'info' | 'warning' | 'critical',
     athleteId:  n.athlete_id,
+    sessionId:  n.session_id,
     timestamp:  formatRelative(n.created_at),
   }));
 }

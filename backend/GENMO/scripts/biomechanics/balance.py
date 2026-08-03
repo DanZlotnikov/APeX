@@ -33,6 +33,13 @@ SIGNAL_SPECS: dict[str, tuple[str, tuple, tuple]] = {
     "elbow_angle": ("angle", (L_SHOULDER, L_ELBOW, L_WRIST), (R_SHOULDER, R_ELBOW, R_WRIST)),
     "shoulder_y": ("y", L_SHOULDER, R_SHOULDER),
     "hip_y": ("y", L_HIP, R_HIP),
+    # Angle AT the shoulder (elbow-shoulder-hip) — how far the upper arm has
+    # swung away from the torso, i.e. shoulder horizontal ab/adduction. Used
+    # by rom.py for Padel Stroke's swing-ROM check: unlike elbow_angle (the
+    # RELATIVE bend at the elbow, which good technique keeps close to fixed
+    # — see fixation_thresholds.py), this is driven by shoulder rotation,
+    # which is what actually generates a real swing's amplitude.
+    "shoulder_angle": ("angle", (L_ELBOW, L_SHOULDER, L_HIP), (R_ELBOW, R_SHOULDER, R_HIP)),
 }
 
 _SEVERITY_RANK = {"ok": 0, "watch": 1, "at_risk": 2}

@@ -16,7 +16,6 @@ import { Assessment } from '../utils/exerciseAnalyzer';
 import { useSettings } from '../state/SettingsContext';
 import { saveTodayEntry, loadHistory, makeId } from '../utils/history';
 import { compareToHistory, Comparison } from '../utils/stats';
-import { playChime } from '../utils/sound';
 import { colors, spacing } from '../theme';
 import { createSession } from '../api/sessions';
 import { ExerciseKey } from '../utils/exerciseMetrics';
@@ -142,7 +141,6 @@ export default function AnalysisScreen({
       } catch {
         setComparison(null);
       }
-      void playChime();
     },
     [settings.windowDays, userId],
   );

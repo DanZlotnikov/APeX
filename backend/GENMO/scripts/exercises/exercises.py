@@ -305,3 +305,93 @@ register(ExerciseDefinition(
     corroboration_delta_param="body_rise_fraction",
     priority=50,
 ))
+
+# ═══════════════════════════════════════════════════════════════════════════
+# PADEL STROKE
+# ═══════════════════════════════════════════════════════════════════════════
+# First exercise in the "padel" category (see supabase/migrations/
+# 026_exercise_categories.sql) — a basic v1 detector, not a polished one.
+# Forehand and backhand were considered as two separate exercises but
+# rejected for now: nothing in this pipeline's signals (all bilaterally
+# averaged, see signals.py) distinguishes a rightward swing from a leftward
+# one without knowing the athlete's handedness, which isn't tracked anywhere
+# — a discriminator built on raw left/right wrist position would be
+# systematically backwards for roughly half of all users, not just
+# occasionally wrong. So this registers ONE stroke exercise rather than
+# guessing at a left/right split. No padel-specific pose-estimation
+# literature exists yet to validate these thresholds against — same
+# "engineering estimate, not literature-validated" honesty
+# biomechanics/fixation_thresholds.py's checks carry for this same exercise,
+# see that file.
+#
+# primary_signal="wrist_hip_dist", NOT elbow_angle — this was the actual
+# root cause of a real clip (a low reaching shot near the net) being
+# misclassified as a squat with 0 detected stroke reps. Diagnosed from a
+# real misclassified processed video: a padel shot is frequently played
+# with the racket held close to the chest/body except during the reach and
+# swing itself (confirmed visually — both elbows stay noticeably bent
+# through most of the clip, only extending briefly for the low reach), so
+# elbow_angle's range of motion across the whole rep can be small and
+# unreliable as the PRIMARY counting signal — doubly so since good padel
+# technique is specifically about keeping the arm/elbow relatively FIXED
+# while the shoulder leads the motion (see biomechanics/
+# fixation_thresholds.py's whole premise for this exercise) — counting reps
+# off elbow flexion would systematically under-detect exactly the well-
+# executed strokes this app is trying to encourage. wrist_hip_dist (how far
+# the wrist is from the hip) swings through a much larger, more reliable
+# range across a real shot regardless of elbow technique: reaching for a low
+# ball takes the wrist well away from the hip, then it's drawn back in for
+# the recovery/ready position. No corroboration_signal here (unlike
+# pull-up/ab-crunch): wrist_hip_dist was previously used as a corroboration
+# signal for an elbow_angle-based swing, which is redundant now that it's
+# the primary signal — and per squat's own precedent below, a corroboration
+# gate that only rejects real reps with no compensating benefit should be
+# removed, not kept out of habit.
+#
+# priority=60 (above squat's 50): both share BodyOrientation.STANDING, and
+# _resolve_standing/_resolve_by_priority in analyze.py pick whichever
+# same-orientation exercise's detector fired with the higher priority when
+# more than one produces reps on the same clip. A padel shot's own knee
+# bend (getting down to a low ball) can independently satisfy squat's
+# threshold-crossing detector on knee_angle — squat has no gating of its
+# own to rule this out (see squat's comment above) — so without a higher
+# priority, squat (registered earlier in this file) would silently win
+# every one of those clips even once stroke is reliably detecting real
+# swings, discarding the actual stroke reps entirely.
+register(ExerciseDefinition(
+    key="stroke",
+    label="Padel Stroke",
+    short_label="STROKE",
+    description="A padel groundstroke swing — the arm cycles back and "
+                 "through a hitting motion once per rep.",
+    research=(
+        "No padel-specific pose-estimation literature exists yet — the "
+        "thresholds below are engineering estimates, not literature-"
+        "validated citations, unlike every other exercise registered in "
+        "this file. Revisit once real footage/research is available.",
+    ),
+    orientation=BodyOrientation.STANDING,
+    primary_signal="wrist_hip_dist",
+    counting_strategy=CountingStrategy.SWING_DETECTOR,
+    params={
+        "min_rom_deg": TunableParam(
+            # Key is "min_rom_deg" (not renamed) only because analyze.py's
+            # SWING_DETECTOR dispatch looks params up by this fixed name
+            # regardless of exercise — the value below is a distance in
+            # meters, not degrees, since the underlying signal changed.
+            "min_rom_deg", "Minimum swing range", "m", 0.15, 0.05, 0.6, 0.01,
+            "Wrist-to-hip distance change required for a swing to count — "
+            "reaching for a shot and recovering to a ready position moves "
+            "the wrist a substantial fraction of arm's length; this floor "
+            "is kept modest since no padel-specific data exists yet to "
+            "tune it against.",
+        ),
+        "min_drop_fraction": TunableParam(
+            "min_drop_fraction", "Swing confirmation", "fraction of ROM", 0.30, 0.1, 0.6, 0.05,
+            "How far wrist-to-hip distance must swing back from a tracked "
+            "peak/trough to confirm that extreme was real, not noise — "
+            "same value pull-up/ab-crunch already use for this engine.",
+        ),
+    },
+    priority=60,
+))

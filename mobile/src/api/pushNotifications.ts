@@ -1,9 +1,20 @@
 /**
- * Expo push notifications for the video pipeline (HANDOFF_video_pipeline.md
- * section 3.5 / section 4 item 9): registers the device's Expo push token
- * into profiles.expo_push_token so the notify-video-ready Edge Function can
- * reach this athlete, and deep-links a tapped notification to Performance >
- * Processing.
+ * Expo push notifications. Two directions live in this file:
+ *   1. This device's OWN registration (HANDOFF_video_pipeline.md section 3.5
+ *      / section 4 item 9): registers the device's Expo push token into
+ *      profiles.expo_push_token so the notify-video-ready Edge Function can
+ *      reach this athlete, and deep-links a tapped notification to
+ *      Performance > Processing.
+ *   2. Sending a push TO someone else (pokeAthlete, below) — the manager
+ *      "poke" action. Unlike notify-video-ready (a Database Webhook, so it
+ *      has to run server-side as an Edge Function with the service-role
+ *      key), a poke is a direct manager button-tap with no DB event to hang
+ *      a webhook off of, so it runs client-side instead: it reads the
+ *      target athlete's own already-registered token directly (RLS already
+ *      scopes profiles reads to same-team members, see migration 001's
+ *      "read team profiles" policy — a manager already can't read a
+ *      different team's athlete this way) and posts straight to Expo's push
+ *      API, same endpoint notify-video-ready calls server-side.
  *
  * IMPORTANT (per the handoff): Expo Go dropped support for remote push
  * notifications in SDK 53 (this project is on SDK 54) — getExpoPushTokenAsync
@@ -67,4 +78,45 @@ export function addNotificationTapListener(onTap: (jobId: string) => void): () =
     if (typeof jobId === 'string') onTap(jobId);
   });
   return () => sub.remove();
+}
+
+/**
+ * Manager "poke" — sends the athlete a real device push nudging them about
+ * today's remaining routine. Deliberately NOT the in-app notifications
+ * table/dropdown (api/notifications.ts) — that's the separate athlete-to-
+ * manager "completed a session" pipeline; this is manager-to-athlete and
+ * only ever a real push. Throws with a message safe to show the manager
+ * directly (e.g. "hasn't enabled notifications yet") rather than a raw
+ * Supabase/fetch error.
+ */
+export async function pokeAthlete(athleteId: string, missingCount: number): Promise<void> {
+  const { data: profile, error } = await supabase
+    .from('profiles')
+    .select('expo_push_token')
+    .eq('id', athleteId)
+    .single();
+  if (error) throw error;
+
+  const token = profile?.expo_push_token;
+  if (!token) throw new Error("This athlete hasn't enabled notifications yet.");
+
+  const res = await fetch('https://exp.host/--/api/v2/push/send', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({
+      to: token,
+      title: 'Training Reminder',
+      body: `You have ${missingCount} exercise${missingCount === 1 ? '' : 's'} to complete today 💪`,
+      sound: 'default',
+    }),
+  });
+
+  // Expo's push API returns HTTP 200 even for a per-ticket failure (e.g. a
+  // stale/unregistered token) — the real result is in the response body,
+  // not the status code, so both have to be checked.
+  const json = await res.json().catch(() => null);
+  const ticket = Array.isArray(json?.data) ? json.data[0] : json?.data;
+  if (!res.ok || ticket?.status === 'error') {
+    throw new Error(ticket?.message || 'Failed to send notification. Please try again.');
+  }
 }

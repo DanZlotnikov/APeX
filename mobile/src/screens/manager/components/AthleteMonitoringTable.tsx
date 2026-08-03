@@ -69,7 +69,7 @@ function TableLayout({ athletes, exerciseColumns, onSelectAthlete, colorMode = '
           ))}
           <Text style={styles.th}>READINESS</Text>
           <Text style={styles.th}>TREND</Text>
-          <Text style={styles.timeHeader}>LAST TEST</Text>
+          <Text style={styles.timeHeader}>LAST EXERCISE</Text>
           <Text style={styles.th}> </Text>
         </View>
         {athletes.map((a) => (

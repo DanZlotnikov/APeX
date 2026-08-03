@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { deleteAccount } from '../../api/auth';
 import { getTeamInviteCode, getTeamName, regenerateInviteCode } from '../../api/teams';
-import Toggle from '../../components/Toggle';
 import { useSettings } from '../../state/SettingsContext';
 import { ACCENTS, AccentKey, colors, FontScaleKey, spacing } from '../../theme';
 import { confirmAsync } from '../../utils/confirm';
@@ -155,16 +154,6 @@ export default function ManagerSettings({ teamId, onLogout }: Props) {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>PREFERENCES</Text>
           <View style={styles.card}>
-            <View style={styles.switchRow}>
-              <Text style={styles.rowLabel}>Sound effects</Text>
-              <Toggle
-                value={settings.sound}
-                onValueChange={(v) => update({ sound: v })}
-                accentColor={accentColor}
-              />
-            </View>
-
-            <View style={styles.divider} />
             <Text style={styles.rowLabel}>Units</Text>
             <Segmented
               options={[{ key: 'metric', label: 'Metric' }, { key: 'imperial', label: 'Imperial' }]}
@@ -301,9 +290,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
 
-  rowLabel:  { color: colors.text, fontSize: 14, fontWeight: '600', paddingVertical: spacing.sm },
-  switchRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  divider:   { height: 1, backgroundColor: colors.border, marginVertical: spacing.xs },
+  rowLabel: { color: colors.text, fontSize: 14, fontWeight: '600', paddingVertical: spacing.sm },
+  divider:  { height: 1, backgroundColor: colors.border, marginVertical: spacing.xs },
 
   swatches:    { flexDirection: 'row', gap: spacing.sm, paddingBottom: spacing.sm },
   swatch:      { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'transparent' },

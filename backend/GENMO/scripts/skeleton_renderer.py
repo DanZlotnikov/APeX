@@ -28,6 +28,7 @@ TEXT_COLOR = (188, 212, 0)
 LABELS = {
     "squat": "SQUATS", "deadlift": "DEADLIFTS", "vertical_jump": "JUMPS",
     "pull_up": "PULL-UPS", "push_up": "PUSH-UPS", "ab_crunch": "CRUNCHES",
+    "stroke": "STROKES",
     None: "REPS",
 }
 

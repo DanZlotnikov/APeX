@@ -18,8 +18,8 @@
       "bundleIdentifier": "com.apexathletics.app",
       "supportsTablet": true,
       "infoPlist": {
-        "NSCameraUsageDescription": "This app uses the camera to record short movement tests.",
-        "NSPhotoLibraryUsageDescription": "Select a test video from your library for processing.",
+        "NSCameraUsageDescription": "This app uses the camera to record short movement exercises.",
+        "NSPhotoLibraryUsageDescription": "Select an exercise video from your library for processing.",
         "ITSAppUsesNonExemptEncryption": false
       }
     },
@@ -39,7 +39,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow APeX to use the camera to record movement tests.",
+          "cameraPermission": "Allow APeX to use the camera to record movement exercises.",
           "recordAudioAndroid": false
         }
       ],
@@ -52,7 +52,7 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow APeX to select a test video from your library."
+          "photosPermission": "Allow APeX to select an exercise video from your library."
         }
       ],
       [

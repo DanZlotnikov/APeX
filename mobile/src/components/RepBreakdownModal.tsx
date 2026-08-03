@@ -1,9 +1,10 @@
-import React from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { JointCheck, JointRomCheck, RepWindow } from '../api/videoJobs';
+import React, { useEffect, useRef } from 'react';
+import { Animated, Dimensions, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { JointCheck, JointFixationCheck, JointRomCheck, RepWindow } from '../api/videoJobs';
 import { useSettings } from '../state/SettingsContext';
-import { colors, spacing } from '../theme';
-import { formatDuration } from '../utils/format';
+import { ACCENTS, AccentKey, colors, spacing } from '../theme';
+import { formatDurationPrecise } from '../utils/format';
 import MultiMetricTrend, { TrendSeries } from './charts/MultiMetricTrend';
 
 // Same neutral blue AthleteMonitoringTable.tsx uses for its "injury" (non-
@@ -11,31 +12,52 @@ import MultiMetricTrend, { TrendSeries } from './charts/MultiMetricTrend';
 // it read like "injured" blue, distinct from every metric's own accent color.
 const REST_BLUE = '#3B82F6';
 
+// L and R need their own fixed, mutually-distinct colors — separate from the
+// overall/score line (user's accent) AND from REST_BLUE above. 'blue' is
+// deliberately excluded from this pool: ACCENTS.blue (#3B9EFF) reads as
+// near-identical to REST_BLUE (#3B82F6) on a small chart, so picking it for
+// L or R would make that series indistinguishable from the rest-time line.
+const PALETTE_ORDER: AccentKey[] = ['teal', 'violet', 'amber', 'rose'];
+
+const { width: SCREEN_W } = Dimensions.get('window');
+
 interface Props {
   visible: boolean;
   onClose: () => void;
-  kind: 'balance' | 'rom';
-  check: JointCheck | JointRomCheck;
+  kind: 'balance' | 'rom' | 'fixation';
+  check: JointCheck | JointRomCheck | JointFixationCheck;
   reps: RepWindow[]; // canonical per-rep timing, independent of `check`
 }
 
 export default function RepBreakdownModal({ visible, onClose, kind, check, reps }: Props) {
   const { accentColor } = useSettings();
+  const insets = useSafeAreaInsets();
+
+  const otherColors = PALETTE_ORDER.map((k) => ACCENTS[k].color).filter((c) => c !== accentColor);
+  const lColor = otherColors[0];
+  const rColor = otherColors[1];
 
   const series: TrendSeries[] = [];
   if (kind === 'balance') {
     const c = check as JointCheck;
     series.push(
-      { key: 'l', label: 'Left', color: accentColor, points: c.reps.map((r) => ({ x: r.rep, y: r.l_value })) },
-      { key: 'r', label: 'Right', color: accentColor, points: c.reps.map((r) => ({ x: r.rep, y: r.r_value })) },
+      { key: 'l', label: 'Left', color: lColor, dashed: true, points: c.reps.map((r) => ({ x: r.rep, y: r.l_value })) },
+      { key: 'r', label: 'Right', color: rColor, dashed: true, points: c.reps.map((r) => ({ x: r.rep, y: r.r_value })) },
       { key: 'score', label: 'Balance %', color: accentColor, points: c.reps.map((r) => ({ x: r.rep, y: r.balance_pct })) },
     );
-  } else {
+  } else if (kind === 'rom') {
     const c = check as JointRomCheck;
     series.push(
-      { key: 'l', label: 'Left', color: accentColor, points: c.reps.map((r) => ({ x: r.rep, y: r.l_deg })) },
-      { key: 'r', label: 'Right', color: accentColor, points: c.reps.map((r) => ({ x: r.rep, y: r.r_deg })) },
+      { key: 'l', label: 'Left', color: lColor, dashed: true, points: c.reps.map((r) => ({ x: r.rep, y: r.l_deg })) },
+      { key: 'r', label: 'Right', color: rColor, dashed: true, points: c.reps.map((r) => ({ x: r.rep, y: r.r_deg })) },
       { key: 'score', label: 'ROM %', color: accentColor, points: c.reps.map((r) => ({ x: r.rep, y: r.rom_pct })) },
+    );
+  } else {
+    const c = check as JointFixationCheck;
+    series.push(
+      { key: 'l', label: 'Left', color: lColor, dashed: true, points: c.reps.map((r) => ({ x: r.rep, y: r.l_deviation })) },
+      { key: 'r', label: 'Right', color: rColor, dashed: true, points: c.reps.map((r) => ({ x: r.rep, y: r.r_deviation })) },
+      { key: 'score', label: 'Fixation %', color: accentColor, points: c.reps.map((r) => ({ x: r.rep, y: r.fixation_pct })) },
     );
   }
 
@@ -49,14 +71,40 @@ export default function RepBreakdownModal({ visible, onClose, kind, check, reps 
 
   const repById = new Map(reps.map((r) => [r.rep, r]));
 
+  // Custom horizontal slide (native Modal's own "slide" animation is
+  // vertical) so opening/closing this matches the rest of the app's
+  // slide_from_right screen-push convention rather than a bottom sheet.
+  const translateX = useRef(new Animated.Value(SCREEN_W)).current;
+
+  useEffect(() => {
+    if (visible) {
+      translateX.setValue(SCREEN_W);
+      Animated.timing(translateX, { toValue: 0, duration: 260, useNativeDriver: true }).start();
+    }
+  }, [visible]);
+
+  function handleClose() {
+    Animated.timing(translateX, { toValue: SCREEN_W, duration: 220, useNativeDriver: true })
+      .start(({ finished }) => { if (finished) onClose(); });
+  }
+
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <View style={styles.screen}>
-        <View style={styles.header}>
-          <Text style={styles.title} numberOfLines={1}>{check.label}</Text>
-          <Pressable hitSlop={10} onPress={onClose} style={({ pressed }) => pressed && styles.pressed}>
-            <Text style={[styles.close, { color: accentColor }]}>×</Text>
+    // transparent: every other Modal in this app uses it — an opaque
+    // full-screen Modal triggers iOS's real view-controller-level
+    // UIModalPresentationFullScreen transition, which was leaving the
+    // ScrollView-based screen underneath with a stale/shrunk measured
+    // layout ("scrolls inside a clipped box") once dismissed. `transparent`
+    // switches iOS to an overFullScreen overlay instead, which keeps the
+    // presenting screen's layout intact; styles.screen's own opaque
+    // background still makes this read as a normal full-screen page.
+    <Modal visible={visible} transparent animationType="none" onRequestClose={handleClose}>
+      <Animated.View style={[styles.screen, { transform: [{ translateX }] }]}>
+        <View style={[styles.header, { paddingTop: insets.top + spacing.md }]}>
+          <Pressable hitSlop={10} onPress={handleClose} style={({ pressed }) => [styles.backBtn, pressed && styles.pressed]}>
+            <Text style={[styles.backArrow, { color: accentColor }]}>←</Text>
+            <Text style={[styles.backLabel, { color: accentColor }]}>Back</Text>
           </Pressable>
+          <Text style={styles.title} numberOfLines={1}>{check.label}</Text>
         </View>
 
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -70,39 +118,43 @@ export default function RepBreakdownModal({ visible, onClose, kind, check, reps 
               <Text style={[styles.th, styles.colRep]}>REP</Text>
               <Text style={[styles.th, styles.colVal]}>L</Text>
               <Text style={[styles.th, styles.colVal]}>R</Text>
-              {kind === 'rom' && <Text style={[styles.th, styles.colVal]}>ACH°</Text>}
-              <Text style={[styles.th, styles.colVal]}>{kind === 'balance' ? 'BAL%' : 'ROM%'}</Text>
+              {kind !== 'balance' && <Text style={[styles.th, styles.colVal]}>{kind === 'rom' ? 'ACH°' : 'DEV'}</Text>}
+              <Text style={[styles.th, styles.colVal]}>{kind === 'balance' ? 'BAL%' : kind === 'rom' ? 'ROM%' : 'FIX%'}</Text>
               <Text style={[styles.th, styles.colTime]}>TIME</Text>
             </View>
 
             {reps.map((r, i) => {
               const c = check.reps.find((cr) => cr.rep === r.rep) as any;
+              const lVal = c && (kind === 'balance' ? c.l_value : kind === 'rom' ? c.l_deg : c.l_deviation);
+              const rVal = c && (kind === 'balance' ? c.r_value : kind === 'rom' ? c.r_deg : c.r_deviation);
+              const achVal = c && (kind === 'rom' ? c.achieved_deg : c.achieved_deviation);
+              const pctVal = c && (kind === 'balance' ? c.balance_pct : kind === 'rom' ? c.rom_pct : c.fixation_pct);
               return (
                 <React.Fragment key={r.rep}>
                   <View style={styles.tableRow}>
                     <Text style={[styles.td, styles.colRep]}>{r.rep + 1}</Text>
                     {c ? (
                       <>
-                        <Text style={[styles.td, styles.colVal]}>{kind === 'balance' ? c.l_value : c.l_deg}</Text>
-                        <Text style={[styles.td, styles.colVal]}>{kind === 'balance' ? c.r_value : c.r_deg}</Text>
-                        {kind === 'rom' && <Text style={[styles.td, styles.colVal]}>{c.achieved_deg}</Text>}
-                        <Text style={[styles.td, styles.colVal]}>{Math.round(kind === 'balance' ? c.balance_pct : c.rom_pct)}%</Text>
+                        <Text style={[styles.td, styles.colVal]}>{lVal}</Text>
+                        <Text style={[styles.td, styles.colVal]}>{rVal}</Text>
+                        {kind !== 'balance' && <Text style={[styles.td, styles.colVal]}>{achVal}</Text>}
+                        <Text style={[styles.td, styles.colVal]}>{Math.round(pctVal)}%</Text>
                       </>
                     ) : (
                       <>
                         <Text style={[styles.td, styles.colVal]}>—</Text>
                         <Text style={[styles.td, styles.colVal]}>—</Text>
-                        {kind === 'rom' && <Text style={[styles.td, styles.colVal]}>—</Text>}
+                        {kind !== 'balance' && <Text style={[styles.td, styles.colVal]}>—</Text>}
                         <Text style={[styles.td, styles.colVal]}>—</Text>
                       </>
                     )}
-                    <Text style={[styles.td, styles.colTime]}>{formatDuration(r.duration_sec)}</Text>
+                    <Text style={[styles.td, styles.colTime]}>{formatDurationPrecise(r.duration_sec)}</Text>
                   </View>
 
                   {i < reps.length - 1 && (
                     <View style={styles.restRow}>
                       <Text style={styles.restText}>
-                        REST — {formatDuration(Math.max(0, reps[i + 1].start_sec - r.end_sec))}
+                        REST — {formatDurationPrecise(Math.max(0, reps[i + 1].start_sec - r.end_sec))}
                       </Text>
                     </View>
                   )}
@@ -111,7 +163,7 @@ export default function RepBreakdownModal({ visible, onClose, kind, check, reps 
             })}
           </View>
         </ScrollView>
-      </View>
+      </Animated.View>
     </Modal>
   );
 }
@@ -119,12 +171,14 @@ export default function RepBreakdownModal({ visible, onClose, kind, check, reps 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
   header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.md,
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: spacing.lg, paddingBottom: spacing.md,
     borderBottomWidth: 1, borderBottomColor: colors.border,
   },
-  title: { flex: 1, color: colors.text, fontSize: 17, fontWeight: '800', marginRight: spacing.md },
-  close: { fontSize: 26, fontWeight: '300', lineHeight: 26 },
+  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, marginRight: spacing.md },
+  backArrow: { fontSize: 18, fontWeight: '700' },
+  backLabel: { fontSize: 13, fontWeight: '700' },
+  title: { flex: 1, color: colors.text, fontSize: 17, fontWeight: '800' },
   pressed: { opacity: 0.5 },
 
   content: { padding: spacing.lg, paddingBottom: spacing.xxl, gap: spacing.md },

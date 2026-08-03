@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { JointCheck, JointRomCheck, VideoJobAnalysis } from '../api/videoJobs';
+import { JointCheck, JointFixationCheck, JointRomCheck, VideoJobAnalysis } from '../api/videoJobs';
 import { exerciseLabel, readinessPctFromAnalysis } from '../utils/pipelineExercise';
 import { colors, riskColor, spacing } from '../theme';
 import MetricInfoModal from './MetricInfoModal';
@@ -14,8 +14,8 @@ interface Props {
 }
 
 interface BreakdownTarget {
-  kind: 'balance' | 'rom';
-  check: JointCheck | JointRomCheck;
+  kind: 'balance' | 'rom' | 'fixation';
+  check: JointCheck | JointRomCheck | JointFixationCheck;
 }
 
 interface InfoTarget {
@@ -45,10 +45,13 @@ function readinessLabelFor(pct: number): string {
 
 /**
  * Renders one video_jobs/sessions analysis_json report (see
- * HANDOFF_video_pipeline.md section 1): the balance (L/R symmetry) and ROM
- * (range-of-motion) breakdowns, each exercise's own separately-titled but
- * identically-styled block, which "readiness" is now derived from — see
- * readinessLabelFor above. Shared by the Processing tab's completed-job
+ * HANDOFF_video_pipeline.md section 1): the balance (L/R symmetry), ROM
+ * (range-of-motion), and fixation (steadiness — e.g. Padel Stroke's arm
+ * fixation) breakdowns, each exercise's own separately-titled but
+ * identically-styled block, whichever of the three this exercise actually
+ * has profiles for — "readiness" is now derived from whichever are present,
+ * see readinessLabelFor above / pipelineExercise.ts's
+ * readinessPctFromAnalysis. Shared by the Processing tab's completed-job
  * card and Performance > History's session detail — same shape, same
  * rendering either way.
  *
@@ -62,6 +65,7 @@ function readinessLabelFor(pct: number): string {
 export default function BiomechanicsReport({ analysis, fallbackExerciseType, repCount }: Props) {
   const balance = analysis?.analyses?.balance ?? null;
   const rom = analysis?.analyses?.rom ?? null;
+  const fixation = analysis?.analyses?.fixation ?? null;
   const exerciseType = analysis?.exercise ?? fallbackExerciseType ?? null;
   const repWindows = analysis?.reps ?? [];
 
@@ -120,6 +124,26 @@ export default function BiomechanicsReport({ analysis, fallbackExerciseType, rep
               ))}
             </View>
           )}
+
+          {fixation && (
+            <View style={styles.balanceCard}>
+              <View style={styles.balanceHead}>
+                <Text style={styles.balanceTitle}>ARM FIXATION</Text>
+                <Text style={styles.balanceScore}>{Math.round(fixation.overall_fixation_pct)}%</Text>
+              </View>
+
+              {fixation.joint_checks.map((jc) => (
+                <JointRow
+                  key={jc.id}
+                  check={jc}
+                  pctValue={jc.fixation_pct}
+                  color={riskColor(severityStatus(jc.severity))}
+                  onPressRow={() => setBreakdownFor({ kind: 'fixation', check: jc })}
+                  onPressInfo={() => setInfoFor({ label: jc.label, description: jc.description, research: jc.research })}
+                />
+              ))}
+            </View>
+          )}
         </>
       ) : (
         <View style={styles.noData}>
@@ -152,7 +176,7 @@ export default function BiomechanicsReport({ analysis, fallbackExerciseType, rep
 function JointRow({
   check, pctValue, color, onPressRow, onPressInfo,
 }: {
-  check: JointCheck | JointRomCheck;
+  check: JointCheck | JointRomCheck | JointFixationCheck;
   pctValue: number;
   color: string;
   onPressRow: () => void;
@@ -169,21 +193,21 @@ function JointRow({
     >
       <View style={styles.jointTop}>
         <Text style={styles.jointLabel} numberOfLines={1}>{check.label}</Text>
-        <View style={styles.jointTopRight}>
-          <Text style={[styles.jointPct, { color }]}>{Math.round(pctValue)}%</Text>
-          {/* Nested Pressable — RN's responder system gives the touch to
-              this one, not the row's own onPress, when tapped directly. */}
-          <Pressable
-            hitSlop={8}
-            onPress={onPressInfo}
-            style={({ pressed }) => [styles.infoBadge, pressed && styles.pressed]}
-          >
-            <Text style={styles.infoBadgeText}>?</Text>
-          </Pressable>
-        </View>
+        {/* Nested Pressable — RN's responder system gives the touch to
+            this one, not the row's own onPress, when tapped directly. */}
+        <Pressable
+          hitSlop={8}
+          onPress={onPressInfo}
+          style={({ pressed }) => [styles.infoBadge, pressed && styles.pressed]}
+        >
+          <Text style={styles.infoBadgeText}>?</Text>
+        </Pressable>
       </View>
-      <View style={styles.jointTrack}>
-        <View style={[styles.jointFill, { width: `${Math.max(0, Math.min(100, pctValue))}%`, backgroundColor: color }]} />
+      <View style={styles.jointBottom}>
+        <Text style={[styles.jointPct, { color }]}>{Math.round(pctValue)}%</Text>
+        <View style={styles.jointTrack}>
+          <View style={[styles.jointFill, { width: `${Math.max(0, Math.min(100, pctValue))}%`, backgroundColor: color }]} />
+        </View>
       </View>
     </Pressable>
   );
@@ -211,21 +235,21 @@ const styles = StyleSheet.create({
   balanceTitle: { color: colors.muted, fontSize: 11, fontWeight: '700', letterSpacing: 2 },
   balanceScore: { color: colors.text, fontSize: 16, fontWeight: '900' },
 
-  jointRow: { marginTop: spacing.sm },
+  jointRow: { marginTop: spacing.lg },
   jointRowPressed: { opacity: 0.7 },
   jointRowInformational: { opacity: 0.6 },
-  jointTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  jointLabel: { flex: 1, color: colors.text, fontSize: 13, fontWeight: '600' },
-  jointTopRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
-  jointPct: { fontSize: 13, fontWeight: '800', marginLeft: spacing.sm },
-  jointTrack: { height: 4, backgroundColor: colors.surfaceHigh, borderRadius: 2, overflow: 'hidden', marginTop: 6 },
+  jointTop: { flexDirection: 'row', alignItems: 'center' },
+  jointLabel: { flexShrink: 1, color: colors.text, fontSize: 13, fontWeight: '600' },
+  jointBottom: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: 6 },
+  jointPct: { fontSize: 13, fontWeight: '800' },
+  jointTrack: { flex: 1, height: 4, backgroundColor: colors.surfaceHigh, borderRadius: 2, overflow: 'hidden' },
   jointFill: { height: 4, borderRadius: 2 },
   informationalNote: { color: colors.muted, fontSize: 10, marginTop: 3, fontStyle: 'italic' },
 
   pressed: { opacity: 0.5 },
   infoBadge: {
     width: INFO_BADGE_SIZE, height: INFO_BADGE_SIZE, borderRadius: INFO_BADGE_SIZE / 2,
-    borderWidth: 1.5, borderColor: colors.muted,
+    borderWidth: 1.5, borderColor: colors.muted, marginLeft: spacing.sm,
     alignItems: 'center', justifyContent: 'center',
   },
   infoBadgeText: { color: colors.muted, fontSize: 11, fontWeight: '800', includeFontPadding: false, marginTop: -1 },

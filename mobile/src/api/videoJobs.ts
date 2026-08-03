@@ -87,6 +87,48 @@ export interface RomReport {
   limited_joints: unknown[];
 }
 
+export interface JointFixationCheckRep {
+  rep: number;
+  start_frame: number;
+  end_frame: number;
+  l_deviation: number;
+  r_deviation: number;
+  achieved_deviation: number;
+  fixation_pct: number;
+  severity: 'ok' | 'watch' | 'at_risk';
+}
+
+// Mirrors JointRomCheck's shape (see biomechanics/fixation.py, a third
+// sibling analyzer to balance.py/rom.py) but scores how STEADY a joint
+// stayed across the whole rep window rather than how far it traveled —
+// LESS deviation is better (e.g. Padel Stroke's arm should stay close to
+// fixed while the shoulder leads), the opposite goal from ROM's "achieve
+// enough range." `max_deviation` has no "_deg" suffix since the underlying
+// signal's unit varies (degrees for an angle signal, meters for a position
+// signal like wrist height) — see fixation_thresholds.py.
+export interface JointFixationCheck {
+  id: string;
+  label: string;
+  joint: string;
+  informational: boolean;
+  max_deviation: number;
+  fixation_pct: number;
+  severity: 'ok' | 'watch' | 'at_risk';
+  watch_threshold_pct: number;
+  at_risk_threshold_pct: number;
+  description: string;
+  research: string[];
+  reps: JointFixationCheckRep[];
+}
+
+export interface FixationReport {
+  method: string;
+  overall_fixation_pct: number;
+  rep_count: number;
+  joint_checks: JointFixationCheck[];
+  unstable_joints: unknown[];
+}
+
 export interface RepWindow {
   rep: number;
   start_sec: number;
@@ -100,6 +142,7 @@ export interface VideoJobAnalysis {
   analyses: {
     balance?: BalanceReport;
     rom?: RomReport;
+    fixation?: FixationReport;
   };
   // Canonical per-rep timing, independent of which analysis method ran —
   // see backend/GENMO/scripts/biomechanics/analysis.py's

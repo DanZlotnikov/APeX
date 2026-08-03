@@ -29,7 +29,7 @@ interface Props {
   onBack: () => void;
   teamId: string;
   managerId: string;
-  onNotifNavigate: (athleteId: string | null) => void;
+  onNotifNavigate: (athleteId: string | null, sessionId: string | null) => void;
   onSettings: () => void;
   onLogout: () => void;
 }
@@ -90,6 +90,7 @@ export default function ManagerTopBar({
               message:   n.message,
               severity:  n.severity,
               athleteId: n.athlete_id,
+              sessionId: n.session_id,
               timestamp: 'Just now',
             };
             return [vm, ...prev];
@@ -113,7 +114,7 @@ export default function ManagerTopBar({
     setReadIds((prev) => new Set([...prev, notif.id]));
     void notifApi.markRead(managerId, notif.id);
     if (notif.athleteId) {
-      onNotifNavigate(notif.athleteId);
+      onNotifNavigate(notif.athleteId, notif.sessionId);
     }
   }
 

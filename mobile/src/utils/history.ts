@@ -27,8 +27,8 @@ export const EMPTY_PROFILE: Profile = { name: '', heightCm: null, weightKg: null
 // id) — a shared device-global filename would leak one account's session
 // history/profile into whichever account is signed in next on the same
 // device, which is exactly the bug this scoping fixes. `settings.json`
-// (theme/units/sound — device UI prefs, not personal data) intentionally
-// stays global; see SettingsContext.tsx.
+// (theme/units — device UI prefs, not personal data) intentionally stays
+// global; see SettingsContext.tsx.
 function historyFile(userId: string): string { return `history_${userId}.json`; }
 function profileFile(userId: string): string { return `profile_${userId}.json`; }
 

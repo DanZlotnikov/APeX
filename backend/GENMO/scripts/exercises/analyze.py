@@ -100,17 +100,24 @@ def _run_exercise(defn, signals: dict, times: np.ndarray, flight_signals: tuple[
 
 
 def _resolve_standing(signals: dict, reps_by_key: dict[str, list], defs: list) -> dict[str, list]:
-    """STANDING holds 2 exercises that can be confused with one another: a
-    jump's countermovement dip can look like a shallow squat. Real
-    flight-phase evidence is stronger and less ambiguous than a threshold-
-    crossing guess, so a detected jump wins outright over squat. (deadlift
-    used to share STANDING too and needed a real ROM-ratio discriminator
-    against squat — removed from the pipeline entirely, see exercises.py.)
+    """STANDING now holds several exercises. squat vs. vertical_jump is a
+    special case: a jump's countermovement dip can look like a shallow
+    squat, and real flight-phase evidence is stronger and less ambiguous
+    than a threshold-crossing guess, so a detected jump wins outright over
+    squat. (deadlift used to share STANDING too and needed a real ROM-ratio
+    discriminator against squat — removed from the pipeline entirely, see
+    exercises.py.) Everything else sharing STANDING (padel's stroke, and any
+    future addition) doesn't have that specific ambiguity with squat/jump,
+    so it falls back to ordinary highest-priority-wins resolution — see
+    _resolve_by_priority — against whatever else fired. This used to
+    hardcode just "vertical_jump"/"squat" by name, which silently discarded
+    any other STANDING exercise's reps the moment a second one was added;
+    generalizing this was required before padel could ever be detected.
     """
     jump_reps = reps_by_key.get("vertical_jump", [])
     if jump_reps:
-        return {"vertical_jump": jump_reps, "squat": []}
-    return {"vertical_jump": [], "squat": reps_by_key.get("squat", [])}
+        return {d.key: (jump_reps if d.key == "vertical_jump" else []) for d in defs}
+    return _resolve_by_priority(signals, reps_by_key, [d for d in defs if d.key != "vertical_jump"])
 
 
 def _resolve_by_priority(signals: dict, reps_by_key: dict[str, list], defs: list) -> dict[str, list]:

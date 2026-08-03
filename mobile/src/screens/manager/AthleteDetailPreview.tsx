@@ -6,6 +6,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from
 import LineTrend from '../../components/charts/LineTrend';
 import FloatingTabBar from '../../components/FloatingTabBar';
 import { markAthleteInjured, markAthleteRecovered } from '../../api/athletes';
+import { pokeAthlete } from '../../api/pushNotifications';
 import { AthleteViewModel } from '../../api/types';
 import { useSettings } from '../../state/SettingsContext';
 import { colors, spacing } from '../../theme';
@@ -33,6 +34,12 @@ const navTheme = {
 interface Props {
   athlete: AthleteViewModel;
   onStatusChanged: () => void;
+  /** Set when arriving here from a "X completed a Y exercise" notification tap
+   * (see App.tsx's handleNotifNavigate) — deep-links straight to that
+   * session's detail inside the History tab instead of landing on the
+   * default Profile tab, the same destination tapping the row in the
+   * History list itself would reach. */
+  initialSessionId?: string | null;
 }
 
 // Same floating pill tab bar as ManagerHome/DashboardScreen (see their own
@@ -41,9 +48,36 @@ interface Props {
 // History/HistoryDetail screens verbatim, just pointed at this athlete's id
 // instead of the signed-in user's own, since both already take an explicit
 // userId param rather than assuming "self" (see HANDOFF/manager module audit).
-export default function AthleteDetailPreview({ athlete, onStatusChanged }: Props) {
+export default function AthleteDetailPreview({ athlete, onStatusChanged, initialSessionId }: Props) {
+  // Seeds the whole nested tree (active tab + the History tab's own stack)
+  // in one shot via React Navigation's initialState — the officially
+  // supported way to deep-link into a nested navigator with a real
+  // back-stack, rather than an imperative navigate() after mount. Building
+  // HistoryList *and* HistoryDetail (not HistoryDetail alone) means the
+  // screen's own back button correctly pops to the list instead of having
+  // nowhere to go. Only takes effect on this component's initial mount —
+  // App.tsx keys this component so a fresh notification tap always remounts
+  // it, even when already viewing an athlete.
+  const initialState = initialSessionId ? {
+    index: 1,
+    routes: [
+      { name: 'Profile' },
+      {
+        name: 'History',
+        state: {
+          index: 1,
+          routes: [
+            { name: 'HistoryList' },
+            { name: 'HistoryDetail', params: { id: initialSessionId } },
+          ],
+        },
+      },
+      { name: 'Routine' },
+    ],
+  } : undefined;
+
   return (
-    <NavigationContainer theme={navTheme}>
+    <NavigationContainer theme={navTheme} initialState={initialState}>
       <Tab.Navigator
         tabBarPosition="bottom"
         tabBar={(props) => <FloatingTabBar {...props} glyphs={GLYPH} />}
@@ -103,10 +137,26 @@ function AthleteProfileStack({ athlete, onStatusChanged }: Props) {
 
 function AthleteProfileTab({ athlete, onStatusChanged }: Props) {
   const navigation = useNavigation<any>();
-  const { accentColor } = useSettings();
+  const { accentColor, accentOn } = useSettings();
   const readinessColor = colorForReadiness(athlete.readiness);
   const [marking, setMarking] = useState(false);
   const [markError, setMarkError] = useState<string | null>(null);
+  const [poking, setPoking] = useState(false);
+  const [pokeSent, setPokeSent] = useState(false);
+  const [pokeError, setPokeError] = useState<string | null>(null);
+
+  async function handlePoke() {
+    setPoking(true);
+    setPokeError(null);
+    try {
+      await pokeAthlete(athlete.id, athlete.missingTests);
+      setPokeSent(true);
+    } catch (e) {
+      setPokeError(e instanceof Error ? e.message : 'Failed to send notification.');
+    } finally {
+      setPoking(false);
+    }
+  }
 
   async function handleMarkInjured() {
     const ok = await confirmAsync(
@@ -226,16 +276,36 @@ function AthleteProfileTab({ athlete, onStatusChanged }: Props) {
           </Pressable>
         )}
 
-        {/* ── Last test ── */}
+        {/* ── Last exercise ── */}
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>LAST TEST</Text>
+          <Text style={styles.cardTitle}>LAST EXERCISE</Text>
           <Text style={styles.cardValue}>{lastTestFull}</Text>
           {athlete.missingTests > 0 && (
             <View style={styles.missingRow}>
               <Text style={styles.missingIcon}>!</Text>
               <Text style={styles.missingText}>
-                {athlete.missingTests} required test{athlete.missingTests > 1 ? 's' : ''} not completed today
+                {athlete.missingTests} required exercise{athlete.missingTests > 1 ? 's' : ''} not completed today
               </Text>
+            </View>
+          )}
+          {athlete.missingTests > 0 && (
+            <View style={styles.pokeRow}>
+              <Pressable
+                onPress={() => void handlePoke()}
+                disabled={poking || pokeSent}
+                style={({ pressed }) => [
+                  styles.pokeBtn,
+                  { backgroundColor: pokeSent ? colors.surfaceHigh : accentColor },
+                  pressed && !pokeSent && styles.pokeBtnPressed,
+                ]}
+              >
+                {poking
+                  ? <ActivityIndicator color={accentOn} size="small" />
+                  : <Text style={[styles.pokeBtnText, { color: pokeSent ? colors.muted : accentOn }]}>
+                      {pokeSent ? 'Poked ✓' : '💪 Poke'}
+                    </Text>}
+              </Pressable>
+              {pokeError && <Text style={styles.pokeErrorText}>{pokeError}</Text>}
             </View>
           )}
         </View>
@@ -358,6 +428,22 @@ const styles = StyleSheet.create({
   },
   missingIcon: { color: '#FF3B30', fontSize: 13, fontWeight: '900' },
   missingText: { color: colors.text, fontSize: 12, fontWeight: '500', flex: 1 },
+
+  // Self-sized, left-aligned — a lightweight, frequently-tappable nudge
+  // action, not a rare/weighty commit like injuryBtn/recoverBtn below (which
+  // are deliberately big and centered), so it shouldn't compete visually.
+  pokeRow: { marginTop: spacing.sm, alignItems: 'flex-start' },
+  pokeBtn: {
+    minWidth: 96,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pokeBtnPressed: { opacity: 0.7 },
+  pokeBtnText: { fontSize: 12, fontWeight: '800', letterSpacing: 0.5 },
+  pokeErrorText: { color: '#FF3B30', fontSize: 11, marginTop: spacing.xs },
 
   injuryAction: { alignItems: 'center', marginTop: spacing.sm },
   injuryBtn: {

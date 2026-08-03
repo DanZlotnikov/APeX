@@ -18,7 +18,9 @@
  * verbatim — resolveJobExerciseKey() below is the fix, unchanged by the
  * move to a DB-driven registry.
  */
-import { ExerciseInfo, getAvailableExercises, getCachedExercisesSync } from '../api/exercises';
+import {
+  ExerciseInfo, getAvailableExercises, getCachedExerciseCategoriesSync, getCachedExercisesSync,
+} from '../api/exercises';
 
 // Loosened from a fixed string-literal union now that the actual set of
 // keys is DB-driven, not a fixed compile-time list — callers that need the
@@ -30,6 +32,14 @@ export function exerciseLabel(exerciseType: string | null | undefined): string {
   if (!exerciseType) return 'Exercise';
   const match = getCachedExercisesSync().find((e) => e.key === exerciseType);
   return match?.label ?? exerciseType;
+}
+
+// Same cached-lookup/raw-key-fallback shape as exerciseLabel() above, for
+// the exercise's category rather than the exercise itself.
+export function categoryLabel(categoryKey: string | null | undefined): string {
+  if (!categoryKey) return 'Category';
+  const match = getCachedExerciseCategoriesSync().find((c) => c.key === categoryKey);
+  return match?.label ?? categoryKey;
 }
 
 // Every currently-enabled exercise key, in display (sort_order) order —
@@ -58,24 +68,33 @@ export function resolveJobExerciseKey(job: { exerciseType: string | null }): str
   return match?.key ?? job.exerciseType;
 }
 
-// Readiness = the average of L/R balance and range of motion when both are
-// present for this exercise (see migration 016's save_video_job) — a
-// perfectly symmetric but shallow rep, or vice versa, shouldn't read as
-// "Ready" on one score alone. Falls back to whichever single score is
-// present if only one analyzer produced a result (e.g. 0 reps); null if
-// neither did. The ONE place this formula lives client-side — every screen
-// that shows a "readiness" number for a completed-but-not-yet-saved
-// video_jobs row (the Routine progress table, BiomechanicsReport's gauge)
-// must call this rather than reading
-// overall_balance_pct directly, so a job never shows a different readiness
-// number before Save than sessions.readiness_score gives it after.
+// Readiness = the average of whichever of {L/R balance, range of motion,
+// arm fixation} this exercise actually produced (see migration 027's
+// save_video_job) — a perfectly symmetric but shallow rep, or vice versa,
+// shouldn't read as "Ready" on one score alone; same reasoning extends to
+// fixation for exercises like Padel Stroke that only ever produce that one
+// analysis (no balance/rom profile registered for it — see
+// biomechanics/fixation_thresholds.py). Falls back to whichever subset of
+// scores is present; null only if none of the three analyzers produced a
+// result (e.g. 0 reps). The ONE place this formula lives client-side —
+// every screen that shows a "readiness" number for a completed-but-not-yet-
+// saved video_jobs row (the Routine progress table, BiomechanicsReport's
+// gauge) must call this rather than reading overall_balance_pct/
+// overall_rom_pct/overall_fixation_pct directly, so a job never shows a
+// different readiness number before Save than sessions.readiness_score
+// gives it after.
 export function readinessPctFromAnalysis(analysis: {
-  analyses?: { balance?: { overall_balance_pct: number }; rom?: { overall_rom_pct: number } };
+  analyses?: {
+    balance?: { overall_balance_pct: number };
+    rom?: { overall_rom_pct: number };
+    fixation?: { overall_fixation_pct: number };
+  };
 } | null | undefined): number | null {
-  const balancePct = analysis?.analyses?.balance?.overall_balance_pct;
-  const romPct = analysis?.analyses?.rom?.overall_rom_pct;
-  if (balancePct != null && romPct != null) return (balancePct + romPct) / 2;
-  if (balancePct != null) return balancePct;
-  if (romPct != null) return romPct;
-  return null;
+  const pcts = [
+    analysis?.analyses?.balance?.overall_balance_pct,
+    analysis?.analyses?.rom?.overall_rom_pct,
+    analysis?.analyses?.fixation?.overall_fixation_pct,
+  ].filter((v): v is number => v != null);
+  if (pcts.length === 0) return null;
+  return pcts.reduce((sum, v) => sum + v, 0) / pcts.length;
 }

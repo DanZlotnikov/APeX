@@ -7,6 +7,8 @@ import ApexLoader from '../../components/ApexLoader';
 import BiomechanicsReport from '../../components/BiomechanicsReport';
 import VideoPlayer from '../../components/VideoPlayer';
 import { colors, spacing } from '../../theme';
+import { formatSessionDateTimeOrdinal } from '../../utils/format';
+import { exerciseLabel } from '../../utils/pipelineExercise';
 import DashHeader from './DashHeader';
 
 const VIDEO_H = Math.round(Dimensions.get('window').height * 0.4);
@@ -74,9 +76,11 @@ export default function HistoryDetailScreen({ userId, canDelete = true }: Props)
     );
   }
 
+  const title = `${exerciseLabel(entry.exerciseType).toUpperCase()} · ${formatSessionDateTimeOrdinal(entry.recordedAt).toUpperCase()}`;
+
   return (
     <View style={styles.screen}>
-      <DashHeader title="SESSION" onBack={() => navigation.goBack()} />
+      <DashHeader title={title} onBack={() => navigation.goBack()} />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
 
         {videoUrl ? (

@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { deleteAccount } from '../../api/auth';
-import Toggle from '../../components/Toggle';
 import { useSettings } from '../../state/SettingsContext';
 import { ACCENTS, AccentKey, colors, FontScaleKey, spacing } from '../../theme';
 import { confirmAsync } from '../../utils/confirm';
@@ -124,16 +123,6 @@ export default function SettingsScreen({ onLogout }: Props) {
         {/* ── Preferences ── */}
         <Section title="PREFERENCES" fontScale={fontScale} />
         <View style={styles.card}>
-          <View style={styles.switchRow}>
-            <Text style={styles.rowLabel}>Sound effects</Text>
-            <Toggle
-              value={settings.sound}
-              onValueChange={(v) => update({ sound: v })}
-              accentColor={accentColor}
-            />
-          </View>
-
-          <View style={styles.divider} />
           <Text style={styles.rowLabel}>Units</Text>
           <Segmented
             options={[{ key: 'metric', label: 'Metric' }, { key: 'imperial', label: 'Imperial' }]}
@@ -268,7 +257,6 @@ const styles = StyleSheet.create({
   input: { color: colors.text, fontSize: 16, fontWeight: '600', paddingVertical: 4 },
 
   rowLabel: { color: colors.text, fontSize: 14, fontWeight: '600', paddingVertical: spacing.sm },
-  switchRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   divider: { height: 1, backgroundColor: colors.border, marginVertical: spacing.xs },
 
   swatches: { flexDirection: 'row', gap: spacing.sm, paddingBottom: spacing.sm },

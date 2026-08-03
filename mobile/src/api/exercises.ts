@@ -1,6 +1,7 @@
 /**
- * The app's exercise registry — see supabase/migrations/023_exercises_registry.sql.
- * Source of truth for which exercises exist, their display labels, and the
+ * The app's exercise registry — see supabase/migrations/023_exercises_registry.sql
+ * and 026_exercise_categories.sql. Source of truth for which exercises
+ * exist, their display labels, which category they belong to, and the
  * order they're shown in — no longer hardcoded in mobile (see
  * utils/pipelineExercise.ts, which wraps this for the rest of the app).
  */
@@ -11,6 +12,14 @@ export interface ExerciseInfo {
   rawKey: string; // pipeline's raw vocabulary — matches video_jobs.exercise_type
   label: string;
   shortLabel: string;
+  sortOrder: number;
+  enabled: boolean;
+  categoryKey: string; // matches exercise_categories.key — every exercise has one (required column)
+}
+
+export interface ExerciseCategoryInfo {
+  key: string;
+  label: string;
   sortOrder: number;
   enabled: boolean;
 }
@@ -27,7 +36,7 @@ let cachedList: ExerciseInfo[] = [];
 async function fetchAllExercises(): Promise<ExerciseInfo[]> {
   const { data, error } = await supabase
     .from('exercises')
-    .select('key, raw_key, label, short_label, sort_order, enabled')
+    .select('key, raw_key, label, short_label, sort_order, enabled, category_key')
     .order('sort_order', { ascending: true });
   if (error) throw error;
   const list = (data ?? []).map((r) => ({
@@ -37,6 +46,7 @@ async function fetchAllExercises(): Promise<ExerciseInfo[]> {
     shortLabel: r.short_label,
     sortOrder: r.sort_order,
     enabled: r.enabled,
+    categoryKey: r.category_key,
   }));
   cachedList = list;
   return list;
@@ -77,4 +87,40 @@ export async function getAvailableExercises(): Promise<ExerciseInfo[]> {
 // miss, the same as for any exercise key they don't recognize.
 export function getCachedExercisesSync(): ExerciseInfo[] {
   return cachedList;
+}
+
+let cachedCategoriesPromise: Promise<ExerciseCategoryInfo[]> | null = null;
+let cachedCategoriesList: ExerciseCategoryInfo[] = [];
+
+async function fetchExerciseCategories(): Promise<ExerciseCategoryInfo[]> {
+  const { data, error } = await supabase
+    .from('exercise_categories')
+    .select('key, label, sort_order, enabled')
+    .order('sort_order', { ascending: true });
+  if (error) throw error;
+  const list = (data ?? []).map((r) => ({
+    key: r.key,
+    label: r.label,
+    sortOrder: r.sort_order,
+    enabled: r.enabled,
+  }));
+  cachedCategoriesList = list;
+  return list;
+}
+
+// Same fetch-once/memoized-on-success-only shape as getAllExercises() above.
+export function getExerciseCategories(): Promise<ExerciseCategoryInfo[]> {
+  if (!cachedCategoriesPromise) {
+    cachedCategoriesPromise = fetchExerciseCategories().catch((e) => {
+      cachedCategoriesPromise = null;
+      throw e;
+    });
+  }
+  return cachedCategoriesPromise;
+}
+
+// Same sync-best-effort shape as getCachedExercisesSync() above, for
+// label-lookup helpers that can't await (pipelineExercise.ts's categoryLabel).
+export function getCachedExerciseCategoriesSync(): ExerciseCategoryInfo[] {
+  return cachedCategoriesList;
 }

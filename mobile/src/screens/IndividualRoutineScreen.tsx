@@ -6,9 +6,10 @@ import RepStepper from '../components/RepStepper';
 import {
   addExercise, addSet, getRoutine, removeExercise, removeSet, RoutineExercise, updateSetReps,
 } from '../api/routine';
+import { ExerciseCategoryInfo, ExerciseInfo, getExerciseCategories } from '../api/exercises';
 import { useSettings } from '../state/SettingsContext';
 import { colors, spacing } from '../theme';
-import { exerciseLabel, getPipelineExerciseKeys, PipelineExerciseKey } from '../utils/pipelineExercise';
+import { exerciseLabel, getAvailableExerciseInfos, PipelineExerciseKey } from '../utils/pipelineExercise';
 
 interface Props {
   athleteId?: string;
@@ -32,16 +33,25 @@ const REMOVE_BTN_SIZE = 24;
 export default function IndividualRoutineScreen({ athleteId, readOnly }: Props) {
   const { accentColor } = useSettings();
   const [routine, setRoutine] = useState<RoutineExercise[]>([]);
-  const [allKeys, setAllKeys] = useState<PipelineExerciseKey[]>([]);
+  const [allExercises, setAllExercises] = useState<ExerciseInfo[]>([]);
+  const [categories, setCategories] = useState<ExerciseCategoryInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [addOpen, setAddOpen] = useState(false);
+  // Which step the "+ Add Exercise" modal is showing — pick a category
+  // first, then an exercise within it (see openAddModal below for how the
+  // starting step is decided).
+  const [pickerStep, setPickerStep] = useState<'category' | 'exercise'>('category');
+  const [pickedCategory, setPickedCategory] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!athleteId) { setLoading(false); return; }
     try {
-      const [r, keys] = await Promise.all([getRoutine(athleteId), getPipelineExerciseKeys()]);
+      const [r, exercises, cats] = await Promise.all([
+        getRoutine(athleteId), getAvailableExerciseInfos(), getExerciseCategories(),
+      ]);
       setRoutine(r);
-      setAllKeys(keys);
+      setAllExercises(exercises);
+      setCategories(cats);
     } catch (e) {
       console.warn('[APeX] Failed to load routine:', e);
     } finally {
@@ -52,16 +62,59 @@ export default function IndividualRoutineScreen({ athleteId, readOnly }: Props) 
   useFocusEffect(useCallback(() => { void load(); }, [load]));
 
   const activeEntries = routine.filter((r) => r.sets.length > 0);
-  const availableKeys = allKeys.filter(
-    (k) => !activeEntries.some((r) => r.exerciseType === k),
+  const availableExercises = allExercises.filter(
+    (e) => !activeEntries.some((r) => r.exerciseType === e.key),
   );
+  // Categories are already sort_order-sorted from the API; filter/map here
+  // preserves that order, no re-sort needed. Only categories with at least
+  // one available exercise are shown — an empty category (everything in it
+  // already in the routine) would just be a dead end to tap into.
+  const categoriesWithAvailable = categories
+    .map((category) => ({ category, exercises: availableExercises.filter((e) => e.categoryKey === category.key) }))
+    .filter((c) => c.exercises.length > 0);
+  const exercisesForPickedCategory = categoriesWithAvailable.find((c) => c.category.key === pickedCategory)?.exercises ?? [];
+
+  // Opening the modal (re)computes the starting step fresh from current
+  // data every time, rather than relying on state left over from the last
+  // time it was open. Skips straight to the exercise-list step if only one
+  // category currently has anything available at all (e.g. a roster with
+  // every General Fitness exercise already in the routine, leaving only
+  // Padel) — showing a one-item category list first would be pure friction.
+  function openAddModal() {
+    if (categoriesWithAvailable.length === 1) {
+      setPickedCategory(categoriesWithAvailable[0].category.key);
+      setPickerStep('exercise');
+    } else {
+      setPickedCategory(null);
+      setPickerStep('category');
+    }
+    setAddOpen(true);
+  }
+
+  function closeAddModal() {
+    setAddOpen(false);
+    setPickedCategory(null);
+    setPickerStep('category');
+  }
+
+  // Tapping a category with exactly one available exercise adds it directly
+  // instead of showing a redundant one-item step 2 — this is what makes
+  // Padel's single "Padel Stroke" exercise feel like one tap, not two.
+  function handlePickCategory(categoryKey: string, exercisesInCategory: ExerciseInfo[]) {
+    if (exercisesInCategory.length === 1) {
+      void handlePickExercise(exercisesInCategory[0].key);
+      return;
+    }
+    setPickedCategory(categoryKey);
+    setPickerStep('exercise');
+  }
 
   // Picking an exercise adds it immediately with one set at the default rep
   // target and closes the modal right away — sets can then be tuned or added
   // to on its card via the same controls every other row already uses.
   async function handlePickExercise(key: PipelineExerciseKey) {
     if (!athleteId) return;
-    setAddOpen(false);
+    closeAddModal();
     setRoutine((prev) => [
       ...prev.filter((r) => r.exerciseType !== key),
       { exerciseType: key, sets: [{ index: 0, targetReps: DEFAULT_SET_REPS }] },
@@ -144,15 +197,19 @@ export default function IndividualRoutineScreen({ athleteId, readOnly }: Props) 
       {/* Pinned above the ScrollView (a sibling, not a scroll child) so it
           stays put while the exercise list scrolls underneath it. */}
       <View style={styles.stickyHeader}>
-        <Text style={styles.kicker}>INDIVIDUAL ROUTINE</Text>
         <Text style={styles.title}>Daily exercises</Text>
         <Text style={styles.subtitle}>
           {readOnly
             ? "Your manager controls your routine — exercises, sets and reps are set for you."
             : 'Add exercises, then add sets and set how many reps each set needs.'}
         </Text>
-        {!readOnly && availableKeys.length > 0 && (
-          <PrimaryButton label="+ Add Exercise" onPress={() => setAddOpen(true)} style={styles.addBtn} />
+        {!readOnly && availableExercises.length > 0 && (
+          <PrimaryButton
+            label="+ Add Exercise"
+            onPress={openAddModal}
+            style={styles.addBtn}
+            labelStyle={styles.addBtnLabel}
+          />
         )}
       </View>
 
@@ -192,10 +249,11 @@ export default function IndividualRoutineScreen({ athleteId, readOnly }: Props) 
                       so a single tap can't silently wipe it out. */}
                   {!readOnly && entry.sets.length > 1 && (
                     <Pressable
+                      hitSlop={10}
                       onPress={() => void deleteSet(entry.exerciseType, set.index)}
                       style={({ pressed }) => [styles.removeSetBtn, pressed && styles.pressed]}
                     >
-                      <Text style={styles.removeSetBtnText}>−</Text>
+                      <Text style={styles.removeSetBtnText}>Remove</Text>
                     </Pressable>
                   )}
                 </View>
@@ -229,20 +287,43 @@ export default function IndividualRoutineScreen({ athleteId, readOnly }: Props) 
         )}
       </ScrollView>
 
-      <Modal visible={addOpen} transparent animationType="fade" onRequestClose={() => setAddOpen(false)}>
-        <Pressable style={styles.backdrop} onPress={() => setAddOpen(false)} />
+      <Modal visible={addOpen} transparent animationType="fade" onRequestClose={closeAddModal}>
+        <Pressable style={styles.backdrop} onPress={closeAddModal} />
         <View style={styles.modalCard}>
           <Text style={styles.modalTitle}>ADD EXERCISE</Text>
-          {availableKeys.map((key) => (
+
+          {pickerStep === 'exercise' && (
             <Pressable
-              key={key}
-              onPress={() => void handlePickExercise(key)}
-              style={({ pressed }) => [styles.modalRow, pressed && styles.modalRowPressed]}
+              hitSlop={10}
+              onPress={() => { setPickedCategory(null); setPickerStep('category'); }}
+              style={({ pressed }) => [styles.modalBackBtn, pressed && styles.pressed]}
             >
-              <Text style={styles.modalRowText}>{exerciseLabel(key)}</Text>
-              <Text style={styles.chevron}>›</Text>
+              <Text style={[styles.modalBackArrow, { color: accentColor }]}>‹</Text>
+              <Text style={[styles.modalBackLabel, { color: accentColor }]}>Categories</Text>
             </Pressable>
-          ))}
+          )}
+
+          {pickerStep === 'category'
+            ? categoriesWithAvailable.map(({ category, exercises }) => (
+              <Pressable
+                key={category.key}
+                onPress={() => handlePickCategory(category.key, exercises)}
+                style={({ pressed }) => [styles.modalRow, pressed && styles.modalRowPressed]}
+              >
+                <Text style={styles.modalRowText}>{category.label}</Text>
+                <Text style={styles.chevron}>›</Text>
+              </Pressable>
+            ))
+            : exercisesForPickedCategory.map((ex) => (
+              <Pressable
+                key={ex.key}
+                onPress={() => void handlePickExercise(ex.key)}
+                style={({ pressed }) => [styles.modalRow, pressed && styles.modalRowPressed]}
+              >
+                <Text style={styles.modalRowText}>{ex.label}</Text>
+                <Text style={styles.chevron}>›</Text>
+              </Pressable>
+            ))}
         </View>
       </Modal>
     </View>
@@ -267,13 +348,23 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 4 },
   },
-  kicker: { color: colors.muted, fontSize: 11, fontWeight: '700', letterSpacing: 2.5, marginBottom: spacing.xs },
   title: { color: colors.text, fontSize: 26, fontWeight: '900', letterSpacing: 0.5 },
   subtitle: { color: colors.muted, fontSize: 13, lineHeight: 19, marginTop: spacing.xs },
   loading: { marginTop: spacing.lg },
   empty: { color: colors.muted, fontSize: 13, lineHeight: 19, marginTop: spacing.sm },
 
-  addBtn: { marginTop: spacing.md },
+  // Overrides PrimaryButton's own full-width, minHeight:56 base — this is a
+  // secondary header action, not the screen's primary CTA, so it should
+  // read as compact and self-sized rather than a big full-width button.
+  addBtn: {
+    marginTop: spacing.md,
+    alignSelf: 'flex-start',
+    minHeight: 0,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    borderRadius: 12,
+  },
+  addBtnLabel: { fontSize: 13, letterSpacing: 0.5 },
   pressed: { opacity: 0.6 },
 
   card: {
@@ -288,36 +379,31 @@ const styles = StyleSheet.create({
 
   setRow: { flexDirection: 'row', alignItems: 'center', marginTop: spacing.md },
   setLabel: { color: colors.muted, fontSize: 10, fontWeight: '700', letterSpacing: 1.2, width: 48 },
-  // flex: 1 so it soaks up the row's remaining width, pinning the "-" button
-  // (a fixed-size sibling, not flexed) to the row's right edge without any
-  // absolute positioning.
+  // flex: 1 so it soaks up the row's remaining width, pinning the remove
+  // button to the row's trailing edge, away from the stepper. Both Apple's
+  // HIG ("place a potentially destructive control farther away from
+  // frequently-used controls") and NN/g's stepper guidance ("give delete
+  // buttons distance from primary actions to avoid accidental taps") argue
+  // against the two sitting flush together — confirmed the hard way when
+  // they were briefly adjacent.
   setStepperWrap: { flex: 1 },
 
-  // Exactly RepStepper's own +/- button (BTN_SIZE=36, borderWidth 1.5, no
-  // background, no hitSlop) at half the size and in gray instead of the
-  // accent color — that one is proven reliable to tap in practice, so this
-  // reuses the identical structure rather than a custom hit-area trick. Same
-  // treatment as the exercise-level removeBtn below, just inline in the set
-  // row instead of absolutely positioned (no overlapping sibling here, so no
-  // hit-testing workaround needed).
+  // Plain text label, no circle/border — hitSlop (above) carries the tap
+  // target instead of a visible outline, so it reads as an unambiguous,
+  // lighter-weight action rather than a third button matching the stepper's
+  // own bordered +/- circles.
   removeSetBtn: {
-    width: REMOVE_BTN_SIZE,
-    height: REMOVE_BTN_SIZE,
-    borderRadius: REMOVE_BTN_SIZE / 2,
-    borderWidth: 1.5,
-    borderColor: colors.muted,
+    paddingVertical: spacing.xs,
     alignItems: 'center',
     justifyContent: 'center',
-    marginLeft: spacing.sm,
+    marginLeft: spacing.md,
   },
   removeSetBtnText: {
     color: colors.muted,
-    fontSize: 14,
-    fontWeight: '800',
-    includeFontPadding: false,
-    marginTop: -1,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
-
   // Full-width dashed-outline row (Notion/Trello-style "+ Add" placeholder)
   // rather than a small self-start pill — reads as a clear, intentional
   // list-editor action instead of a stray floating button, and the dashed
@@ -379,6 +465,13 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   modalTitle: { color: colors.muted, fontSize: 11, fontWeight: '700', letterSpacing: 2, marginBottom: spacing.sm },
+  // Same back-button visual language as AppBar.tsx's own backBtn/backArrow/
+  // backLabel (arrow + destination name, in accentColor) — duplicated
+  // locally rather than shared, this is the only other place in the app
+  // that needs it and it's a handful of style values.
+  modalBackBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  modalBackArrow: { fontSize: 18, fontWeight: '700' },
+  modalBackLabel: { fontSize: 13, fontWeight: '700' },
   modalRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingVertical: spacing.sm + 2,

@@ -7,6 +7,10 @@ export interface TrendSeries {
   key: string;
   label: string;
   color: string;
+  // Dashed stroke for a series that's a *component* of another series on the
+  // same chart (e.g. Left/Right feeding into an overall score) — solid is
+  // reserved for the "main" series so it reads as the primary line.
+  dashed?: boolean;
   // x = position along the shared rep axis — usually a rep index (0, 1, 2, ...)
   // but can be fractional (e.g. 0.5) for a series like rest-time that sits
   // *between* reps rather than on them. y = the series' own raw value,
@@ -29,11 +33,10 @@ interface Props {
  * the same place" instead of one flatlining at the bottom while another
  * dominates the chart.
  *
- * Series sharing the same color (e.g. every sub-metric of one clicked
- * biomechanic check, all rendered in the app's accent color per the
- * caller's convention) are told apart by stroke pattern instead — solid,
- * dashed, dotted, in that order — not by color, since color intentionally
- * stays uniform for "this is all one metric's own numbers."
+ * Each series carries its own explicit color (the caller picks them so they
+ * never collide with each other or the user's chosen accent) and an optional
+ * `dashed` flag for series that are components of another one on the same
+ * chart, rather than being told apart by stroke pattern alone.
  */
 export default function MultiMetricTrend({ series, height = 160 }: Props) {
   const [w, setW] = useState(0);
@@ -66,7 +69,7 @@ export default function MultiMetricTrend({ series, height = 160 }: Props) {
         {W > 0 && (
           <Svg width={W} height={H}>
             <Line x1={pad.l} y1={pad.t + ih} x2={pad.l + iw} y2={pad.t + ih} stroke={colors.border} strokeWidth={1} />
-            {series.map((s, i) => {
+            {series.map((s) => {
               if (s.points.length === 0) return null;
               const ys_ = s.points.map((p) => p.y);
               const lo = Math.min(...ys_);
@@ -74,7 +77,7 @@ export default function MultiMetricTrend({ series, height = 160 }: Props) {
               const hi = hiRaw === lo ? lo + 1 : hiRaw;
               const y = (v: number) => pad.t + ih - ((v - lo) / (hi - lo)) * ih;
               const pts = s.points.map((p) => `${xs(p.x)},${y(p.y)}`).join(' ');
-              const dash = DASH_PATTERNS[i % DASH_PATTERNS.length];
+              const dash = s.dashed ? DASHED : undefined;
               const last = s.points[s.points.length - 1];
               return (
                 <React.Fragment key={s.key}>
@@ -95,9 +98,9 @@ export default function MultiMetricTrend({ series, height = 160 }: Props) {
       </View>
 
       <View style={styles.legend}>
-        {series.filter((s) => s.points.length > 0).map((s, i) => (
+        {series.filter((s) => s.points.length > 0).map((s) => (
           <View key={s.key} style={styles.legendItem}>
-            <View style={[styles.legendSwatch, { backgroundColor: s.color, opacity: SWATCH_OPACITY[i % SWATCH_OPACITY.length] }]} />
+            <View style={[styles.legendSwatch, { backgroundColor: s.color }]} />
             <Text style={styles.legendLabel}>{s.label}</Text>
           </View>
         ))}
@@ -106,10 +109,7 @@ export default function MultiMetricTrend({ series, height = 160 }: Props) {
   );
 }
 
-// Solid, dashed, dotted — enough to tell apart up to 3 same-colored series
-// (the realistic max: L, R, and a derived score/percent per metric).
-const DASH_PATTERNS = [undefined, '7,5', '1.5,4'];
-const SWATCH_OPACITY = [1, 0.7, 0.45];
+const DASHED = '7,5';
 
 const styles = StyleSheet.create({
   empty: { alignItems: 'center', justifyContent: 'center' },

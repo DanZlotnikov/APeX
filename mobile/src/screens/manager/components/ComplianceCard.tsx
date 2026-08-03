@@ -18,7 +18,7 @@ export default function ComplianceCard({ stats }: Props) {
 
       <View style={styles.row}>
         <Text style={[styles.pct, { color: barColor }]}>{compliancePct}%</Text>
-        <Text style={styles.sub}>tests completed today</Text>
+        <Text style={styles.sub}>exercises completed today</Text>
       </View>
 
       <View style={styles.barTrack}>
@@ -26,7 +26,7 @@ export default function ComplianceCard({ stats }: Props) {
       </View>
 
       <Text style={styles.detail}>
-        {completedTests} / {expectedTests} required tests
+        {completedTests} / {expectedTests} required exercises
       </Text>
     </View>
   );
