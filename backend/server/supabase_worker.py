@@ -154,10 +154,12 @@ def handle_job(models: "pipeline.worker.Models", job: dict) -> None:
             )
             return
 
+        sport_key = supabase_client.get_effective_sport(athlete_id)
         try:
             result = pipeline.process_video_two_panel(
                 models, str(local_video), tmp_dir / "out",
                 cancel_check=lambda: supabase_client.is_cancel_requested(job_id),
+                sport_key=sport_key,
             )
         except pipeline.worker.PipelineCancelled:
             print(f"[supabase-worker] {job_id}: cancelled during preprocessing, skipping inference")

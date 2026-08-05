@@ -381,7 +381,7 @@ function AppInner() {
 
           {managerScreen === 'manager-settings' && (
             <FadeScreen>
-              <ManagerSettings teamId={teamId} onLogout={handleManagerLogout} />
+              <ManagerSettings teamId={teamId} userId={userId ?? undefined} onLogout={handleManagerLogout} />
             </FadeScreen>
           )}
         </View>

@@ -63,6 +63,16 @@ register(ExerciseDefinition(
             "How close to standing (knee extended) counts as 'back up', "
             "confirming the rep.",
         ),
+        "foot_stability_gate": TunableParam(
+            "foot_stability_gate", "Max foot travel", "m", 0.18, 0.08, 0.4, 0.02,
+            "A candidate squat rep is rejected if the feet moved (stepped/"
+            "pivoted) more than this during it — a real squat's feet stay "
+            "planted, only loading/unloading in place. Deliberately generous "
+            "(a squat has natural sway/heel-lift noise) — this is here to "
+            "catch a clearly different motion (e.g. a padel/tennis stroke's "
+            "footwork independently triggering squat's knee_angle threshold), "
+            "not to nitpick real squat form.",
+        ),
     },
     # No corroboration gate: this used to require torso_lean to stay under a
     # fixed 40deg at the depth-crossing frame specifically to rule out a hip
@@ -73,9 +83,14 @@ register(ExerciseDefinition(
     # won by default — see backend_run.log evidence for job f92db09b...).
     # Now that deadlift is gone, squat has nothing left to be confused with
     # besides vertical_jump (already handled by real flight-phase evidence,
-    # see count_flight_phase's max_flight_sec) — so this gate no longer
-    # serves any purpose and only cost real detections. min_rom_deg/
-    # depth_fraction/stand_fraction on knee_angle alone is squat's signal now.
+    # see count_flight_phase's max_flight_sec) — so a per-frame corroboration
+    # gate still serves no purpose. foot_stability_gate above is a narrower,
+    # whole-rep EXCLUSION instead (see exclusion_check's own docstring in
+    # definitions.py for why that's a different, safer mechanism than the
+    # corroboration gate removed here) — added specifically for the
+    # squat-vs-stroke confusion, generous enough not to repeat that same
+    # "silently zeroing out a real rep" mistake.
+    exclusion_check=("foot_shift", "gt", "foot_stability_gate"),
     priority=50,
 ))
 
@@ -341,12 +356,19 @@ register(ExerciseDefinition(
 # the wrist is from the hip) swings through a much larger, more reliable
 # range across a real shot regardless of elbow technique: reaching for a low
 # ball takes the wrist well away from the hip, then it's drawn back in for
-# the recovery/ready position. No corroboration_signal here (unlike
-# pull-up/ab-crunch): wrist_hip_dist was previously used as a corroboration
-# signal for an elbow_angle-based swing, which is redundant now that it's
-# the primary signal — and per squat's own precedent below, a corroboration
-# gate that only rejects real reps with no compensating benefit should be
-# removed, not kept out of habit.
+# the recovery/ready position.
+#
+# corroboration_signal="foot_shift" (added later, alongside stance_gate
+# below) is NOT the same wrist_hip_dist-as-its-own-corroboration setup
+# removed early on (that really was redundant — a signal corroborating
+# itself as primary signal added nothing). This is a genuinely independent
+# signal: how far the feet moved. Added specifically because a real padel/
+# tennis stroke typically involves some footwork (stepping/pivoting to reach
+# the ball) alongside the arm swing, which a squat's own arm-swing-for-
+# balance never has (see squat's new foot_stability_gate for the mirror-
+# image fix). Kept deliberately small (foot_movement_fraction below) so a
+# genuinely stationary/compact stroke — not every real shot involves
+# stepping — doesn't get rejected for lacking footwork it never had.
 #
 # priority=60 (above squat's 50): both share BodyOrientation.STANDING, and
 # _resolve_standing/_resolve_by_priority in analyze.py pick whichever
@@ -358,6 +380,31 @@ register(ExerciseDefinition(
 # priority, squat (registered earlier in this file) would silently win
 # every one of those clips even once stroke is reliably detecting real
 # swings, discarding the actual stroke reps entirely.
+#
+# exclusion_check=("knee_angle", "lt", "stance_gate") — added after a real
+# clip confirmed the opposite failure mode from the one above: a genuine
+# SQUAT (arms swinging forward for balance while descending, a common squat
+# technique) independently satisfies stroke's wrist_hip_dist swing detector
+# too, and priority=60 then made stroke steal the win outright, mislabeling
+# the whole clip. Squat has no arm-swing gating of its own to prevent this
+# from the other side either, so the fix has to live here: reject any
+# candidate stroke rep whose window ever dipped into squat-depth knee
+# flexion, which a real squat's working depth always does. Tried as a
+# per-frame valid_frame_check first (only count frames with the knee
+# extended toward the running swing state) and confirmed on a synthetic
+# squat-with-arm-swing clip that this was NOT enough — masking out the
+# low-knee frames still left a complete wrist swing arc inside the
+# remaining "legs extended" frames alone, since both signals move together
+# through the squat cycle. exclusion_check (see definitions.py) instead
+# vetoes the WHOLE candidate rep if the knee ever dropped below the gate
+# anywhere in its window, which a masked-frame approach can't express.
+# 130deg is a deliberate middle ground, not squat's own "fully standing"
+# baseline — it still allows the moderate knee-soften of a real padel low
+# reach (see wrist_hip_dist's own history above: that reach is dynamic and
+# brief, not a held squat position) while excluding genuine squat depth,
+# which drops well below this even for a shallow rep. Engineering estimate
+# pending real low-reach footage to confirm the boundary is in the right
+# place.
 register(ExerciseDefinition(
     key="stroke",
     label="Padel Stroke",
@@ -392,6 +439,149 @@ register(ExerciseDefinition(
             "peak/trough to confirm that extreme was real, not noise — "
             "same value pull-up/ab-crunch already use for this engine.",
         ),
+        "stance_gate": TunableParam(
+            "stance_gate", "Minimum knee extension", "deg", 130, 90, 170, 5,
+            "A candidate swing is rejected outright if the knee ever drops "
+            "below this at any point during it — rules out a squat's own "
+            "arm-swing-for-balance being mistaken for a stroke, while still "
+            "allowing the moderate knee-soften of a real low reach.",
+        ),
+        "foot_movement_gate": TunableParam(
+            "foot_movement_gate", "Minimum footwork", "m", 0.05, 0.0, 0.3, 0.01,
+            "The feet must travel at least this far (peak-to-trough range "
+            "within the swing's own window) for it to count as a real "
+            "stroke — kept small so a compact, stationary shot still "
+            "passes; only meant to catch a swing with literally zero foot "
+            "movement, which a real shot practically never has.",
+        ),
     },
+    exclusion_check=("knee_angle", "lt", "stance_gate"),
+    requirement_check=("foot_shift", "gt", "foot_movement_gate"),
     priority=60,
+    category="padel",
+))
+
+# ═══════════════════════════════════════════════════════════════════════════
+# TENNIS STROKE
+# ═══════════════════════════════════════════════════════════════════════════
+# A tennis groundstroke and a padel stroke are, per this pipeline's signals,
+# essentially the same motion — same reach-and-recover wrist-to-hip swing,
+# same reason elbow_angle is unreliable as a primary signal (see padel
+# "stroke" above; the "keep the arm fixed, let the shoulder lead" technique
+# cue applies just as much to tennis). So this is a near-verbatim clone of
+# padel's detector, not an independently-tuned one — there's no real reason
+# to expect the two to need different thresholds, and no separate footage
+# yet to justify guessing different numbers.
+#
+# What actually tells these two exercises apart is NOT pose data — see
+# analyze.py's sport_key filter, which excludes whichever of padel/tennis
+# doesn't match the athlete's own main sport (Supabase profiles.main_sport_key
+# / sport_override_key, supabase/migrations/028_main_sport.sql) before
+# resolution ever runs. When the athlete's sport is unknown/general_fitness,
+# both stay eligible and this always wins the tie over tennis_stroke (see its
+# priority note below) — resolved app-side instead: the mobile app asks the
+# athlete which sport that was and updates main_sport_key once they answer
+# (ProcessingScreen.tsx), so the ambiguity only ever has to be broken once.
+register(ExerciseDefinition(
+    key="tennis_stroke",
+    label="Tennis Stroke",
+    short_label="STROKE",
+    description="A tennis groundstroke swing — the arm cycles back and "
+                 "through a hitting motion once per rep.",
+    research=(
+        "No tennis-specific pose-estimation literature exists yet — the "
+        "thresholds below are inherited unchanged from padel stroke's own "
+        "engineering estimates (this pipeline's signals don't distinguish "
+        "the two motions), not independently validated citations.",
+    ),
+    orientation=BodyOrientation.STANDING,
+    primary_signal="wrist_hip_dist",
+    counting_strategy=CountingStrategy.SWING_DETECTOR,
+    params={
+        "min_rom_deg": TunableParam(
+            "min_rom_deg", "Minimum swing range", "m", 0.15, 0.05, 0.6, 0.01,
+            "Wrist-to-hip distance change required for a swing to count — "
+            "same value as padel stroke (see that exercise's own comment).",
+        ),
+        "min_drop_fraction": TunableParam(
+            "min_drop_fraction", "Swing confirmation", "fraction of ROM", 0.30, 0.1, 0.6, 0.05,
+            "How far wrist-to-hip distance must swing back from a tracked "
+            "peak/trough to confirm that extreme was real, not noise.",
+        ),
+        "stance_gate": TunableParam(
+            "stance_gate", "Minimum knee extension", "deg", 130, 90, 170, 5,
+            "Same squat-exclusion gate as padel stroke (see that exercise's "
+            "own comment) — a candidate swing is rejected outright if the "
+            "knee ever drops below this at any point during it.",
+        ),
+        "foot_movement_gate": TunableParam(
+            "foot_movement_gate", "Minimum footwork", "m", 0.05, 0.0, 0.3, 0.01,
+            "Same footwork-corroboration gate as padel stroke (see that "
+            "exercise's own comment).",
+        ),
+    },
+    exclusion_check=("knee_angle", "lt", "stance_gate"),
+    requirement_check=("foot_shift", "gt", "foot_movement_gate"),
+    # Registered after padel "stroke" and at the same priority: when both are
+    # eligible (sport unknown), exercises_for_orientation's stable sort keeps
+    # registration order for equal priorities, so "stroke" deterministically
+    # wins that ambiguous case — harmless, since that's exactly the case the
+    # app's own "which sport was that?" prompt exists to resolve.
+    priority=60,
+    category="tennis",
+))
+
+# ═══════════════════════════════════════════════════════════════════════════
+# TENNIS SERVE
+# ═══════════════════════════════════════════════════════════════════════════
+# A genuinely different motion from a groundstroke — the arm reaches
+# overhead rather than staying near the body — so unlike tennis_stroke this
+# isn't a clone of anything. Basic v1 detector only, per plan: primary_signal
+# is wrist_y (raw wrist height, already computed in signals.py but unused by
+# any detector until now), which rises through the toss/reach and falls
+# after contact/follow-through — a genuine swing shape. valid_frame_check
+# reuses pull-up's exact existing overhead-gate mechanism (wrist_above +
+# overhead_gate) so only frames where the wrist is actually raised above the
+# shoulder count toward detection at all, cutting out a ready-stance/idle
+# segment before or after the serve motion. No corroboration_signal, same
+# "basic, not over-built" reasoning as padel stroke.
+register(ExerciseDefinition(
+    key="tennis_serve",
+    label="Tennis Serve",
+    short_label="SERVE",
+    description="An overhead tennis serve — the arm reaches up and strikes "
+                 "down through the ball once per rep.",
+    research=(
+        "No tennis-specific pose-estimation literature exists yet — this is "
+        "a basic first-pass detector, not literature-validated.",
+    ),
+    orientation=BodyOrientation.STANDING,
+    primary_signal="wrist_y",
+    counting_strategy=CountingStrategy.SWING_DETECTOR,
+    params={
+        "min_rom_deg": TunableParam(
+            "min_rom_deg", "Minimum swing range", "m", 0.12, 0.05, 0.5, 0.01,
+            "Wrist-height change required for a swing to count — the "
+            "toss/reach-up-then-strike arc of a serve.",
+        ),
+        "min_drop_fraction": TunableParam(
+            "min_drop_fraction", "Swing confirmation", "fraction of ROM", 0.30, 0.1, 0.6, 0.05,
+            "How far wrist height must swing back from a tracked peak/trough "
+            "to confirm that extreme was real, not noise.",
+        ),
+        "overhead_gate": TunableParam(
+            "overhead_gate", "Per-frame overhead gate", "0-1", 0.3, 0.1, 0.9, 0.05,
+            "Only frames with the wrist-above-shoulder signal past this "
+            "value are considered part of the movement at all — same value "
+            "pull-up uses for the same signal.",
+        ),
+    },
+    valid_frame_check=("wrist_above", "gt", "overhead_gate"),
+    # Above both padel and tennis strokes: a serve is a visually distinct,
+    # more strongly-gated motion (the overhead check above already rules out
+    # most non-serve frames), so if it produces any candidate reps on a
+    # shared-orientation clip, that's stronger evidence than a groundstroke
+    # swing sharing the same clip.
+    priority=65,
+    category="tennis",
 ))

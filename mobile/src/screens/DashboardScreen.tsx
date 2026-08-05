@@ -106,7 +106,7 @@ export default function DashboardScreen({ userId, teamId, onRecord, onUpload, on
               {() => <OverviewStack userId={userId} />}
             </Tab.Screen>
             <Tab.Screen name="Performance">
-              {() => <PerformanceScreen userId={userId} sub={performanceSub} onSubChange={setPerformanceSub} />}
+              {() => <PerformanceScreen userId={userId} teamId={teamId} sub={performanceSub} onSubChange={setPerformanceSub} />}
             </Tab.Screen>
             <Tab.Screen name="Routine">
               {() => <IndividualRoutineScreen athleteId={userId} readOnly={!!teamId} />}
@@ -118,7 +118,7 @@ export default function DashboardScreen({ userId, teamId, onRecord, onUpload, on
             underneath survives opening/closing it. */}
         {settingsOpen && (
           <View style={styles.settingsOverlay}>
-            <SettingsScreen onLogout={onLogout} />
+            <SettingsScreen onLogout={onLogout} userId={userId} teamId={teamId} />
           </View>
         )}
       </View>

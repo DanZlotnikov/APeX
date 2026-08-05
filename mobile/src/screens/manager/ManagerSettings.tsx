@@ -1,7 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { deleteAccount } from '../../api/auth';
+import { getEffectiveSport, updateMainSport } from '../../api/profile';
 import { getTeamInviteCode, getTeamName, regenerateInviteCode } from '../../api/teams';
+import SportPicker from '../../components/SportPicker';
 import { useSettings } from '../../state/SettingsContext';
 import { ACCENTS, AccentKey, colors, FontScaleKey, spacing } from '../../theme';
 import { confirmAsync } from '../../utils/confirm';
@@ -21,16 +23,24 @@ const WINDOW_OPTS = [7, 14, 30, 90];
 
 interface Props {
   teamId: string;
+  userId?: string;
   onLogout: () => void;
 }
 
-export default function ManagerSettings({ teamId, onLogout }: Props) {
-  const { settings, update, accentColor } = useSettings();
+export default function ManagerSettings({ teamId, userId, onLogout }: Props) {
+  const { settings, update, accentColor, accentOn } = useSettings();
 
   const [teamName,     setTeamName]     = useState<string | null>(null);
   const [inviteCode,   setInviteCode]   = useState('');
   const [regenerating, setRegenerating] = useState(false);
   const [deleting,     setDeleting]     = useState(false);
+  // The manager's own main_sport_key IS the team default athletes inherit
+  // (see effective_sport() in 028_main_sport.sql) — for a manager this is
+  // always their own value (no inheritance to resolve), but fetched via the
+  // same effective_sport() RPC as everywhere else so there's one source of
+  // truth for "what does this profile's sport read as."
+  const [mySport, setMySport] = useState<string | null>(null);
+  const [sportSaving, setSportSaving] = useState(false);
 
   useEffect(() => {
     getTeamName(teamId)
@@ -40,6 +50,26 @@ export default function ManagerSettings({ teamId, onLogout }: Props) {
       .then(setInviteCode)
       .catch((e) => console.warn('Failed to load invite code', e));
   }, [teamId]);
+
+  useEffect(() => {
+    if (!userId) return;
+    getEffectiveSport(userId).then(setMySport).catch(() => setMySport('general_fitness'));
+  }, [userId]);
+
+  async function handlePickSport(key: string) {
+    if (!userId || sportSaving) return;
+    setSportSaving(true);
+    const prev = mySport;
+    setMySport(key);
+    try {
+      await updateMainSport(key);
+    } catch (e) {
+      setMySport(prev);
+      Alert.alert('Could not update', 'Something went wrong changing your team’s main sport. Please try again.');
+    } finally {
+      setSportSaving(false);
+    }
+  }
 
   async function handleRegenerate() {
     setRegenerating(true);
@@ -121,6 +151,14 @@ export default function ManagerSettings({ teamId, onLogout }: Props) {
             <Text style={styles.codeNote}>
               Athletes enter this code when creating their account. Regenerating invalidates the old code.
             </Text>
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>MAIN SPORT</Text>
+          <View style={styles.card}>
+            <Text style={styles.sportNote}>Your team's default — athletes without their own override inherit this.</Text>
+            <SportPicker value={mySport} onChange={handlePickSport} accentColor={accentColor} accentOn={accentOn} />
           </View>
         </View>
 
@@ -292,6 +330,8 @@ const styles = StyleSheet.create({
 
   rowLabel: { color: colors.text, fontSize: 14, fontWeight: '600', paddingVertical: spacing.sm },
   divider:  { height: 1, backgroundColor: colors.border, marginVertical: spacing.xs },
+
+  sportNote: { color: colors.muted, fontSize: 11, fontWeight: '500', lineHeight: 16, marginBottom: spacing.sm, marginTop: spacing.sm },
 
   swatches:    { flexDirection: 'row', gap: spacing.sm, paddingBottom: spacing.sm },
   swatch:      { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'transparent' },

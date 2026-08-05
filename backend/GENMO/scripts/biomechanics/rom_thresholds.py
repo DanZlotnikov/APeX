@@ -296,3 +296,63 @@ register_rom(ExerciseRomProfile(
         ),
     ),
 ))
+
+# ═══════════════════════════════════════════════════════════════════════════
+# TENNIS STROKE
+# ═══════════════════════════════════════════════════════════════════════════
+# Same signal/target as padel stroke's swing_rom check above, unchanged —
+# per the user's own reasoning ("tennis and padel strokes are very similar"),
+# this pipeline has no basis to guess a different number for a motion its
+# signals treat identically. Revisit only once real tennis footage suggests
+# otherwise (see padel stroke's own real-footage recalibration history above
+# for what that process looks like).
+register_rom(ExerciseRomProfile(
+    exercise_key="tennis_stroke",
+    checks=(
+        JointRomCheck(
+            id="swing_rom", label="Swing range", joint="SHOULDER",
+            signal="shoulder_angle", start_selector="start", end_selector="bottom",
+            target_rom_deg=29.0, watch_threshold_pct=70.0, at_risk_threshold_pct=45.0,
+            research=(
+                "Inherited unchanged from padel stroke's own real-footage-calibrated "
+                "target_rom_deg (see that exercise's registration above) — no separate "
+                "tennis footage exists yet, and this pipeline's shoulder_angle signal "
+                "doesn't distinguish the two motions.",
+            ),
+            description="How far the upper arm swings via shoulder rotation, from the "
+                         "ready stance to the peak of the swing — the stroke's actual "
+                         "amplitude, independent of how fixed the elbow itself stayed.",
+            informational=True,
+        ),
+    ),
+))
+
+# ═══════════════════════════════════════════════════════════════════════════
+# TENNIS SERVE
+# ═══════════════════════════════════════════════════════════════════════════
+# A basic first-pass estimate, not calibrated against any real serve footage
+# (unlike the strokes above) — target_rom_deg is a rough guess at how far the
+# shoulder swings from a ready stance to the peak overhead reach ("bottom"
+# here is the SWING_DETECTOR's tracked extreme on wrist_y, i.e. the highest
+# reach point, not a literal low point). Flagged informational=True for
+# exactly this reason; revisit once real serve clips are available, the same
+# way padel stroke's own thresholds were revised against real footage.
+register_rom(ExerciseRomProfile(
+    exercise_key="tennis_serve",
+    checks=(
+        JointRomCheck(
+            id="swing_rom", label="Swing range", joint="SHOULDER",
+            signal="shoulder_angle", start_selector="start", end_selector="bottom",
+            target_rom_deg=45.0, watch_threshold_pct=70.0, at_risk_threshold_pct=45.0,
+            research=(
+                "No tennis-specific literature exists yet — target_rom_deg is a rough, "
+                "un-calibrated first estimate (a serve's overhead reach should swing the "
+                "shoulder further than a groundstroke's ~29deg, but no real footage exists "
+                "to pin down by how much). Revisit once real serve clips are available.",
+            ),
+            description="How far the upper arm swings via shoulder rotation, from the "
+                         "ready stance to the peak of the overhead reach.",
+            informational=True,
+        ),
+    ),
+))

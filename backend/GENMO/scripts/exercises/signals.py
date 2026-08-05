@@ -81,6 +81,31 @@ def compute_signals(joints: np.ndarray) -> dict:
     torso_scale = np.maximum(np.abs(vertical), 0.20)  # metric floor, ~min plausible torso length
     wrist_above = ((wrist_y - shoulder_y) > torso_scale * 0.22).astype(np.float64)
 
+    # Positive when the wrists sit well below the shoulders — a push-up's
+    # hands are planted on the floor bearing weight while the torso is held
+    # elevated above it, so this stays comfortably positive throughout a
+    # real rep (even at the bottom, the chest doesn't reach the floor while
+    # the hands still do). A crunch's hands (behind the head or on the
+    # chest) sit at roughly the same height as the shoulders since the
+    # whole body is lying flat on the floor, so this stays near zero. Used
+    # in orientation.py as a second, independent PLANK-vs-LYING signal —
+    # added specifically because body_line_angle (leg straightness) proved
+    # unreliable for a real push-up on its own (see that file's own note),
+    # and this reads an entirely different body part, so the two aren't
+    # likely to fail together.
+    hand_ground_gap = shoulder_y - wrist_y
+
+    # How far the feet have moved, horizontally, from wherever the clip
+    # started — a squat's own feet stay planted through the whole rep (they
+    # only load/unload, not step), while a padel/tennis stroke often
+    # involves real footwork (stepping, pivoting to reach the ball)
+    # alongside the arm swing. Deliberately horizontal-plane only (X/Z, not
+    # Y) so it isn't confounded by the athlete's hips/ankles simply rising
+    # and falling during a squat's own vertical motion — only genuine
+    # sideways/forward foot travel counts.
+    ankle_xz0 = ankle_mid[0, [0, 2]]
+    foot_shift = np.linalg.norm(ankle_mid[:, [0, 2]] - ankle_xz0, axis=-1)
+
     # Pull-up body-rise corroboration deliberately does NOT use hipY
     # (absolute world-frame height). GEM's world-grounding leans on
     # foot-ground contact to anchor absolute translation, and a pull-up has
@@ -115,7 +140,8 @@ def compute_signals(joints: np.ndarray) -> dict:
         body_line_angle=body_line_angle, torso_lean=torso_lean,
         ankle_y=ankle_y, shoulder_y=shoulder_y, hip_y=hip_y, knee_y=knee_y, wrist_y=wrist_y,
         wrist_above=wrist_above, wrist_hip_dist=wrist_hip_dist, shoulder_knee_dist=shoulder_knee_dist,
-        torso_scale=torso_scale, upright_ratio=upright_ratio,
+        torso_scale=torso_scale, upright_ratio=upright_ratio, foot_shift=foot_shift,
+        hand_ground_gap=hand_ground_gap,
     )
 
 

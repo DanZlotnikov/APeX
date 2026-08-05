@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, Easing, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { getCachedExercisesSync } from '../../api/exercises';
+import { getEffectiveSport, updateMainSport } from '../../api/profile';
 import {
   cancelVideoJob, deleteJobStorage, deleteLocalRawVideo, discardVideoJob,
   getLocalRawVideoUri, getSignedVideoUrl, saveVideoJob, VideoJob,
@@ -11,10 +13,18 @@ import { LocalUpload } from '../../state/localUploads';
 import { useSettings } from '../../state/SettingsContext';
 import { useVideoJobsContext } from '../../state/VideoJobsContext';
 import { colors, spacing } from '../../theme';
+import { categoryLabel, resolveJobExerciseKey } from '../../utils/pipelineExercise';
 
 interface Props {
   userId?: string;
+  teamId?: string;
 }
+
+// Categories whose exercises this pipeline can't yet tell apart from pose
+// data alone (see exercises.py's sport_key filter) — a completed job in one
+// of these, recorded by a general-fitness athlete, is exactly the ambiguous
+// case the "which sport was that?" prompt below exists to resolve.
+const AMBIGUOUS_SPORT_CATEGORIES = ['padel', 'tennis'];
 
 function fmtDate(iso: string): string {
   const d = new Date(iso);
@@ -154,7 +164,7 @@ function isAlreadyHandledError(e: unknown): boolean {
 // remount while the underlying `jobs` array (fed by a Realtime DELETE event
 // that was silently dropped for RLS reasons — see migration 013) still had
 // the row.
-export default function ProcessingScreen({ userId }: Props) {
+export default function ProcessingScreen({ userId, teamId }: Props) {
   const { accentColor } = useSettings();
   const { jobs, loading, refetch, localUploads } = useVideoJobsContext();
   const uploadingLocalUploads = localUploads.filter((u) => u.status === 'uploading');
@@ -189,7 +199,7 @@ export default function ProcessingScreen({ userId }: Props) {
                 handleVideoConfirmed) — same id, so React treats it as the
                 same list slot rather than a remove+insert. */}
             {uploadingLocalUploads.map((u) => <UploadingCard key={u.id} upload={u} />)}
-            {jobs.map((job) => <JobCard key={job.id} job={job} userId={userId} />)}
+            {jobs.map((job) => <JobCard key={job.id} job={job} userId={userId} teamId={teamId} />)}
           </>
         )}
       </ScrollView>
@@ -220,10 +230,11 @@ function UploadingCard({ upload }: { upload: LocalUpload }) {
 interface CardProps {
   job: VideoJob;
   userId: string;
+  teamId?: string;
 }
 
-function JobCard({ job, userId }: CardProps) {
-  if (job.status === 'completed') return <CompletedCard job={job} userId={userId} />;
+function JobCard({ job, userId, teamId }: CardProps) {
+  if (job.status === 'completed') return <CompletedCard job={job} userId={userId} teamId={teamId} />;
   if (job.status === 'failed') return <FailedCard job={job} userId={userId} />;
   return <PendingCard job={job} userId={userId} />;
 }
@@ -371,7 +382,7 @@ function FailedCard({ job, userId }: CardProps) {
 }
 
 // HANDOFF item 6 — two-panel video + full analysis, Save/Discard.
-function CompletedCard({ job, userId }: CardProps) {
+function CompletedCard({ job, userId, teamId }: CardProps) {
   const { accentColor, accentOn } = useSettings();
   const { markPendingRemoval, unmarkPendingRemoval, removeJobLocally } = useVideoJobsContext();
   const { animatedStyle, playExit, playEnter } = useCardExitAnimation();
@@ -387,8 +398,7 @@ function CompletedCard({ job, userId }: CardProps) {
     return () => { active = false; };
   }, [job.resultVideoPath]);
 
-  function handleSave() {
-    if (!guard()) return;
+  function doSave() {
     setBusy(true);
     markPendingRemoval(job.id);
 
@@ -418,6 +428,48 @@ function CompletedCard({ job, userId }: CardProps) {
         Alert.alert('Could not save', 'Something went wrong saving this exercise. Please try again.');
       },
     );
+  }
+
+  // Padel and tennis strokes are pose-indistinguishable (see exercises.py) —
+  // when the athlete's sport is unknown (general_fitness) and this job's
+  // exercise falls in one of those categories, ask which sport it actually
+  // was before saving, so future clips resolve correctly. Only offered to
+  // athletes who can self-edit their own sport (team_id IS NULL) — a team
+  // athlete's sport is their manager's call (see SettingsScreen.tsx), so
+  // this never fires for them. One-shot by construction: triggered from the
+  // deliberate Save tap, not on mount/re-render.
+  async function handleSave() {
+    if (!guard()) return;
+
+    if (!teamId) {
+      const bridgedKey = resolveJobExerciseKey({ exerciseType: job.exerciseType });
+      const categoryKey = getCachedExercisesSync().find((e) => e.key === bridgedKey)?.categoryKey;
+      if (categoryKey && AMBIGUOUS_SPORT_CATEGORIES.includes(categoryKey)) {
+        try {
+          const currentSport = await getEffectiveSport(userId);
+          if (currentSport === 'general_fitness') {
+            const chosen = await new Promise<string | null>((resolve) => {
+              Alert.alert(
+                'Which sport was that?',
+                'That swing could be padel or tennis — set your main sport so we can score it correctly.',
+                [
+                  { text: 'Padel', onPress: () => resolve('padel') },
+                  { text: 'Tennis', onPress: () => resolve('tennis') },
+                  { text: 'Not now', style: 'cancel', onPress: () => resolve(null) },
+                ],
+              );
+            });
+            if (chosen) {
+              try { await updateMainSport(chosen); } catch (e) { console.warn('[APeX] Failed to update main sport:', e); }
+            }
+          }
+        } catch (e) {
+          console.warn('[APeX] Failed to check main sport:', e);
+        }
+      }
+    }
+
+    doSave();
   }
 
   function handleDiscard() {

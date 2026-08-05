@@ -164,6 +164,31 @@ def mark_failed(job_id: str, error_message: str) -> None:
     resp.raise_for_status()
 
 
+def get_effective_sport(athlete_id: str) -> str:
+    """The athlete's effective main sport (Supabase's effective_sport() SQL
+    function, supabase/migrations/028_main_sport.sql — accounts for a team
+    athlete inheriting their manager's sport / a manager-set per-athlete
+    override). Best-effort: falls back to "general_fitness" (a no-op for
+    exercises/analyze.py's sport_key filter, i.e. today's pre-feature
+    behavior) on any error, so a DB hiccup here degrades gracefully instead
+    of failing the whole job.
+    """
+    url, key = _config()
+    try:
+        resp = httpx.post(
+            f"{url}/rest/v1/rpc/effective_sport",
+            headers=_rest_headers(key),
+            json={"p_athlete_id": athlete_id},
+            timeout=15.0,
+        )
+        resp.raise_for_status()
+        sport = resp.json()
+        return sport if isinstance(sport, str) and sport else "general_fitness"
+    except Exception as e:  # noqa: BLE001
+        print(f"[supabase-client] failed to fetch effective_sport for {athlete_id}, defaulting to general_fitness: {e}")
+        return "general_fitness"
+
+
 def delete_job(job_id: str) -> None:
     """Used when a job is cancelled mid-processing (see is_cancel_requested)
     — the row is deleted outright rather than parked in some 'cancelled'

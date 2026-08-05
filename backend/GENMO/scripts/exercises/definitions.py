@@ -128,7 +128,45 @@ class ExerciseDefinition:
     valid_frame_check: tuple[str, str, str] | None = None
     corroboration_signal: str | None = None
     corroboration_delta_param: str | None = None
+    # Whole-REP veto, evaluated after counting (any counting_strategy) —
+    # different from valid_frame_check, which only hides frames from the
+    # counting engine's own running state (it still sees the remaining
+    # frames as contiguous, so a signal that swings together with the
+    # primary one can still produce a "swing" using only the frames left
+    # after masking — confirmed on a synthetic squat-with-arm-swing clip
+    # where valid_frame_check alone did NOT prevent a false stroke rep).
+    # (signal_name, comparator, param_id): a candidate rep is discarded if
+    # ANY frame in its [start, end] window satisfies signal <cmp> threshold
+    # — e.g. ("knee_angle", "lt", "stance_gate") rejects any rep where the
+    # knee dropped into squat depth at any point during it, regardless of
+    # where in the swing that happened.
+    exclusion_check: tuple[str, str, str] | None = None
+    # Mirror image of exclusion_check: a candidate rep is discarded UNLESS
+    # its own [start, end] window's signal range (max - min within the
+    # window) satisfies comparator against the named param — e.g.
+    # ("foot_shift", "gt", "foot_movement_gate") keeps only reps where the
+    # feet moved at least that much at some point during the rep. Not the
+    # same as corroboration_signal/corroboration_delta_param: those compare
+    # a signal's value AT two specific tracked indices (a peak and a
+    # trough) and need the signal to move in a consistent direction tied to
+    # the primary swing's own phase (e.g. wrist_hip_dist shrinking as a
+    # pull-up's body rises) — a signal like foot movement isn't tied to the
+    # swing's phase that way (the feet can shift at any point, not
+    # specifically between those two tracked frames), so forcing it through
+    # that mechanism was tried and confirmed unreliable (would have made
+    # the peak-to-trough delta go the wrong way as often as not). This
+    # checks the window's own range instead, which doesn't care when within
+    # the rep the movement happened.
+    requirement_check: tuple[str, str, str] | None = None
     priority: int = 0
+    # Mirrors Supabase's exercise_categories.key (see
+    # supabase/migrations/026_exercise_categories.sql /
+    # 028_main_sport.sql) — defaults to "general_fitness" so every
+    # exercise registered before this field existed keeps working
+    # unchanged. Used by analyze.py's sport_key filter to keep two
+    # visually-similar sports (padel/tennis strokes) from ever competing
+    # on the same clip once the athlete's sport is known.
+    category: str = "general_fitness"
 
     def param(self, param_id: str) -> float:
         """Current value of a tunable param — `.default` for now. Once a

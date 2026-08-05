@@ -15,6 +15,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { lookupTeamByCode, signUpAthlete, signUpManager } from '../api/auth';
 import { getProfile } from '../api/auth';
+import SportPicker from '../components/SportPicker';
 import { useSettings } from '../state/SettingsContext';
 import { ACCENTS, colors, spacing } from '../theme';
 
@@ -26,7 +27,7 @@ interface Props {
 }
 
 type Role = 'manager' | 'athlete';
-type Step = 'role' | 'form';
+type Step = 'role' | 'sport' | 'form';
 
 export default function SignUpScreen({ onSuccess, onBack }: Props) {
   const insets = useSafeAreaInsets();
@@ -39,6 +40,7 @@ export default function SignUpScreen({ onSuccess, onBack }: Props) {
 
   const [step,        setStep]        = useState<Step>('role');
   const [role,        setRole]        = useState<Role | null>(null);
+  const [sportKey,    setSportKey]    = useState('general_fitness');
   const [name,        setName]        = useState('');
   const [teamName,    setTeamName]    = useState('');
   const [inviteCode,  setInviteCode]  = useState('');
@@ -55,7 +57,7 @@ export default function SignUpScreen({ onSuccess, onBack }: Props) {
 
   function selectRole(r: Role) {
     setRole(r);
-    setStep('form');
+    setStep('sport');
     setError('');
   }
 
@@ -79,13 +81,13 @@ export default function SignUpScreen({ onSuccess, onBack }: Props) {
       let user;
       if (role === 'manager') {
         if (!teamName.trim()) { setError('Enter a team name.'); setLoading(false); return; }
-        user = await signUpManager(email.trim(), password, name.trim(), teamName.trim());
+        user = await signUpManager(email.trim(), password, name.trim(), teamName.trim(), sportKey);
       } else {
         // Invite code is optional — blank means "sign up as an individual
         // athlete, no team." A code that IS entered still has to be valid
         // (checked inside signUpAthlete); a typo shouldn't silently fall
         // through to an individual signup.
-        user = await signUpAthlete(email.trim(), password, name.trim(), inviteCode.trim() || undefined);
+        user = await signUpAthlete(email.trim(), password, name.trim(), inviteCode.trim() || undefined, sportKey);
       }
 
       const profile = await getProfile(user.id);
@@ -147,7 +149,42 @@ export default function SignUpScreen({ onSuccess, onBack }: Props) {
             </View>
           )}
 
-          {/* ── Step 2: Form ── */}
+          {/* ── Step 2: Main sport ── */}
+          {step === 'sport' && role && (
+            <View style={styles.roleSection}>
+              <Text style={styles.rolePrompt}>What's your main sport?</Text>
+              <Text style={styles.sportSubtitle}>
+                {role === 'manager'
+                  ? "Sets your team's default — athletes without their own override inherit this."
+                  : 'You can change this later in Settings.'}
+              </Text>
+
+              <SportPicker
+                value={sportKey}
+                onChange={setSportKey}
+                accentColor={role === 'manager' ? '#B794F6' : accentColor}
+                accentOn={role === 'manager' ? managerOn : accentOn}
+              />
+
+              <Pressable
+                onPress={() => setStep('form')}
+                style={({ pressed }) => [
+                  styles.submitBtn,
+                  { backgroundColor: role === 'manager' ? '#B794F6' : accentColor },
+                  pressed && { opacity: 0.8 },
+                ]}
+              >
+                <Text style={[styles.submitBtnText, { color: role === 'manager' ? managerOn : accentOn }]}>
+                  CONTINUE
+                </Text>
+              </Pressable>
+              <Pressable onPress={() => { setStep('role'); setError(''); }} style={styles.sportBack}>
+                <Text style={styles.changeRole}>← Back</Text>
+              </Pressable>
+            </View>
+          )}
+
+          {/* ── Step 3: Form ── */}
           {step === 'form' && role && (
             <View style={styles.formSection}>
               {/* Role badge */}
@@ -307,6 +344,8 @@ const styles = StyleSheet.create({
   // ── Role selection ──────────────────────────────────────────────────────────
   roleSection: { gap: spacing.lg, paddingTop: spacing.lg },
   rolePrompt: { color: colors.text, fontSize: 20, fontWeight: '800', textAlign: 'center' },
+  sportSubtitle: { color: colors.muted, fontSize: 12, fontWeight: '500', textAlign: 'center', marginTop: -spacing.md, lineHeight: 17 },
+  sportBack: { alignItems: 'center', paddingVertical: spacing.xs },
 
   roleRow: { flexDirection: 'row', gap: spacing.md },
   roleCard: {

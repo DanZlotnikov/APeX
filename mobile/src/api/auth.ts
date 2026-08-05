@@ -14,6 +14,7 @@ export async function signUpManager(
   password: string,
   fullName: string,
   teamName: string,
+  mainSportKey?: string,
 ) {
   const { data, error } = await supabase.auth.signUp({ email, password });
   if (error) throw error;
@@ -22,6 +23,7 @@ export async function signUpManager(
   const { error: teamErr } = await supabase.rpc('create_manager_team', {
     p_team_name: teamName,
     p_full_name: fullName,
+    p_main_sport_key: mainSportKey ?? 'general_fitness',
   });
   if (teamErr) throw teamErr;
 
@@ -40,6 +42,7 @@ export async function signUpAthlete(
   password: string,
   fullName: string,
   inviteCode?: string,
+  mainSportKey?: string,
 ) {
   const code = inviteCode?.trim();
 
@@ -53,9 +56,10 @@ export async function signUpAthlete(
   if (error) throw error;
   if (!data.user) throw new Error('Sign-up returned no user');
 
+  const sportKey = mainSportKey ?? 'general_fitness';
   const { error: joinErr } = code
-    ? await supabase.rpc('join_team_as_athlete', { p_invite_code: code, p_full_name: fullName })
-    : await supabase.rpc('create_individual_athlete', { p_full_name: fullName });
+    ? await supabase.rpc('join_team_as_athlete', { p_invite_code: code, p_full_name: fullName, p_main_sport_key: sportKey })
+    : await supabase.rpc('create_individual_athlete', { p_full_name: fullName, p_main_sport_key: sportKey });
   if (joinErr) throw joinErr;
 
   return data.user;

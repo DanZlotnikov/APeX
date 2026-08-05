@@ -10,6 +10,8 @@ export interface DbProfile {
   injured: boolean;
   injury_started_at: string | null;
   stats_reset_at: string | null;
+  main_sport_key: string;
+  sport_override_key: string | null;
   created_at: string;
 }
 
@@ -94,6 +96,8 @@ export interface AthleteViewModel {
   injured: boolean;
   injuryStartedAt: string | null;
   statsResetAt: string | null; // cutoff for readiness trend / per-exercise readiness / compliance
+  effectiveSportKey: string; // own override, else team default, else own pick — see effective_sport() in 028_main_sport.sql
+  sportOverrideKey: string | null; // this athlete's own override, if a manager set one (null = using the team default)
 }
 
 export interface TeamStatsViewModel {

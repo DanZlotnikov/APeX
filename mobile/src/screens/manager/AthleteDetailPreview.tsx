@@ -1,16 +1,19 @@
 import { DarkTheme, NavigationContainer, useNavigation } from '@react-navigation/native';
 import { createMaterialTopTabNavigator } from '@react-navigation/material-top-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import LineTrend from '../../components/charts/LineTrend';
 import FloatingTabBar from '../../components/FloatingTabBar';
 import { markAthleteInjured, markAthleteRecovered } from '../../api/athletes';
+import { ExerciseCategoryInfo, getExerciseCategories } from '../../api/exercises';
 import { pokeAthlete } from '../../api/pushNotifications';
+import { setAthleteSportOverride, sportEmoji } from '../../api/profile';
 import { AthleteViewModel } from '../../api/types';
 import { useSettings } from '../../state/SettingsContext';
 import { colors, spacing } from '../../theme';
 import { confirmAsync } from '../../utils/confirm';
+import { categoryLabel } from '../../utils/pipelineExercise';
 import { readinessColor as colorForReadiness } from '../../utils/readiness';
 import HistoryDetailScreen from '../dashboard/HistoryDetailScreen';
 import HistoryScreen from '../dashboard/HistoryScreen';
@@ -231,6 +234,14 @@ function AthleteProfileTab({ athlete, onStatusChanged }: Props) {
           <ProfileCell label="AGE"      value={String(athlete.profile.age)} />
         </View>
 
+        {/* ── Main sport ── */}
+        <SportOverrideCard
+          athleteId={athlete.id}
+          effectiveSportKey={athlete.effectiveSportKey}
+          sportOverrideKey={athlete.sportOverrideKey}
+          onChanged={onStatusChanged}
+        />
+
         {/* ── Readiness trend — tap through to the full per-exercise
             Readiness screen (screens/dashboard/ReadinessScreen.tsx); this
             card itself is unchanged, just now an entry point. ── */}
@@ -354,6 +365,74 @@ function AthleteProfileTab({ athlete, onStatusChanged }: Props) {
   );
 }
 
+// Manager-side per-athlete sport override — a compact chip row (one per
+// exercise category, plus "Team default") rather than the full SportPicker
+// grid used at signup/Settings: this card sits inside an already-dense
+// profile screen, and a manager picking a specific athlete's override is a
+// quick, occasional action, not the primary focus of the screen the way the
+// signup/Settings picker is.
+function SportOverrideCard({ athleteId, effectiveSportKey, sportOverrideKey, onChanged }: {
+  athleteId: string;
+  effectiveSportKey: string;
+  sportOverrideKey: string | null;
+  onChanged: () => void;
+}) {
+  const { accentColor, accentOn } = useSettings();
+  const [categories, setCategories] = useState<ExerciseCategoryInfo[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    getExerciseCategories().then((list) => { if (active) setCategories(list.filter((c) => c.enabled)); }).catch(() => {});
+    return () => { active = false; };
+  }, []);
+
+  async function handlePick(key: string | null) {
+    if (saving) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await setAthleteSportOverride(athleteId, key);
+      onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to update main sport.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <View style={styles.card}>
+      <Text style={styles.cardTitle}>MAIN SPORT</Text>
+      <Text style={styles.cardValue}>{categoryLabel(effectiveSportKey)}</Text>
+      <View style={styles.sportChipRow}>
+        <Pressable
+          onPress={() => void handlePick(null)}
+          disabled={saving}
+          style={[styles.sportChip, sportOverrideKey === null && { backgroundColor: accentColor, borderColor: accentColor }]}
+        >
+          <Text style={[styles.sportChipText, sportOverrideKey === null && { color: accentOn }]}>Team default</Text>
+        </Pressable>
+        {categories.map((c) => {
+          const on = sportOverrideKey === c.key;
+          return (
+            <Pressable
+              key={c.key}
+              onPress={() => void handlePick(c.key)}
+              disabled={saving}
+              style={[styles.sportChip, on && { backgroundColor: accentColor, borderColor: accentColor }]}
+            >
+              <Text style={[styles.sportChipText, on && { color: accentOn }]}>{sportEmoji(c.key)} {c.label}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+      {error && <Text style={styles.injuryError}>{error}</Text>}
+    </View>
+  );
+}
+
 function ProfileCell({ label, value }: { label: string; value: string }) {
   return (
     <View style={styles.profileCell}>
@@ -428,6 +507,13 @@ const styles = StyleSheet.create({
   },
   missingIcon: { color: '#FF3B30', fontSize: 13, fontWeight: '900' },
   missingText: { color: colors.text, fontSize: 12, fontWeight: '500', flex: 1 },
+
+  sportChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 2 },
+  sportChip: {
+    borderWidth: 1, borderColor: colors.border, borderRadius: 8,
+    paddingHorizontal: 10, paddingVertical: 6,
+  },
+  sportChipText: { color: colors.muted, fontSize: 11, fontWeight: '700' },
 
   // Self-sized, left-aligned — a lightweight, frequently-tappable nudge
   // action, not a rare/weighty commit like injuryBtn/recoverBtn below (which

@@ -26,6 +26,7 @@ export type PerformanceSub = 'history' | 'processing';
 
 interface Props {
   userId?: string;
+  teamId?: string;
   sub: PerformanceSub;
   onSubChange: (sub: PerformanceSub) => void;
 }
@@ -36,7 +37,7 @@ interface Props {
 // live Processing queue. `sub` is lifted to DashboardScreen so the "N videos
 // processing" banner can jump straight to the Processing sub-view, not just
 // the Performance tab.
-export default function PerformanceScreen({ userId, sub, onSubChange }: Props) {
+export default function PerformanceScreen({ userId, teamId, sub, onSubChange }: Props) {
   const { processingCount } = useVideoJobsContext();
 
   return (
@@ -59,7 +60,7 @@ export default function PerformanceScreen({ userId, sub, onSubChange }: Props) {
       </View>
 
       <View style={styles.body}>
-        {sub === 'history' ? <HistoryStack userId={userId} /> : <ProcessingScreen userId={userId} />}
+        {sub === 'history' ? <HistoryStack userId={userId} /> : <ProcessingScreen userId={userId} teamId={teamId} />}
       </View>
     </View>
   );

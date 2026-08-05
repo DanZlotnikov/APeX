@@ -181,6 +181,7 @@ def run_core_pipeline(
     models: Models, video_path: Path, preprocess_dir: Path,
     log_prefix: str = "[pipeline]",
     cancel_check: Callable[[], bool] | None = None,
+    sport_key: str | None = None,
 ) -> dict:
     """Stages 1-3 (preprocess, assemble, GEM inference) + exercise detection
     + biomechanical analysis — the full video -> pose -> exercise ->
@@ -197,6 +198,13 @@ def run_core_pipeline(
         This module has no idea what "cancelled" means to whoever's
         calling it (a Supabase row's cancel_requested flag, or anything
         else) — that's entirely the callback's business.
+
+    sport_key: the athlete's effective main sport (see
+        supabase_client.get_effective_sport()), passed straight through to
+        analyze_exercises() to disambiguate visually-similar sport-specific
+        exercises (e.g. padel vs. tennis stroke). None/"general_fitness" is
+        a no-op — every exercise stays eligible, unchanged from before this
+        param existed.
 
     Returns a dict: kp2d, bbx_xys, pred, joints_np, counts, timeline,
     analysis (see biomechanics.run_biomechanical_analysis), L, W, H,
@@ -311,7 +319,7 @@ def run_core_pipeline(
     joints = get_normalized_global_joints(models.body_model, pred["body_params_global"])
     joints_np = joints.numpy()
     incam_joints_np = get_incam_joints(models.body_model, pred["body_params_incam"]).numpy()
-    counts = analyze_exercises(joints_np, fps=30.0, incam_joints=incam_joints_np)
+    counts = analyze_exercises(joints_np, fps=30.0, incam_joints=incam_joints_np, sport_key=sport_key)
     timeline = compute_rep_timeline(joints_np, counts, fps=30.0, incam_joints=incam_joints_np)
     analysis = run_biomechanical_analysis(joints_np, timeline["key"], fps=30.0, incam_joints=incam_joints_np)
     t_exercise = time.time() - t_ex0

@@ -1,9 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { deleteAccount } from '../../api/auth';
+import { getEffectiveSport, updateMainSport } from '../../api/profile';
+import SportPicker from '../../components/SportPicker';
 import { useSettings } from '../../state/SettingsContext';
 import { ACCENTS, AccentKey, colors, FontScaleKey, spacing } from '../../theme';
 import { confirmAsync } from '../../utils/confirm';
+import { categoryLabel } from '../../utils/pipelineExercise';
 import { heightInputToCm, weightInputToKg } from '../../utils/units';
 
 const PRIVACY_POLICY_URL = 'https://danzlotnikov.github.io/APeX/privacy-policy.html';
@@ -16,15 +19,51 @@ const WINDOW_OPTS = [7, 14, 30, 90];
 
 interface Props {
   onLogout: () => void;
+  userId?: string;
+  teamId?: string;
 }
 
-export default function SettingsScreen({ onLogout }: Props) {
-  const { settings, profile, update, updateProfile, accentColor, fontScale } = useSettings();
+export default function SettingsScreen({ onLogout, userId, teamId }: Props) {
+  const { settings, profile, update, updateProfile, accentColor, accentOn, fontScale } = useSettings();
 
   const [name, setName] = useState(profile.name);
   const [height, setHeight] = useState('');
   const [weight, setWeight] = useState('');
   const [deleting, setDeleting] = useState(false);
+
+  // Team athletes inherit their manager's sport (see effective_sport() in
+  // 028_main_sport.sql) — fetched once here rather than trusting a locally
+  // cached value, since the manager could have changed it since last login.
+  // null = still loading; only relevant when teamId is set (the read-only
+  // display below) — an individual athlete edits their own value directly
+  // via SportPicker/updateMainSport instead, no fetch needed.
+  const [effectiveSport, setEffectiveSport] = useState<string | null>(null);
+  const [mySport, setMySport] = useState<string | null>(null);
+  const [sportSaving, setSportSaving] = useState(false);
+
+  useEffect(() => {
+    if (!userId) return;
+    if (teamId) {
+      getEffectiveSport(userId).then(setEffectiveSport).catch(() => setEffectiveSport('general_fitness'));
+    } else {
+      getEffectiveSport(userId).then(setMySport).catch(() => setMySport('general_fitness'));
+    }
+  }, [userId, teamId]);
+
+  async function handlePickSport(key: string) {
+    if (!userId || sportSaving) return;
+    setSportSaving(true);
+    const prev = mySport;
+    setMySport(key); // optimistic — a 3-item picker should feel instant
+    try {
+      await updateMainSport(key);
+    } catch (e) {
+      setMySport(prev);
+      Alert.alert('Could not update', 'Something went wrong changing your main sport. Please try again.');
+    } finally {
+      setSportSaving(false);
+    }
+  }
 
   async function handleDeleteAccount() {
     const confirmed = await confirmAsync(
@@ -92,6 +131,23 @@ export default function SettingsScreen({ onLogout }: Props) {
             <TextInput value={weight} onChangeText={commitWeight} keyboardType="numeric"
               placeholder="—" placeholderTextColor={colors.muted} style={styles.input} />
           </Field>
+        </View>
+
+        {/* ── Main sport ── */}
+        <Section title="MAIN SPORT" fontScale={fontScale} />
+        <View style={styles.card}>
+          {teamId ? (
+            <View style={styles.sportReadOnly}>
+              <Text style={styles.sportReadOnlyText}>
+                {effectiveSport ? categoryLabel(effectiveSport) : '—'}
+              </Text>
+              <Text style={styles.sportReadOnlyNote}>Set by your manager.</Text>
+            </View>
+          ) : (
+            <View style={styles.sportPickerWrap}>
+              <SportPicker value={mySport} onChange={handlePickSport} accentColor={accentColor} accentOn={accentOn} />
+            </View>
+          )}
         </View>
 
         {/* ── Appearance ── */}
@@ -258,6 +314,11 @@ const styles = StyleSheet.create({
 
   rowLabel: { color: colors.text, fontSize: 14, fontWeight: '600', paddingVertical: spacing.sm },
   divider: { height: 1, backgroundColor: colors.border, marginVertical: spacing.xs },
+
+  sportPickerWrap: { paddingVertical: spacing.sm },
+  sportReadOnly: { paddingVertical: spacing.sm },
+  sportReadOnlyText: { color: colors.text, fontSize: 16, fontWeight: '700' },
+  sportReadOnlyNote: { color: colors.muted, fontSize: 11, fontWeight: '500', marginTop: 2 },
 
   swatches: { flexDirection: 'row', gap: spacing.sm, paddingBottom: spacing.sm },
   swatch: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'transparent' },

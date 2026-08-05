@@ -136,6 +136,7 @@ def combine_two_panel(left: np.ndarray, right: np.ndarray) -> np.ndarray:
 def process_video_two_panel(
     models: "worker.Models", video_path: str, output_dir: Path,
     cancel_check: "worker.Callable[[], bool] | None" = None,
+    sport_key: str | None = None,
 ) -> dict:
     """Runs the full pipeline on a local video path and writes a two-panel
     (original-cropped | skeleton+counter) video to output_dir/two_panel.mp4,
@@ -147,6 +148,10 @@ def process_video_two_panel(
     cancel_check: passed straight through to worker.run_core_pipeline — see
     its docstring. May raise worker.PipelineCancelled; not caught here,
     it's the caller's decision how to handle an aborted run.
+
+    sport_key: passed straight through to worker.run_core_pipeline /
+    analyze_exercises — the athlete's effective main sport, or None. See
+    supabase_client.get_effective_sport().
     """
     import json
 
@@ -157,7 +162,9 @@ def process_video_two_panel(
     output_dir.mkdir(parents=True, exist_ok=True)
     preprocess_dir = output_dir / "preprocess"
 
-    r = worker.run_core_pipeline(models, video_path, preprocess_dir, log_prefix="[server]", cancel_check=cancel_check)
+    r = worker.run_core_pipeline(
+        models, video_path, preprocess_dir, log_prefix="[server]", cancel_check=cancel_check, sport_key=sport_key,
+    )
 
     # Left panel: original frames, no overlay. Normally cropped to the
     # athlete's full range of motion across the whole clip (see

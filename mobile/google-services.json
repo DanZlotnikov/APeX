@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "164400810019",
+    "project_id": "apex-2bc44",
+    "storage_bucket": "apex-2bc44.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:164400810019:android:cabc280c16f1ced8acc996",
+        "android_client_info": {
+          "package_name": "com.apexathletics.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB7sc1UWhSgjye9YhczYMv8jSLq7w0aFyI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

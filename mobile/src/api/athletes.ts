@@ -9,7 +9,7 @@ import { AttemptForMatching, matchAttemptsToSets } from '../utils/routineSets';
 export async function getTeamAthletes(teamId: string): Promise<AthleteViewModel[]> {
   const { data: profiles, error: profErr } = await supabase
     .from('profiles')
-    .select('id, full_name, injured, injury_started_at, stats_reset_at, athlete_profiles(height_cm, weight_kg, position, date_of_birth)')
+    .select('id, full_name, injured, injury_started_at, stats_reset_at, main_sport_key, sport_override_key, athlete_profiles(height_cm, weight_kg, position, date_of_birth)')
     .eq('team_id', teamId)
     .eq('role', 'athlete');
 
@@ -18,7 +18,11 @@ export async function getTeamAthletes(teamId: string): Promise<AthleteViewModel[
 
   const athleteIds = profiles.map((p) => p.id);
 
-  const [sessionsRes, routinesByAthlete] = await Promise.all([
+  // The manager's own main_sport_key IS the team default every athlete
+  // without their own sport_override_key inherits (see effective_sport() in
+  // 028_main_sport.sql) — fetched once here and reused for the whole roster
+  // rather than one RPC call per athlete.
+  const [sessionsRes, routinesByAthlete, managerRes] = await Promise.all([
     supabase
       .from('sessions')
       .select('id, athlete_id, exercise_type, recorded_at, rep_count, readiness_score')
@@ -26,9 +30,11 @@ export async function getTeamAthletes(teamId: string): Promise<AthleteViewModel[
       .order('recorded_at', { ascending: false })
       .limit(400),
     getRoutinesForAthletes(athleteIds),
+    supabase.from('profiles').select('main_sport_key').eq('team_id', teamId).eq('role', 'manager').single(),
   ]);
 
   if (sessionsRes.error) throw sessionsRes.error;
+  const teamDefaultSport = managerRes.data?.main_sport_key ?? 'general_fitness';
 
   const sessionsByAthlete = new Map<string, any[]>();
   for (const s of sessionsRes.data ?? []) {
@@ -43,6 +49,7 @@ export async function getTeamAthletes(teamId: string): Promise<AthleteViewModel[
     return buildViewModel(
       p.id, p.full_name, aps, athSess, routinesByAthlete.get(p.id) ?? [],
       p.injured, p.injury_started_at, p.stats_reset_at,
+      p.sport_override_key, teamDefaultSport, p.main_sport_key,
     );
   });
 }
@@ -54,13 +61,16 @@ export async function getTeamAthletes(teamId: string): Promise<AthleteViewModel[
 export async function getAthleteById(athleteId: string): Promise<AthleteViewModel | null> {
   const { data: profile } = await supabase
     .from('profiles')
-    .select('id, full_name, injured, injury_started_at, stats_reset_at, athlete_profiles(height_cm, weight_kg, position, date_of_birth)')
+    .select('id, full_name, injured, injury_started_at, stats_reset_at, team_id, main_sport_key, sport_override_key, athlete_profiles(height_cm, weight_kg, position, date_of_birth)')
     .eq('id', athleteId)
     .single();
 
   if (!profile) return null;
 
-  const [sessionsRes, routine] = await Promise.all([
+  // Only relevant when this athlete has a team — an individual athlete's
+  // own main_sport_key is already the effective value, no manager to
+  // inherit from (see buildViewModel's effective-sport COALESCE below).
+  const [sessionsRes, routine, teamDefaultSport] = await Promise.all([
     supabase
       .from('sessions')
       .select('exercise_type, recorded_at, rep_count, readiness_score')
@@ -68,6 +78,10 @@ export async function getAthleteById(athleteId: string): Promise<AthleteViewMode
       .order('recorded_at', { ascending: false })
       .limit(200),
     getRoutine(athleteId),
+    profile.team_id
+      ? supabase.from('profiles').select('main_sport_key').eq('team_id', profile.team_id).eq('role', 'manager').single()
+        .then((r) => r.data?.main_sport_key ?? null)
+      : Promise.resolve(null),
   ]);
   if (sessionsRes.error) throw sessionsRes.error;
 
@@ -81,6 +95,9 @@ export async function getAthleteById(athleteId: string): Promise<AthleteViewMode
     profile.injured,
     profile.injury_started_at,
     profile.stats_reset_at,
+    profile.sport_override_key,
+    teamDefaultSport,
+    profile.main_sport_key,
   );
 }
 
@@ -111,6 +128,9 @@ function buildViewModel(
   injured: boolean,
   injuryStartedAt: string | null,
   statsResetAt: string | null,
+  sportOverrideKey: string | null,
+  teamDefaultSport: string | null, // this athlete's manager's main_sport_key, or null if no team
+  ownMainSport: string,
 ): AthleteViewModel {
   const today   = new Date().toISOString().slice(0, 10);
   const cutoff30 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
@@ -231,6 +251,8 @@ function buildViewModel(
     injured,
     injuryStartedAt,
     statsResetAt,
+    effectiveSportKey: sportOverrideKey ?? teamDefaultSport ?? ownMainSport,
+    sportOverrideKey,
   };
 }
 

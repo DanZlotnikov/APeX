@@ -41,10 +41,45 @@ def _valid_frame_mask(defn, signals) -> np.ndarray:
     return (sig < threshold) if comparator == "lt" else (sig > threshold)
 
 
+def _apply_exclusion_check(defn, reps: list[dict], signals: dict) -> list[dict]:
+    """Whole-rep veto — see ExerciseDefinition.exclusion_check's docstring
+    for why this has to be a post-filter over the counting engine's own
+    output rather than a frame mask fed into it.
+    """
+    if defn.exclusion_check is None or not reps:
+        return reps
+    signal_name, comparator, param_id = defn.exclusion_check
+    threshold = defn.param(param_id)
+    sig = signals[signal_name]
+    bad = (sig < threshold) if comparator == "lt" else (sig > threshold)
+    return [r for r in reps if not bad[r["start"]:r["end"] + 1].any()]
+
+
+def _apply_requirement_check(defn, reps: list[dict], signals: dict) -> list[dict]:
+    """Mirror image of _apply_exclusion_check — see
+    ExerciseDefinition.requirement_check's docstring for the full reasoning
+    (in particular why this isn't just corroboration_signal again).
+    """
+    if defn.requirement_check is None or not reps:
+        return reps
+    signal_name, comparator, param_id = defn.requirement_check
+    threshold = defn.param(param_id)
+    sig = signals[signal_name]
+
+    def window_ok(r: dict) -> bool:
+        window = sig[r["start"]:r["end"] + 1]
+        rng = float(window.max() - window.min())
+        return (rng < threshold) if comparator == "lt" else (rng > threshold)
+
+    return [r for r in reps if window_ok(r)]
+
+
 def _run_exercise(defn, signals: dict, times: np.ndarray, flight_signals: tuple[np.ndarray, np.ndarray] | None = None) -> list[dict]:
-    """Dispatches to the counting engine matching defn.counting_strategy."""
+    """Dispatches to the counting engine matching defn.counting_strategy,
+    then applies exclusion_check (if any) — see its docstring.
+    """
     if defn.counting_strategy == CountingStrategy.THRESHOLD_CROSSING:
-        return count_threshold_crossing(
+        reps = count_threshold_crossing(
             signal=signals[defn.primary_signal],
             corroboration_mask=_corroboration_mask(defn, signals),
             min_rom_deg=defn.param("min_rom_deg"),
@@ -52,7 +87,7 @@ def _run_exercise(defn, signals: dict, times: np.ndarray, flight_signals: tuple[
             stand_fraction=defn.param("stand_fraction"),
         )
 
-    if defn.counting_strategy == CountingStrategy.SWING_DETECTOR:
+    elif defn.counting_strategy == CountingStrategy.SWING_DETECTOR:
         corro_signal = signals[defn.corroboration_signal] if defn.corroboration_signal else None
         corro_delta = 0.0
         if defn.corroboration_delta_param:
@@ -61,7 +96,7 @@ def _run_exercise(defn, signals: dict, times: np.ndarray, flight_signals: tuple[
             # own median torso length so the threshold stays meaningful
             # across different athlete sizes and camera distances.
             corro_delta = defn.param(defn.corroboration_delta_param) * float(np.median(signals["torso_scale"]))
-        return count_swing_detector(
+        reps = count_swing_detector(
             signal=signals[defn.primary_signal],
             frame_valid_mask=_valid_frame_mask(defn, signals),
             min_rom_deg=defn.param("min_rom_deg"),
@@ -70,7 +105,7 @@ def _run_exercise(defn, signals: dict, times: np.ndarray, flight_signals: tuple[
             corroboration_min_delta=corro_delta,
         )
 
-    if defn.counting_strategy == CountingStrategy.FLIGHT_PHASE:
+    elif defn.counting_strategy == CountingStrategy.FLIGHT_PHASE:
         # vertical_jump-specific: prefers the in-camera-derived height/scale
         # signal (flight_signals, from worker.py's get_incam_joints) over
         # the world-grounded one when available — see flight_height_signals()
@@ -85,7 +120,7 @@ def _run_exercise(defn, signals: dict, times: np.ndarray, flight_signals: tuple[
         else:
             height_signal = signals[defn.primary_signal]
             scale_signal = signals["shoulder_y"] - signals["ankle_y"]
-        return count_flight_phase(
+        reps = count_flight_phase(
             height_signal=height_signal,
             scale_signal=scale_signal,
             times=times,
@@ -96,7 +131,11 @@ def _run_exercise(defn, signals: dict, times: np.ndarray, flight_signals: tuple[
             max_flight_sec=defn.param("max_flight_sec"),
         )
 
-    raise ValueError(f"Unknown counting strategy: {defn.counting_strategy}")
+    else:
+        raise ValueError(f"Unknown counting strategy: {defn.counting_strategy}")
+
+    reps = _apply_exclusion_check(defn, reps, signals)
+    return _apply_requirement_check(defn, reps, signals)
 
 
 def _resolve_standing(signals: dict, reps_by_key: dict[str, list], defs: list) -> dict[str, list]:
@@ -148,12 +187,25 @@ def _flight_signals(incam_joints: np.ndarray | None, times: np.ndarray) -> tuple
     return smoothed["height"], smoothed["scale"]
 
 
-def analyze_exercises(joints: np.ndarray, fps: float = 30.0, incam_joints: np.ndarray | None = None) -> dict[str, int]:
+def analyze_exercises(
+    joints: np.ndarray, fps: float = 30.0, incam_joints: np.ndarray | None = None,
+    sport_key: str | None = None,
+) -> dict[str, int]:
     """joints: (L, 22, 3) world-space SMPL joints for one clip.
     incam_joints: optional (L, 22, 3) in-camera (non-world-grounded) SMPL
         joints for the same clip — used only by vertical_jump's flight-phase
         detection (see flight_height_signals() in signals.py for why).
         Falls back to the world-grounded ankle height if omitted.
+    sport_key: the athlete's effective main sport (Supabase
+        profiles.main_sport_key / sport_override_key via effective_sport(),
+        see supabase/migrations/028_main_sport.sql), or None/unknown. Two
+        different sports can register visually-identical exercises (a padel
+        stroke and a tennis stroke — see exercises.py's "TENNIS STROKE"
+        comment) that pose data alone can't tell apart; when the athlete's
+        sport IS known, this keeps the other sport's exercises from ever
+        competing for the same clip. "general_fitness"/None is a no-op —
+        every exercise stays eligible, same as before this param existed
+        ("whatever comes out during analysis").
 
     Returns a rep count per exercise KEY for every registered exercise
     (0 for anything not detected) — a stable, predictable shape regardless
@@ -175,6 +227,8 @@ def analyze_exercises(joints: np.ndarray, fps: float = 30.0, incam_joints: np.nd
         return zero_counts
 
     defs = exercises_for_orientation(orientation)
+    if sport_key and sport_key != "general_fitness":
+        defs = [d for d in defs if d.category in ("general_fitness", sport_key)]
     if not defs:
         return zero_counts
 

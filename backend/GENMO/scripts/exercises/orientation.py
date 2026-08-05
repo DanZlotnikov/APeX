@@ -34,7 +34,40 @@ MIN_SUSTAINED_OVERHEAD_SEC = 0.8
 
 # Within "horizontal", body_line_angle (hip-knee-ankle) separates a straight
 # plank (push-up) from bent knees (crunch) — see signals.py.
-PLANK_MIN_BODY_LINE_ANGLE = 140.0
+#
+# Lowered from 140 after a real push-up clip (2026-08-05, prone plank
+# position, legs genuinely straight) was misclassified as HORIZONTAL_LYING
+# and scored as an ab_crunch instead — confirmed indirectly rather than by
+# inspecting body_line_angle directly (not persisted anywhere): the
+# resulting "crunch" showed a 95deg trunk_flexion achieved_deg against a
+# 30deg target (3x over, severity clipped at the 130% cap), wildly outside
+# any real crunch's plausible range, consistent with hip_angle (reused as
+# ab_crunch's trunk-flexion signal) behaving unpredictably on a body
+# configuration it was never designed to read. The likely cause is pose-
+# estimation noise on the LEGS specifically in a prone, floor-level
+# position — self-occlusion and an unusual camera angle/framing relative to
+# the mostly-standing footage this pipeline is otherwise tuned against (the
+# same category of issue already confirmed for the foot joint specifically,
+# see skeleton_renderer.py's foot-rendering fix). 110 keeps real separation
+# from a genuine crunch (knees bent to bring the feet flat on the floor,
+# ordinarily well under 100deg) while giving push-up's leg-angle estimate
+# more room for that noise. Revisit with real body_line_angle telemetry if
+# this keeps misfiring — this is still an estimate, not a measured fix.
+PLANK_MIN_BODY_LINE_ANGLE = 110.0
+
+# Second, independent PLANK signal — see signals.py's hand_ground_gap
+# docstring. A push-up's hands are planted on the floor with the torso held
+# elevated above it (positive gap, roughly a meaningful fraction of torso
+# length even at the bottom of a rep); a crunch's hands sit at roughly
+# shoulder height since the whole body lies flat on the floor (gap near
+# zero). Compared as a fraction of this clip's own torso_scale, same
+# normalization convention wrist_above already uses. Combined with
+# body_line_angle below via OR, not AND/replacement — the two signals read
+# completely different body parts (legs vs. hands), so they're unlikely to
+# both be thrown off by the same pose-estimation noise at once; requiring
+# only one of two independent signals to agree is more robust than trusting
+# either alone, which is exactly what burned body_line_angle on its own.
+PLANK_MIN_HAND_GROUND_FRACTION = 0.15
 
 
 def _longest_true_run(mask: np.ndarray) -> int:
@@ -78,7 +111,8 @@ def classify_orientation(signals: dict, fps: float = 30.0) -> BodyOrientation | 
 
     if upright_ratio <= HORIZONTAL_MAX_UPRIGHT_RATIO:
         body_line = float(np.median(signals["body_line_angle"]))
-        if body_line >= PLANK_MIN_BODY_LINE_ANGLE:
+        hand_ground_fraction = float(np.median(signals["hand_ground_gap"])) / float(np.median(signals["torso_scale"]))
+        if body_line >= PLANK_MIN_BODY_LINE_ANGLE or hand_ground_fraction >= PLANK_MIN_HAND_GROUND_FRACTION:
             return BodyOrientation.HORIZONTAL_PLANK
         return BodyOrientation.HORIZONTAL_LYING
 
