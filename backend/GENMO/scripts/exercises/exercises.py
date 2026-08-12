@@ -229,6 +229,22 @@ register(ExerciseDefinition(
 # for architectural consistency rather than switching to literal absolute
 # angles — depth_fraction/stand_fraction below are tuned so the adaptive
 # thresholds land close to that 90/160 convention for a typical rep.
+#
+# No corroboration gate (used to require body_line_angle > 120deg AT the
+# depth-crossing frame specifically, to catch hips sagging/piking out of a
+# straight plank) — removed after real clips showed push-ups going
+# completely undetected (0 reps) even after fixing orientation.py's own use
+# of this exact signal for the same reason: body_line_angle (hip-knee-ankle)
+# pose estimation is unreliable for a prone push-up specifically (see
+# orientation.py's PLANK_MIN_BODY_LINE_ANGLE comment for the full evidence —
+# lowered 140->110 there for legs that were genuinely straight but read as
+# bent). A per-frame corroboration check at one specific frame is even more
+# exposed to that same noise than orientation's whole-clip median was, so
+# keeping ANY value here risked silently zeroing out real reps again. Same
+# conclusion, same reasoning, and the same fix squat's own now-removed
+# torso_lean corroboration reached earlier (see squat's comment above) —
+# a corroboration gate that only rejects real reps with no reliable signal
+# behind it should be removed, not re-guessed at a new threshold.
 register(ExerciseDefinition(
     key="push_up",
     label="Push-Up",
@@ -260,14 +276,7 @@ register(ExerciseDefinition(
             "How close to fully extended arms counts as 'back up', "
             "confirming the rep.",
         ),
-        "body_line_min_deg": TunableParam(
-            "body_line_min_deg", "Min plank straightness", "deg", 120, 90, 170, 5,
-            "Hip-knee-ankle angle must stay above this at the bottom of "
-            "the rep — guards against hips sagging/piking so far that it's "
-            "no longer a straight-body plank.",
-        ),
     },
-    corroboration=(("body_line_angle", "gt", "body_line_min_deg"),),
     priority=50,
 ))
 
