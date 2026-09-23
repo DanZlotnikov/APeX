@@ -328,10 +328,12 @@ Android done, actually run the app on a real Android device (or a Play-Store-tra
 Log anything found here back into this doc under §5 below as it comes up, same as the iOS plan
 tracks its own findings — don't let this list live only in chat history.
 
-**Watch out before recruiting closed testers:** the backend is currently in tennis-only detection
-mode (`analyze.ENABLED_EXERCISE_KEYS` in `backend/GENMO/scripts/exercises/analyze.py`). Any tester
-who records a squat, jump, pull-up, push-up or crunch gets no result or a wrong one. Either recruit
-tennis players for the 14 days, or restore full detection first.
+**Closed testers must be tennis players (decided 2026-09-23):** production stays in tennis-only
+detection mode (`analyze.ENABLED_EXERCISE_KEYS` in `backend/GENMO/scripts/exercises/analyze.py`),
+so a tester recording a squat, jump, pull-up, push-up or crunch gets no result or a wrong one.
+Tell testers to record tennis swings only. Before the public production release, either restore
+full detection or cut the listing's "SPORTS AND EXERCISES" paragraph (§3.4) down to tennis, so the
+listing doesn't promise exercises the backend won't detect.
 
 ---
 
