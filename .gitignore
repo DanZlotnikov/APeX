@@ -23,3 +23,8 @@ backend/server/.worker.lock
 .DS_Store
 .idea/
 .vscode/
+
+# Secrets that must never be committed -- see ANDROID_SUBMISSION_PLAN.md
+# (google-services.json is NOT here: it's a public Firebase client
+# identifier, not a credential, and is intentionally committed)
+mobile/google-play-service-account.json
