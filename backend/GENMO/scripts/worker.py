@@ -54,6 +54,7 @@ from demo_utils import (  # noqa: E402
 )
 from biomechanics import run_biomechanical_analysis  # noqa: E402
 from exercises import EXERCISE_REGISTRY, analyze_exercises, compute_rep_timeline, stabilize_grip_point  # noqa: E402
+from exercises.ml_classifier import load_ml_classifier  # noqa: E402
 from skeleton_renderer import render_skeleton_frames  # noqa: E402
 from smoothing import smooth_keypoints_zero_phase  # noqa: E402
 
@@ -83,6 +84,10 @@ class Models:
     vitpose: object
     hmr2: object
     body_model: object
+    # Second, independent "what exercise was that?" signal (see
+    # exercises/ml_classifier.py) -- None until scripts/ml/train_classifier.py
+    # has produced a checkpoint; run_core_pipeline() handles that gracefully.
+    ml_classifier: object
 
 
 def load_all_models() -> Models:
@@ -118,9 +123,13 @@ def load_all_models() -> Models:
     body_model.cuda().eval()
     print(f"[pipeline]   SMPL-X body model ready in {time.time() - t1:.1f}s")
 
+    t1 = time.time()
+    ml_classifier = load_ml_classifier(device="cuda")
+    print(f"[pipeline]   ML exercise classifier {'ready' if ml_classifier else 'unavailable'} in {time.time() - t1:.1f}s")
+
     print(f"[pipeline] all models ready in {time.time() - t0:.1f}s total.")
     return Models(gem=gem_model, yolo=yolo_model, vitpose=vitpose_extractor,
-                  hmr2=hmr2_extractor, body_model=body_model)
+                  hmr2=hmr2_extractor, body_model=body_model, ml_classifier=ml_classifier)
 
 
 def get_normalized_global_joints(body_model, bp_global):
@@ -276,7 +285,7 @@ def run_core_pipeline(
         return dict(
             kp2d=torch.zeros(L, 17, 3), bbx_xys=bbx_xys, pred={}, joints_np=np.zeros((L, 22, 3), dtype=np.float32),
             counts=zero_counts, timeline={"key": None, "cumulative": np.zeros(L, dtype=int)},
-            analysis={"exercise": None, "rep_count": 0, "analyses": {}}, L=L, W=W, H=H,
+            analysis={"exercise": None, "rep_count": 0, "analyses": {}, "ml_prediction": None}, L=L, W=W, H=H,
             person_detected=False,
             t_preproc=t_preproc, t_inference=0.0, t_exercise=0.0, t0=t0,
         )
@@ -322,6 +331,11 @@ def run_core_pipeline(
     counts = analyze_exercises(joints_np, fps=30.0, incam_joints=incam_joints_np, sport_key=sport_key)
     timeline = compute_rep_timeline(joints_np, counts, fps=30.0, incam_joints=incam_joints_np)
     analysis = run_biomechanical_analysis(joints_np, timeline["key"], fps=30.0, incam_joints=incam_joints_np)
+    # Second opinion, independent of the legacy resolver above -- see
+    # exercises/ml_classifier.py. Purely additive: analysis["exercise"] (the
+    # legacy pipeline's winning key, used everywhere downstream today) is
+    # untouched; this only adds the new sibling key below.
+    analysis["ml_prediction"] = models.ml_classifier.predict(joints_np, fps=30.0) if models.ml_classifier else None
     t_exercise = time.time() - t_ex0
     print(f"{log_prefix} {video_path.name}: exercise counts = {counts}")
     if analysis["analyses"]:
