@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
+  BackHandler,
   KeyboardAvoidingView,
   Linking,
   Platform,
@@ -54,6 +55,20 @@ export default function SignUpScreen({ onSuccess, onBack }: Props) {
   useEffect(() => {
     Animated.timing(fade, { toValue: 1, duration: 400, useNativeDriver: true }).start();
   }, []);
+
+  // Android's system back mirrors the on-screen back buttons: later steps return to the role step, which returns to login.
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (step !== 'role') {
+        setStep('role');
+        setError('');
+      } else {
+        onBack();
+      }
+      return true;
+    });
+    return () => sub.remove();
+  }, [step, onBack]);
 
   function selectRole(r: Role) {
     setRole(r);

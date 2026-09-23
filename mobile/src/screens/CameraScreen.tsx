@@ -1,6 +1,6 @@
 import * as ImagePicker from 'expo-image-picker';
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, BackHandler, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import StatusBanner from '../components/StatusBanner';
 import LiveCamera, { LiveCameraHandle } from '../components/LiveCamera';
@@ -66,6 +66,15 @@ export default function CameraScreen({ pickOnMount, testMode, onVideoConfirmed, 
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Android's system back mirrors the on-screen back button, including doing nothing while it's disabled.
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (!isRecording && countdown === null && !uploading) onBack();
+      return true;
+    });
+    return () => sub.remove();
+  }, [isRecording, countdown, uploading, onBack]);
 
   function handleRecordPress() {
     if (isRecording) {

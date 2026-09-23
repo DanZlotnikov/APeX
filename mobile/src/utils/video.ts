@@ -12,7 +12,8 @@ import { Platform } from 'react-native';
  */
 export async function normalizeVideoUri(uri: string): Promise<string> {
   if (Platform.OS === 'android' && uri.startsWith('content://')) {
-    const ext  = uri.split('.').pop()?.split('?')[0]?.toLowerCase() || 'mp4';
+    // content:// URIs usually have no extension at all (…/media/1234); don't mistake the whole URI for one.
+    const ext  = /\.([a-z0-9]{2,4})$/i.exec(uri.split('?')[0])?.[1]?.toLowerCase() ?? 'mp4';
     const dest = `${FileSystem.cacheDirectory}pose_input_${Date.now()}.${ext}`;
     await FileSystem.copyAsync({ from: uri, to: dest });
     return dest;

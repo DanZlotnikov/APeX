@@ -1,7 +1,7 @@
 import * as ImagePicker from 'expo-image-picker';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Animated, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, Animated, BackHandler, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { getProfile, getSession, logout, signIn } from './src/api/auth';
 import { getAthleteById } from './src/api/athletes';
@@ -114,6 +114,16 @@ function AppInner() {
       .catch(() => {})
       .finally(() => setSessionChecked(true));
   }, []);
+
+  // Android's system back mirrors ManagerTopBar's back button. The camera and sign-up screens handle their own.
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (role !== 'manager' || managerScreen === 'manager-dashboard') return false;
+      setManagerScreen('manager-dashboard');
+      return true;
+    });
+    return () => sub.remove();
+  }, [role, managerScreen]);
 
   // ── Auth ───────────────────────────────────────────────────────────────────
   // A genuine login/signup action (as opposed to the session-restore effect
