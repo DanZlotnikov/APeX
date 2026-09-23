@@ -18,6 +18,9 @@ from .signals import compute_signals, flight_height_signals, smooth_signals
 
 MIN_FRAMES = 15
 
+# Temporary tennis-only mode: only these keys are ever evaluated. None restores every registered exercise.
+ENABLED_EXERCISE_KEYS: frozenset[str] | None = frozenset({"tennis_stroke"})
+
 
 def _corroboration_mask(defn, signals) -> np.ndarray | None:
     if not defn.corroboration:
@@ -227,7 +230,10 @@ def analyze_exercises(
         return zero_counts
 
     defs = exercises_for_orientation(orientation)
-    if sport_key and sport_key != "general_fitness":
+    if ENABLED_EXERCISE_KEYS is not None:
+        # Supersedes the sport filter: its only job is picking padel vs. tennis stroke, which this already decides.
+        defs = [d for d in defs if d.key in ENABLED_EXERCISE_KEYS]
+    elif sport_key and sport_key != "general_fitness":
         defs = [d for d in defs if d.category in ("general_fitness", sport_key)]
     if not defs:
         return zero_counts

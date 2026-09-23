@@ -145,7 +145,8 @@ class ExerciseDefinition:
     # its own [start, end] window's signal range (max - min within the
     # window) satisfies comparator against the named param — e.g.
     # ("foot_shift", "gt", "foot_movement_gate") keeps only reps where the
-    # feet moved at least that much at some point during the rep. Not the
+    # feet moved at least that much at some point during the rep (stroke's
+    # former use of it; no exercise currently sets this, see exercises.py). Not the
     # same as corroboration_signal/corroboration_delta_param: those compare
     # a signal's value AT two specific tracked indices (a peak and a
     # trough) and need the signal to move in a consistent direction tied to

@@ -367,17 +367,13 @@ register(ExerciseDefinition(
 # ball takes the wrist well away from the hip, then it's drawn back in for
 # the recovery/ready position.
 #
-# corroboration_signal="foot_shift" (added later, alongside stance_gate
-# below) is NOT the same wrist_hip_dist-as-its-own-corroboration setup
-# removed early on (that really was redundant — a signal corroborating
-# itself as primary signal added nothing). This is a genuinely independent
-# signal: how far the feet moved. Added specifically because a real padel/
-# tennis stroke typically involves some footwork (stepping/pivoting to reach
-# the ball) alongside the arm swing, which a squat's own arm-swing-for-
-# balance never has (see squat's new foot_stability_gate for the mirror-
-# image fix). Kept deliberately small (foot_movement_fraction below) so a
-# genuinely stationary/compact stroke — not every real shot involves
-# stepping — doesn't get rejected for lacking footwork it never had.
+# A minimum-footwork requirement (requirement_check on foot_shift > 0.05m)
+# used to live here too and was removed 2026-09-23: on 30 real Penn Action
+# tennis swings it rejected 4 genuine planted-feet swings (<5cm of foot
+# travel), while only guarding against shallow squats, which matter again
+# only once squat is re-enabled (see analyze.ENABLED_EXERCISE_KEYS) — then
+# the measured cost is 10/218 real squats stolen by a stroke vs. 2/218 with
+# it. Restore it from git history if squat detection comes back.
 #
 # priority=60 (above squat's 50): both share BodyOrientation.STANDING, and
 # _resolve_standing/_resolve_by_priority in analyze.py pick whichever
@@ -407,13 +403,13 @@ register(ExerciseDefinition(
 # through the squat cycle. exclusion_check (see definitions.py) instead
 # vetoes the WHOLE candidate rep if the knee ever dropped below the gate
 # anywhere in its window, which a masked-frame approach can't express.
-# 130deg is a deliberate middle ground, not squat's own "fully standing"
-# baseline — it still allows the moderate knee-soften of a real padel low
-# reach (see wrist_hip_dist's own history above: that reach is dynamic and
-# brief, not a held squat position) while excluding genuine squat depth,
-# which drops well below this even for a shallow rep. Engineering estimate
-# pending real low-reach footage to confirm the boundary is in the right
-# place.
+# Recalibrated 130 -> 100deg (2026-09-23) against real footage: a real
+# low-ball padel clip (job 23b090a7) bent the knee to 112/118deg mid-swing,
+# and on 25 real Penn Action tennis swings 130deg vetoed over half of them
+# (11/25 detected vs. 19/25 at <=110deg — the ceiling the gate itself can
+# recover). 100deg leaves margin under the lowest observed real swing while
+# still excluding parallel-depth squats: only 2/218 real squats get stolen
+# by a stroke at 100deg, vs. 11/218 with no gate at all.
 register(ExerciseDefinition(
     key="stroke",
     label="Padel Stroke",
@@ -449,23 +445,14 @@ register(ExerciseDefinition(
             "same value pull-up/ab-crunch already use for this engine.",
         ),
         "stance_gate": TunableParam(
-            "stance_gate", "Minimum knee extension", "deg", 130, 90, 170, 5,
+            "stance_gate", "Minimum knee extension", "deg", 100, 70, 170, 5,
             "A candidate swing is rejected outright if the knee ever drops "
             "below this at any point during it — rules out a squat's own "
             "arm-swing-for-balance being mistaken for a stroke, while still "
-            "allowing the moderate knee-soften of a real low reach.",
-        ),
-        "foot_movement_gate": TunableParam(
-            "foot_movement_gate", "Minimum footwork", "m", 0.05, 0.0, 0.3, 0.01,
-            "The feet must travel at least this far (peak-to-trough range "
-            "within the swing's own window) for it to count as a real "
-            "stroke — kept small so a compact, stationary shot still "
-            "passes; only meant to catch a swing with literally zero foot "
-            "movement, which a real shot practically never has.",
+            "allowing the knee bend of a real low-ball swing.",
         ),
     },
     exclusion_check=("knee_angle", "lt", "stance_gate"),
-    requirement_check=("foot_shift", "gt", "foot_movement_gate"),
     priority=60,
     category="padel",
 ))
@@ -518,19 +505,13 @@ register(ExerciseDefinition(
             "peak/trough to confirm that extreme was real, not noise.",
         ),
         "stance_gate": TunableParam(
-            "stance_gate", "Minimum knee extension", "deg", 130, 90, 170, 5,
+            "stance_gate", "Minimum knee extension", "deg", 100, 70, 170, 5,
             "Same squat-exclusion gate as padel stroke (see that exercise's "
             "own comment) — a candidate swing is rejected outright if the "
             "knee ever drops below this at any point during it.",
         ),
-        "foot_movement_gate": TunableParam(
-            "foot_movement_gate", "Minimum footwork", "m", 0.05, 0.0, 0.3, 0.01,
-            "Same footwork-corroboration gate as padel stroke (see that "
-            "exercise's own comment).",
-        ),
     },
     exclusion_check=("knee_angle", "lt", "stance_gate"),
-    requirement_check=("foot_shift", "gt", "foot_movement_gate"),
     # Registered after padel "stroke" and at the same priority: when both are
     # eligible (sport unknown), exercises_for_orientation's stable sort keeps
     # registration order for equal priorities, so "stroke" deterministically
