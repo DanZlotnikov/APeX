@@ -451,8 +451,26 @@ register(ExerciseDefinition(
             "arm-swing-for-balance being mistaken for a stroke, while still "
             "allowing the knee bend of a real low-ball swing.",
         ),
+        "min_stroke_gap": TunableParam(
+            "min_stroke_gap", "Minimum time between strokes", "s", 1.1, 0.3, 3.0, 0.1,
+            "Two swing peaks closer together than this are one stroke, not "
+            "two — a full forehand reaches away from the hip twice (backswing, "
+            "then follow-through), while separate strokes in a rally come "
+            "well over a second apart.",
+        ),
     },
     exclusion_check=("knee_angle", "lt", "stance_gate"),
+    # count_peaks / min_rep_gap_param (2026-09-23): a stroke is ready -> reach
+    # out -> recover, i.e. a PEAK in wrist_hip_dist, but the swing detector's
+    # default counts trough -> rise, so each stroke only confirmed on the NEXT
+    # stroke's rise and a final stroke ending near the clip's last frame was
+    # dropped (a real 3-stroke padel clip, job 23b090a7, counted 2 as a .mov
+    # and 3 as the same clip's .mp4 two frames longer). Counting peaks anchors
+    # each rep on its own swing. A full forehand then shows two peaks
+    # (backswing + follow-through, measured 0.53-1.0s apart on 40 Penn Action
+    # clips) vs. >=1.37s between separate strokes, hence the 1.1s merge.
+    count_peaks=True,
+    min_rep_gap_param="min_stroke_gap",
     priority=60,
     category="padel",
 ))
@@ -510,8 +528,15 @@ register(ExerciseDefinition(
             "own comment) — a candidate swing is rejected outright if the "
             "knee ever drops below this at any point during it.",
         ),
+        "min_stroke_gap": TunableParam(
+            "min_stroke_gap", "Minimum time between strokes", "s", 1.1, 0.3, 3.0, 0.1,
+            "Same backswing/follow-through merge as padel stroke (see that "
+            "exercise's own comment).",
+        ),
     },
     exclusion_check=("knee_angle", "lt", "stance_gate"),
+    count_peaks=True,
+    min_rep_gap_param="min_stroke_gap",
     # Registered after padel "stroke" and at the same priority: when both are
     # eligible (sport unknown), exercises_for_orientation's stable sort keeps
     # registration order for equal priorities, so "stroke" deterministically

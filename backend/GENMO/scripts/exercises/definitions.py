@@ -128,6 +128,13 @@ class ExerciseDefinition:
     valid_frame_check: tuple[str, str, str] | None = None
     corroboration_signal: str | None = None
     corroboration_delta_param: str | None = None
+    # SWING_DETECTOR only: a rep is rise -> peak -> fall of primary_signal (e.g. a stroke's
+    # follow-through) instead of the default fall -> trough -> rise. See stroke in exercises.py.
+    count_peaks: bool = False
+    # Names a param (seconds): consecutive reps whose "bottom" frames are closer than this are merged
+    # into one — for movements that produce two extremes per real rep (a forehand's backswing and
+    # follow-through). None = no merging.
+    min_rep_gap_param: str | None = None
     # Whole-REP veto, evaluated after counting (any counting_strategy) —
     # different from valid_frame_check, which only hides frames from the
     # counting engine's own running state (it still sees the remaining

@@ -77,6 +77,23 @@ def _apply_requirement_check(defn, reps: list[dict], signals: dict) -> list[dict
     return [r for r in reps if window_ok(r)]
 
 
+def _merge_close_reps(defn, reps: list[dict], times: np.ndarray) -> list[dict]:
+    """See ExerciseDefinition.min_rep_gap_param. The merged rep keeps the first rep's start and the
+    last one's bottom/end, so it spans the whole movement (e.g. ready -> backswing -> follow-through).
+    """
+    if defn.min_rep_gap_param is None or len(reps) < 2:
+        return reps
+    gap = defn.param(defn.min_rep_gap_param)
+    merged = [dict(reps[0])]
+    for r in reps[1:]:
+        prev = merged[-1]
+        if times[r["bottom"]] - times[prev["bottom"]] < gap:
+            prev["bottom"], prev["end"] = r["bottom"], r["end"]
+        else:
+            merged.append(dict(r))
+    return merged
+
+
 def _run_exercise(defn, signals: dict, times: np.ndarray, flight_signals: tuple[np.ndarray, np.ndarray] | None = None) -> list[dict]:
     """Dispatches to the counting engine matching defn.counting_strategy,
     then applies exclusion_check (if any) — see its docstring.
@@ -99,8 +116,13 @@ def _run_exercise(defn, signals: dict, times: np.ndarray, flight_signals: tuple[
             # own median torso length so the threshold stays meaningful
             # across different athlete sizes and camera distances.
             corro_delta = defn.param(defn.corroboration_delta_param) * float(np.median(signals["torso_scale"]))
+        signal = signals[defn.primary_signal]
+        if defn.count_peaks:
+            # Mirrored about its midpoint rather than negated: same range, and values stay positive,
+            # which count_swing_detector's `extreme_val > 0` check depends on.
+            signal = signal.max() + signal.min() - signal
         reps = count_swing_detector(
-            signal=signals[defn.primary_signal],
+            signal=signal,
             frame_valid_mask=_valid_frame_mask(defn, signals),
             min_rom_deg=defn.param("min_rom_deg"),
             min_drop_fraction=defn.param("min_drop_fraction"),
@@ -137,6 +159,7 @@ def _run_exercise(defn, signals: dict, times: np.ndarray, flight_signals: tuple[
     else:
         raise ValueError(f"Unknown counting strategy: {defn.counting_strategy}")
 
+    reps = _merge_close_reps(defn, reps, times)
     reps = _apply_exclusion_check(defn, reps, signals)
     return _apply_requirement_check(defn, reps, signals)
 
