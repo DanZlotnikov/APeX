@@ -78,21 +78,32 @@ def _apply_requirement_check(defn, reps: list[dict], signals: dict) -> list[dict
     return [r for r in reps if window_ok(r)]
 
 
-def _merge_close_reps(defn, reps: list[dict], times: np.ndarray) -> list[dict]:
-    """See ExerciseDefinition.min_rep_gap_param. The merged rep keeps the first rep's start and the
-    last one's bottom/end, so it spans the whole movement (e.g. ready -> backswing -> follow-through).
+def _merge_close_reps(defn, reps: list[dict], times: np.ndarray, signal: np.ndarray) -> list[dict]:
+    """See ExerciseDefinition.min_rep_gap_param. A rep joins the previous group only if it's within
+    the gap of that group's STRONGEST extreme, not of the group's last rep — comparing to the last
+    one chained a run of closely spaced extremes into one rep (two real arm-only strokes 1.7s apart
+    merged through their backswing/follow-through extremes in between). The merged rep spans the
+    group and keeps the strongest extreme as its bottom.
     """
     if defn.min_rep_gap_param is None or len(reps) < 2:
         return reps
     gap = defn.param(defn.min_rep_gap_param)
-    merged = [dict(reps[0])]
+    sign = 1.0 if defn.count_peaks else -1.0
+
+    def strength(r: dict) -> float:
+        return sign * float(signal[r["bottom"]])
+
+    groups = [[reps[0]]]
     for r in reps[1:]:
-        prev = merged[-1]
-        if times[r["bottom"]] - times[prev["bottom"]] < gap:
-            prev["bottom"], prev["end"] = r["bottom"], r["end"]
+        anchor = max(groups[-1], key=strength)
+        if times[r["bottom"]] - times[anchor["bottom"]] < gap:
+            groups[-1].append(r)
         else:
-            merged.append(dict(r))
-    return merged
+            groups.append([r])
+    return [
+        {"start": g[0]["start"], "bottom": max(g, key=strength)["bottom"], "end": g[-1]["end"]}
+        for g in groups
+    ]
 
 
 def _run_exercise(defn, signals: dict, times: np.ndarray, flight_signals: tuple[np.ndarray, np.ndarray] | None = None) -> list[dict]:
@@ -160,7 +171,7 @@ def _run_exercise(defn, signals: dict, times: np.ndarray, flight_signals: tuple[
     else:
         raise ValueError(f"Unknown counting strategy: {defn.counting_strategy}")
 
-    reps = _merge_close_reps(defn, reps, times)
+    reps = _merge_close_reps(defn, reps, times, signals[defn.primary_signal])
     reps = apply_movement_rule(defn, reps, signals, times)
     reps = _apply_exclusion_check(defn, reps, signals)
     return _apply_requirement_check(defn, reps, signals)

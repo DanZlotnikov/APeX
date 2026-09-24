@@ -121,6 +121,13 @@ class MovementRule:
     confirm_signals: tuple[str, ...] = ()
     confirm_min: float = 0.0
     active: bool = False
+    # True: the rule builds each rep's window itself — between the rests around its activity peak,
+    # never past the lowest-activity point toward a neighbouring rep — instead of only trimming the
+    # counting engine's window. For detectors whose reps are just peak frames (strokes).
+    window_from_rests: bool = False
+    # If set, a rep's "bottom" moves to where this signal is highest between its activity peak and
+    # the window's end (a stroke's follow-through), so metrics keep measuring to that position.
+    peak_position_signal: str | None = None
 
 
 @dataclass(frozen=True)

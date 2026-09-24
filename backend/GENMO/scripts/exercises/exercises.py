@@ -431,9 +431,13 @@ register(ExerciseDefinition(
 # racket hand must cross the body by >=0.55 torso lengths — a ball-bounce "stroke" in the coaching
 # clip (job b00feafd) measured 0.34, real swings 0.72+ (1st percentile of 40 Penn forehands), so
 # ball handling and gesturing aren't counted. (Averaging both hands failed: 0.31 on a real swing.)
+# Windows are built around each stroke's own swing (window_from_rests), since the counting engine
+# only supplies swing peaks, and each stroke's "bottom" is its follow-through (wrist_hip_dist max
+# after the swing), which is what swing range was calibrated to measure to.
 STROKE_MOVEMENT = MovementRule(
     activity_signal="hand_speed", activity_is_rate=True, rest_fraction=0.20, min_rest_sec=0.2,
     confirm_signals=("wrist_side_l", "wrist_side_r"), confirm_min=0.55, active=True,
+    window_from_rests=True, peak_position_signal="wrist_hip_dist",
 )
 
 register(ExerciseDefinition(
@@ -449,26 +453,26 @@ register(ExerciseDefinition(
         "this file. Revisit once real footage/research is available.",
     ),
     orientation=BodyOrientation.STANDING,
-    primary_signal="wrist_hip_dist",
+    # Counted on racket-hand speed (one fast forward swing per stroke) since 2026-09-24 — see the
+    # count_peaks note below. wrist_hip_dist is still where the follow-through is read from.
+    primary_signal="hand_speed",
     counting_strategy=CountingStrategy.SWING_DETECTOR,
     params={
         "min_rom_deg": TunableParam(
             # Key is "min_rom_deg" (not renamed) only because analyze.py's
             # SWING_DETECTOR dispatch looks params up by this fixed name
-            # regardless of exercise — the value below is a distance in
-            # meters, not degrees, since the underlying signal changed.
-            "min_rom_deg", "Minimum swing range", "m", 0.15, 0.05, 0.6, 0.01,
-            "Wrist-to-hip distance change required for a swing to count — "
-            "reaching for a shot and recovering to a ready position moves "
-            "the wrist a substantial fraction of arm's length; this floor "
-            "is kept modest since no padel-specific data exists yet to "
-            "tune it against.",
+            # regardless of exercise — the value is a hand speed (torso
+            # lengths per frame at the pipeline's 30fps), not degrees.
+            "min_rom_deg", "Minimum swing speed", "torso lengths/frame", 0.1, 0.03, 0.3, 0.01,
+            "The racket hand must reach at least this speed relative to the "
+            "hips (0.1 = 3 torso lengths per second) somewhere in the clip "
+            "for anything to count; the slowest real forehands measured ~4.4.",
         ),
         "min_drop_fraction": TunableParam(
             "min_drop_fraction", "Swing confirmation", "fraction of ROM", 0.30, 0.1, 0.6, 0.05,
-            "How far wrist-to-hip distance must swing back from a tracked "
-            "peak/trough to confirm that extreme was real, not noise — "
-            "same value pull-up/ab-crunch already use for this engine.",
+            "How far the hand must slow down around a speed peak to count it "
+            "as its own swing, as a fraction of the clip's speed range — "
+            "0.25 also counted walking after the last stroke as a stroke.",
         ),
         "stance_gate": TunableParam(
             "stance_gate", "Minimum knee extension", "deg", 100, 70, 170, 5,
@@ -495,9 +499,22 @@ register(ExerciseDefinition(
     # each rep on its own swing. A full forehand then shows two peaks
     # (backswing + follow-through, measured 0.53-1.0s apart on 40 Penn Action
     # clips) vs. >=1.37s between separate strokes, hence the 1.1s merge.
+    #
+    # 2026-09-24: counting moved from wrist_hip_dist peaks to racket-hand speed
+    # peaks. wrist_hip_dist peaks at the backswing AND the follow-through (plus
+    # ball drops), and merging those chained: in a real coaching clip (job
+    # b00feafd) five peaks each <1.1s from the next collapsed two arm-only
+    # strokes 1.7s apart into one rep. Every stroke has exactly one fast forward
+    # swing, so speed peaks count strokes directly; the merge now compares to a
+    # stroke's strongest peak (no chaining), and movement_rule builds each
+    # window around its own swing and moves "bottom" back to the follow-through
+    # (wrist_hip_dist max) for the metrics. Result: coaching clip 4/4, padel
+    # 3/3 in both encodes, 40/40 Penn forehands (39 counted exactly once).
     count_peaks=True,
     min_rep_gap_param="min_stroke_gap",
-    movement_rule=dataclasses.replace(STROKE_MOVEMENT, active=False),  # padel isn't enabled
+    # Off only because padel isn't enabled. Turn it on WITH padel: counting on hand-speed peaks
+    # relies on this rule for the stroke windows, follow-through position and swing confirmation.
+    movement_rule=dataclasses.replace(STROKE_MOVEMENT, active=False),
     priority=60,
     category="padel",
 ))
@@ -536,18 +553,18 @@ register(ExerciseDefinition(
         "the two motions), not independently validated citations.",
     ),
     orientation=BodyOrientation.STANDING,
-    primary_signal="wrist_hip_dist",
+    primary_signal="hand_speed",
     counting_strategy=CountingStrategy.SWING_DETECTOR,
     params={
         "min_rom_deg": TunableParam(
-            "min_rom_deg", "Minimum swing range", "m", 0.15, 0.05, 0.6, 0.01,
-            "Wrist-to-hip distance change required for a swing to count — "
-            "same value as padel stroke (see that exercise's own comment).",
+            "min_rom_deg", "Minimum swing speed", "torso lengths/frame", 0.1, 0.03, 0.3, 0.01,
+            "Same racket-hand speed floor as padel stroke (see that "
+            "exercise's own comment).",
         ),
         "min_drop_fraction": TunableParam(
             "min_drop_fraction", "Swing confirmation", "fraction of ROM", 0.30, 0.1, 0.6, 0.05,
-            "How far wrist-to-hip distance must swing back from a tracked "
-            "peak/trough to confirm that extreme was real, not noise.",
+            "How far the hand must slow down around a speed peak to count it "
+            "as its own swing (see padel stroke's own comment).",
         ),
         "stance_gate": TunableParam(
             "stance_gate", "Minimum knee extension", "deg", 100, 70, 170, 5,
