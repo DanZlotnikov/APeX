@@ -102,6 +102,28 @@ class TunableParam:
 
 
 @dataclass(frozen=True)
+class MovementRule:
+    """How to find where each rep's actual movement starts and ends (see movement.py).
+
+    activity_signal: the signal whose rate of change means "this exercise is moving" (e.g. knee
+        angle for a squat). With activity_is_rate=True it's used as-is (it already is a speed).
+    rest_fraction / min_rest_sec: the body is "at rest" while activity stays below this fraction of
+        the rep's own peak for at least this long; a rep's movement runs between the rests around it.
+    confirm_signals / confirm_min: optional proof the movement is really this exercise — the rep is
+        dropped unless the largest in-window range among these signals reaches confirm_min.
+    active: False = defined but not applied yet (the exercise's metrics are calibrated to its
+        untrimmed windows; turn on together with recalibrating them on real footage).
+    """
+    activity_signal: str
+    activity_is_rate: bool = False
+    rest_fraction: float = 0.15
+    min_rest_sec: float = 0.2
+    confirm_signals: tuple[str, ...] = ()
+    confirm_min: float = 0.0
+    active: bool = False
+
+
+@dataclass(frozen=True)
 class ExerciseDefinition:
     key: str
     label: str
@@ -135,6 +157,9 @@ class ExerciseDefinition:
     # into one — for movements that produce two extremes per real rep (a forehand's backswing and
     # follow-through). None = no merging.
     min_rep_gap_param: str | None = None
+    # Trims each rep to the movement itself (setup, stepping, waiting and gesturing before/after it
+    # are discarded) and optionally confirms the movement is really this exercise. See MovementRule.
+    movement_rule: MovementRule | None = None
     # Whole-REP veto, evaluated after counting (any counting_strategy) —
     # different from valid_frame_check, which only hides frames from the
     # counting engine's own running state (it still sees the remaining

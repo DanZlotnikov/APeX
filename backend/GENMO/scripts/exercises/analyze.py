@@ -13,6 +13,7 @@ import numpy as np
 from . import exercises as _exercises_data  # noqa: F401  registers every ExerciseDefinition on import
 from .counting import count_flight_phase, count_swing_detector, count_threshold_crossing
 from .definitions import EXERCISE_REGISTRY, BodyOrientation, CountingStrategy, exercises_for_orientation
+from .movement import apply_movement_rule
 from .orientation import classify_orientation
 from .signals import compute_signals, flight_height_signals, smooth_signals
 
@@ -160,6 +161,7 @@ def _run_exercise(defn, signals: dict, times: np.ndarray, flight_signals: tuple[
         raise ValueError(f"Unknown counting strategy: {defn.counting_strategy}")
 
     reps = _merge_close_reps(defn, reps, times)
+    reps = apply_movement_rule(defn, reps, signals, times)
     reps = _apply_exclusion_check(defn, reps, signals)
     return _apply_requirement_check(defn, reps, signals)
 

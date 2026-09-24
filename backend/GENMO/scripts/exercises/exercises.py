@@ -14,13 +14,20 @@ removed for good — see git history and analyze.py's _resolve_standing.)
 """
 from __future__ import annotations
 
+import dataclasses
+
 from .definitions import (
     BodyOrientation,
     CountingStrategy,
     ExerciseDefinition,
+    MovementRule,
     TunableParam,
     register,
 )
+
+# Every exercise declares how its own movement start is detected (movement_rule, see movement.py).
+# Only tennis_stroke's is active: the others' metrics are calibrated to their untrimmed windows, so
+# each rule is switched on together with recalibrating that exercise on real footage.
 
 # ═══════════════════════════════════════════════════════════════════════════
 # SQUAT
@@ -91,6 +98,7 @@ register(ExerciseDefinition(
     # squat-vs-stroke confusion, generous enough not to repeat that same
     # "silently zeroing out a real rep" mistake.
     exclusion_check=("foot_shift", "gt", "foot_stability_gate"),
+    movement_rule=MovementRule(activity_signal="knee_angle"),  # knees start bending/straightening
     priority=50,
 ))
 
@@ -154,6 +162,8 @@ register(ExerciseDefinition(
             "different, longer-duration exercise (e.g. a squat).",
         ),
     },
+    # Hip height moving, so the window includes the dip before take-off, not just the flight.
+    movement_rule=MovementRule(activity_signal="hip_y"),
     priority=100,  # real flight evidence beats squat's threshold-crossing guess
 ))
 
@@ -215,6 +225,7 @@ register(ExerciseDefinition(
     valid_frame_check=("wrist_above", "gt", "overhead_gate"),
     corroboration_signal="wrist_hip_dist",
     corroboration_delta_param="body_rise_fraction",
+    movement_rule=MovementRule(activity_signal="wrist_hip_dist"),  # body starts rising/lowering to the bar
     priority=50,
 ))
 
@@ -277,6 +288,7 @@ register(ExerciseDefinition(
             "confirming the rep.",
         ),
     },
+    movement_rule=MovementRule(activity_signal="elbow_angle"),  # elbows start bending/straightening
     priority=50,
 ))
 
@@ -327,6 +339,7 @@ register(ExerciseDefinition(
     },
     corroboration_signal="shoulder_knee_dist",
     corroboration_delta_param="body_rise_fraction",
+    movement_rule=MovementRule(activity_signal="shoulder_knee_dist"),  # trunk starts curling/lowering
     priority=50,
 ))
 
@@ -410,6 +423,19 @@ register(ExerciseDefinition(
 # recover). 100deg leaves margin under the lowest observed real swing while
 # still excluding parallel-depth squats: only 2/218 real squats get stolen
 # by a stroke at 100deg, vs. 11/218 with no gate at all.
+# Stroke movement window + confirmation (2026-09-24), shared by padel and tennis strokes.
+# Movement = racket-hand speed relative to the hips (stepping/running cancels out); a stroke starts
+# and ends where the hand was nearly still (<20% of that stroke's peak for 0.2s). Tuned on real
+# clips so starts land at the backswing: padel 2.21/4.09s vs ~2.2/4.25s seen in the video, coaching
+# clip 7.43/9.97s vs ~7.2-7.5/10.0s; 25% started losing a real Penn Action swing. Confirmation: the
+# racket hand must cross the body by >=0.55 torso lengths — a ball-bounce "stroke" in the coaching
+# clip (job b00feafd) measured 0.34, real swings 0.72+ (1st percentile of 40 Penn forehands), so
+# ball handling and gesturing aren't counted. (Averaging both hands failed: 0.31 on a real swing.)
+STROKE_MOVEMENT = MovementRule(
+    activity_signal="hand_speed", activity_is_rate=True, rest_fraction=0.20, min_rest_sec=0.2,
+    confirm_signals=("wrist_side_l", "wrist_side_r"), confirm_min=0.55, active=True,
+)
+
 register(ExerciseDefinition(
     key="stroke",
     label="Padel Stroke",
@@ -471,6 +497,7 @@ register(ExerciseDefinition(
     # clips) vs. >=1.37s between separate strokes, hence the 1.1s merge.
     count_peaks=True,
     min_rep_gap_param="min_stroke_gap",
+    movement_rule=dataclasses.replace(STROKE_MOVEMENT, active=False),  # padel isn't enabled
     priority=60,
     category="padel",
 ))
@@ -537,6 +564,7 @@ register(ExerciseDefinition(
     exclusion_check=("knee_angle", "lt", "stance_gate"),
     count_peaks=True,
     min_rep_gap_param="min_stroke_gap",
+    movement_rule=STROKE_MOVEMENT,
     # Registered after padel "stroke" and at the same priority: when both are
     # eligible (sport unknown), exercises_for_orientation's stable sort keeps
     # registration order for equal priorities, so "stroke" deterministically
@@ -592,6 +620,7 @@ register(ExerciseDefinition(
         ),
     },
     valid_frame_check=("wrist_above", "gt", "overhead_gate"),
+    movement_rule=MovementRule(activity_signal="wrist_y"),  # hand starts rising into the toss/reach
     # Above both padel and tennis strokes: a serve is a visually distinct,
     # more strongly-gated motion (the overhead check above already rules out
     # most non-serve frames), so if it produces any candidate reps on a

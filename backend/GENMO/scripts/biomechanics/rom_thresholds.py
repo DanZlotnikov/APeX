@@ -282,6 +282,8 @@ register_rom(ExerciseRomProfile(
 # instead of follow-through -> recovery, measuring 41.9/26.4/32.3deg on the
 # same clip. The user confirmed these are normal swings that should read in
 # the 70-90% band; 42 gives 80% (.mp4) / 78% (.mov encode of the same clip).
+# Still 82% / 80% after stroke windows were trimmed to the movement itself
+# (exercises/movement.py), so the target didn't need to move again.
 register_rom(ExerciseRomProfile(
     exercise_key="stroke",
     checks=(
@@ -342,8 +344,12 @@ register_rom(ExerciseRomProfile(
         # Differences worth knowing: that study measured the dominant knee with
         # 3D motion capture on maximal-effort strokes after a run-in; this
         # averages both knees' own ranges from monocular video on ordinary
-        # strokes. Checked against a real 3-stroke low-ball clip (job 23b090a7):
-        # 47/36/56deg per stroke, ~93% overall.
+        # strokes. Checked against a real 3-stroke low-ball clip (job 23b090a7),
+        # with windows trimmed to the movement itself (exercises/movement.py):
+        # 47/27/51deg per stroke, ~84% (was 93% while windows still included
+        # stepping before each backswing). Coaching clip (job b00feafd): arm-only
+        # strokes 39%, full-body strokes 85%/65% — the technique difference its
+        # own captions describe.
         JointRomCheck(
             id="knee_bend", label="Knee bend", joint="KNEE",
             signal="knee_angle", start_selector="start", end_selector="end",

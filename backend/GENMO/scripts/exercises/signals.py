@@ -135,7 +135,22 @@ def compute_signals(joints: np.ndarray) -> dict:
     )
     upright_ratio = vertical_spread / np.maximum(horizontal_spread, 1e-3)
 
+    # Hand motion relative to the body, in torso lengths (camera-distance independent). Relative to
+    # the pelvis so stepping/running, which moves the whole body, cancels out; lateral = along the
+    # hip-to-hip axis, so "which side of the body" needs no handedness. Used by movement.py to find
+    # a stroke's start (hand_speed) and confirm it's a real swing: a groundstroke carries the racket
+    # hand across the body, ball handling and gesturing don't (see tennis_stroke's movement_rule).
+    torso_len = max(float(np.median(np.linalg.norm(shoulder_mid - hip_mid, axis=-1))), 1e-3)
+    wrist_rel = np.stack([joints[:, L_WRIST] - hip_mid, joints[:, R_WRIST] - hip_mid], axis=1)  # (L, 2, 3)
+    lateral = joints[:, R_HIP] - joints[:, L_HIP]
+    lateral[:, 1] = 0.0
+    lateral /= np.maximum(np.linalg.norm(lateral, axis=-1, keepdims=True), 1e-6)
+    wrist_side = (wrist_rel * lateral[:, None, :]).sum(-1) / torso_len  # (L, 2)
+    step = np.linalg.norm(np.diff(wrist_rel, axis=0, prepend=wrist_rel[:1]), axis=-1)  # (L, 2), per frame
+    hand_speed = step.max(axis=1) / torso_len  # faster hand = the racket hand; torso lengths per frame
+
     return dict(
+        hand_speed=hand_speed, wrist_side_l=wrist_side[:, 0], wrist_side_r=wrist_side[:, 1],
         knee_angle=knee_angle, hip_angle=hip_angle, elbow_angle=elbow_angle,
         body_line_angle=body_line_angle, torso_lean=torso_lean,
         ankle_y=ankle_y, shoulder_y=shoulder_y, hip_y=hip_y, knee_y=knee_y, wrist_y=wrist_y,
