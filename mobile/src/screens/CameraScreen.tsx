@@ -1,6 +1,6 @@
 import * as ImagePicker from 'expo-image-picker';
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, BackHandler, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, BackHandler, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import StatusBanner from '../components/StatusBanner';
 import LiveCamera, { LiveCameraHandle } from '../components/LiveCamera';
@@ -196,9 +196,9 @@ export default function CameraScreen({ pickOnMount, testMode, onVideoConfirmed, 
           <VideoPlayer videoUri={videoUri} avoidHomeIndicator />
         </View>
 
-        {/* Full-bleed to the true top edge (not inset by the SafeAreaView
-            below) — the bar's fill should reach behind the status bar, only
-            its text needs to clear the notch/status bar icons. */}
+        {/* Full-bleed to the true top edge — the bar's fill should reach
+            behind the status bar, only its text needs to clear the
+            notch/status bar icons. */}
         <View style={[styles.reviewHeaderBar, { paddingTop: insets.top }]} pointerEvents="box-none">
           <Text style={[styles.reviewHeaderText, { color: accentColor }]}>READY TO RUMBLE?</Text>
         </View>
@@ -257,8 +257,9 @@ export default function CameraScreen({ pickOnMount, testMode, onVideoConfirmed, 
         </View>
       )}
 
-      {/* top overlay: back + recording timer + flip */}
-      <SafeAreaView style={styles.topOverlay} pointerEvents="box-none">
+      {/* top overlay: back + recording timer + flip. Insets applied by hand: react-native's SafeAreaView is iOS-only,
+          so on Android these controls sat under the status bar. */}
+      <View style={[styles.topOverlay, { paddingTop: insets.top }]} pointerEvents="box-none">
         <View style={styles.topBar}>
           <Pressable onPress={onBack} style={styles.iconBtn} disabled={isRecording || countdown !== null}>
             <Text style={styles.iconText}>←</Text>
@@ -276,7 +277,7 @@ export default function CameraScreen({ pickOnMount, testMode, onVideoConfirmed, 
             <Text style={styles.iconText}>⇄</Text>
           </Pressable>
         </View>
-      </SafeAreaView>
+      </View>
 
       {/* error */}
       {error && (
@@ -286,13 +287,13 @@ export default function CameraScreen({ pickOnMount, testMode, onVideoConfirmed, 
       )}
 
       {/* bottom overlay: record button */}
-      <SafeAreaView style={styles.bottomOverlay} pointerEvents="box-none">
+      <View style={[styles.bottomOverlay, { paddingBottom: insets.bottom }]} pointerEvents="box-none">
         <View style={styles.bottomBar}>
           <Pressable onPress={handleRecordPress} style={styles.recordOuter}>
             <View style={[styles.recordInner, (isRecording || countdown !== null) && styles.recordInnerStop]} />
           </Pressable>
         </View>
-      </SafeAreaView>
+      </View>
     </View>
   );
 }
@@ -319,7 +320,7 @@ const styles = StyleSheet.create({
   // colors.bg fill as the screen behind it, so it blends in rather than
   // standing out as a separate panel), text colored with the app's selected
   // accent color to match the scrub line and the confirm button. Absolutely
-  // positioned (not inside the SafeAreaView below) so its fill reaches the
+  // positioned so its fill reaches the
   // true top edge — paddingTop: insets.top is applied inline where it's used,
   // so only the text itself clears the status bar/notch.
   reviewHeaderBar: {
