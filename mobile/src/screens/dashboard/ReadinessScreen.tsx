@@ -1,8 +1,15 @@
 import { useNavigation } from '@react-navigation/native';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator, NativeScrollEvent, NativeSyntheticEvent, Pressable, ScrollView, StyleSheet, Text, View,
+  ActivityIndicator,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
 } from 'react-native';
+import { Text } from '../../components/ui/Text';
 import { getExercisesWithHistory, getReadinessTrend, ReadinessPoint, ReadinessWindowDays } from '../../api/readiness';
 import { getSessionHistoryPage, SessionHistoryEntry } from '../../api/sessions';
 import ExercisePicker, { ExercisePickerOption } from '../../components/ExercisePicker';

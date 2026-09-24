@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
+import { Text } from '../../components/ui/Text';
 import { getTeamAthletes } from '../../api/athletes';
 import { supabase } from '../../api/supabase';
 import { AthleteViewModel, TeamStatsViewModel } from '../../api/types';

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Animated, Easing, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Animated, Easing, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Text } from '../../components/ui/Text';
 import { getCachedExercisesSync } from '../../api/exercises';
 import { getEffectiveSport, updateMainSport } from '../../api/profile';
 import {

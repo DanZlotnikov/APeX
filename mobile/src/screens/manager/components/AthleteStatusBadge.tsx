@@ -1,5 +1,6 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { Text } from '../../../components/ui/Text';
 import { AthleteStatus } from '../../../api/types';
 
 const STATUS_CONFIG: Record<AthleteStatus, { label: string; color: string; bg: string }> = {

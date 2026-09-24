@@ -5,6 +5,7 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
+    "backgroundColor": "#07101C",
     "icon": "./assets/icon.png",
     "splash": {
       "image": "./assets/splash-logo.png",
@@ -64,12 +65,75 @@
           "color": "#00D4BC"
         }
       ],
-      "./plugins/withoutRecordAudio.js"
+      "./plugins/withoutRecordAudio.js",
+      [
+        "expo-localization",
+        {
+          "supportsRTL": false,
+          "forcesRTL": false
+        }
+      ],
+      [
+        "expo-font",
+        {
+          "ios": {
+            "fonts": [
+              "./assets/fonts/Inter_300Light.ttf",
+              "./assets/fonts/Inter_400Regular.ttf",
+              "./assets/fonts/Inter_500Medium.ttf",
+              "./assets/fonts/Inter_600SemiBold.ttf",
+              "./assets/fonts/Inter_700Bold.ttf",
+              "./assets/fonts/Inter_800ExtraBold.ttf",
+              "./assets/fonts/Inter_900Black.ttf"
+            ]
+          },
+          "android": {
+            "fonts": [
+              {
+                "fontFamily": "Inter",
+                "fontDefinitions": [
+                  {
+                    "path": "./assets/fonts/Inter_300Light.ttf",
+                    "weight": 300
+                  },
+                  {
+                    "path": "./assets/fonts/Inter_400Regular.ttf",
+                    "weight": 400
+                  },
+                  {
+                    "path": "./assets/fonts/Inter_500Medium.ttf",
+                    "weight": 500
+                  },
+                  {
+                    "path": "./assets/fonts/Inter_600SemiBold.ttf",
+                    "weight": 600
+                  },
+                  {
+                    "path": "./assets/fonts/Inter_700Bold.ttf",
+                    "weight": 700
+                  },
+                  {
+                    "path": "./assets/fonts/Inter_800ExtraBold.ttf",
+                    "weight": 800
+                  },
+                  {
+                    "path": "./assets/fonts/Inter_900Black.ttf",
+                    "weight": 900
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
     ],
     "extra": {
       "eas": {
         "projectId": "165e3b8c-e1f4-4424-94bc-74bccaf9f07a"
       }
+    },
+    "androidNavigationBar": {
+      "enforceContrast": false
     }
   }
 }

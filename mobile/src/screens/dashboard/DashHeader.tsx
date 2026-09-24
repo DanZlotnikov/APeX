@@ -1,5 +1,6 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { Text } from '../../components/ui/Text';
 import { useSettings } from '../../state/SettingsContext';
 import { colors, spacing } from '../../theme';
 

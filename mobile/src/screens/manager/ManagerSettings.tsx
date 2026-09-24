@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Animated, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Animated, Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Text, TextInput } from '../../components/ui/Text';
 import { deleteAccount } from '../../api/auth';
 import { getEffectiveSport, updateMainSport } from '../../api/profile';
 import { getTeamInviteCode, getTeamName, regenerateInviteCode } from '../../api/teams';

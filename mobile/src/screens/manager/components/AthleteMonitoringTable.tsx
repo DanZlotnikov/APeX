@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Text } from '../../../components/ui/Text';
 import LineTrend from '../../../components/charts/LineTrend';
 import { AthleteViewModel } from '../../../api/types';
 import { useSettings } from '../../../state/SettingsContext';

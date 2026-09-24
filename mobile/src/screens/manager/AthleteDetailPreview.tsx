@@ -2,7 +2,8 @@ import { DarkTheme, NavigationContainer, useNavigation } from '@react-navigation
 import { createMaterialTopTabNavigator } from '@react-navigation/material-top-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Text } from '../../components/ui/Text';
 import LineTrend from '../../components/charts/LineTrend';
 import FloatingTabBar from '../../components/FloatingTabBar';
 import { markAthleteInjured, markAthleteRecovered } from '../../api/athletes';

@@ -1,6 +1,7 @@
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import React, { useCallback, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Text } from '../../components/ui/Text';
 import { getSessionHistory, SessionHistoryEntry } from '../../api/sessions';
 import { getExercisesWithHistory } from '../../api/readiness';
 import ExercisePicker, { ExercisePickerOption } from '../../components/ExercisePicker';

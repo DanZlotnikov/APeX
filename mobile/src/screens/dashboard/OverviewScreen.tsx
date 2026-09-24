@@ -1,6 +1,7 @@
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import React, { useCallback, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Text } from '../../components/ui/Text';
 import { getAthleteById } from '../../api/athletes';
 import { getRoutine, RoutineExercise } from '../../api/routine';
 import { getSessionHistory, SessionHistoryEntry } from '../../api/sessions';

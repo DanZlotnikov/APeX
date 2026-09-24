@@ -1,6 +1,7 @@
 import { MaterialTopTabBarProps } from '@react-navigation/material-top-tabs';
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { Text } from './ui/Text';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSettings } from '../state/SettingsContext';
 import { colors } from '../theme';

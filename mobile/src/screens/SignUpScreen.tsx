@@ -9,10 +9,9 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Text,
-  TextInput,
   View,
 } from 'react-native';
+import { Text, TextInput } from '../components/ui/Text';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { lookupTeamByCode, signUpAthlete, signUpManager } from '../api/auth';
 import { getProfile } from '../api/auth';

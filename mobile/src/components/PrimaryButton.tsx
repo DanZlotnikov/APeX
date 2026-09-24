@@ -1,5 +1,6 @@
 import React from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextStyle, ViewStyle } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, TextStyle, ViewStyle } from 'react-native';
+import { Text } from './ui/Text';
 import { useSettings } from '../state/SettingsContext';
 import { colors, spacing } from '../theme';
 

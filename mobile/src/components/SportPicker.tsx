@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { Text } from './ui/Text';
 import { ExerciseCategoryInfo, getExerciseCategories } from '../api/exercises';
 import { sportEmoji } from '../api/profile';
 import { colors, spacing } from '../theme';

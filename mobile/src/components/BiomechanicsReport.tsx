@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { Text } from './ui/Text';
 import { JointCheck, JointFixationCheck, JointRomCheck, VideoJobAnalysis } from '../api/videoJobs';
 import { exerciseLabel, readinessPctFromAnalysis } from '../utils/pipelineExercise';
 import { colors, riskColor, spacing } from '../theme';

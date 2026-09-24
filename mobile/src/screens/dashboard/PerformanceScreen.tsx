@@ -1,6 +1,7 @@
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { Text } from '../../components/ui/Text';
 import { useVideoJobsContext } from '../../state/VideoJobsContext';
 import { colors, spacing } from '../../theme';
 import HistoryDetailScreen from './HistoryDetailScreen';

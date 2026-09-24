@@ -1,6 +1,7 @@
 import { useNavigation, useRoute } from '@react-navigation/native';
 import React, { useEffect, useState } from 'react';
-import { Dimensions, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Dimensions, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Text } from '../../components/ui/Text';
 import { deleteSession, getSessionById, SessionHistoryEntry } from '../../api/sessions';
 import { getSignedVideoUrl } from '../../api/videoJobs';
 import ApexLoader from '../../components/ApexLoader';

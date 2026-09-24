@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, Modal, Pressable, StyleSheet, View } from 'react-native';
+import { Text } from '../components/ui/Text';
 import { useSettings } from '../state/SettingsContext';
 import { colors, spacing } from '../theme';
 

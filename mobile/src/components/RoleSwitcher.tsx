@@ -1,5 +1,6 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { Text } from './ui/Text';
 import { colors, spacing } from '../theme';
 
 export type AppRole = 'athlete' | 'manager';

@@ -1,6 +1,7 @@
 import { AVPlaybackStatus, ResizeMode, Video } from 'expo-av';
 import React, { useCallback, useRef, useState } from 'react';
-import { PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
+import { PanResponder, Pressable, StyleSheet, View } from 'react-native';
+import { Text } from '../ui/Text';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Rect } from 'react-native-svg';
 import { useSettings } from '../../state/SettingsContext';

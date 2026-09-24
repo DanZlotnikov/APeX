@@ -1,5 +1,6 @@
 import React, { useRef } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { Text } from './ui/Text';
 import CollapsibleBanner from './CollapsibleBanner';
 import ShineSweep from './ShineSweep';
 import { useSettings } from '../state/SettingsContext';

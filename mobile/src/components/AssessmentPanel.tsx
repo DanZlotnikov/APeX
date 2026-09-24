@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
-import { Animated, StyleSheet, Text, View } from 'react-native';
+import { Animated, StyleSheet, View } from 'react-native';
+import { Text } from './ui/Text';
 import { Assessment, ExerciseAssessment } from '../utils/exerciseAnalyzer';
 import { Comparison, StatDelta } from '../utils/stats';
 import RiskFactorRow from './RiskFactorRow';

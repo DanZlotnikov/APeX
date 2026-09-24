@@ -6,9 +6,9 @@ import {
   SafeAreaView,
   ScrollView,
   StyleSheet,
-  Text,
   View,
 } from 'react-native';
+import { Text } from '../components/ui/Text';
 import PoseView from '../components/PoseView';
 import PrimaryButton from '../components/PrimaryButton';
 import AssessmentPanel from '../components/AssessmentPanel';

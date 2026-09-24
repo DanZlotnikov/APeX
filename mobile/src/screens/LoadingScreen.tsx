@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
-import { Animated, Dimensions, SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import { Animated, Dimensions, SafeAreaView, StyleSheet, View } from 'react-native';
+import { Text } from '../components/ui/Text';
 import { colors, spacing } from '../theme';
 
 const SCREEN_W = Dimensions.get('window').width;
