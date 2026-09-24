@@ -20,8 +20,6 @@ import numpy as np
 from .balance import SIGNAL_SPECS, side_values
 from .rom_thresholds import ROM_PROFILES, JointRomCheck
 
-_SEVERITY_RANK = {"ok": 0, "watch": 1, "at_risk": 2}
-
 
 def _severity(rom_pct: float, watch: float, at_risk: float) -> str:
     # Inverted vs. balance.py's _severity: here HIGHER is better (more of
@@ -68,14 +66,15 @@ def _evaluate_check(joints_np: np.ndarray, reps: list[dict], check: JointRomChec
         return None
 
     mean_rom_pct = float(np.mean([r["rom_pct"] for r in rep_results]))
-    worst_severity = min(rep_results, key=lambda r: _SEVERITY_RANK[r["severity"]])["severity"]
+    # Status follows the mean shown alongside it, not any single rep's.
+    overall_severity = _severity(mean_rom_pct, check.watch_threshold_pct, check.at_risk_threshold_pct)
 
     return {
         "id": check.id, "label": check.label, "joint": check.joint,
         "informational": check.informational,
         "target_rom_deg": check.target_rom_deg,
         "rom_pct": round(mean_rom_pct, 2),
-        "severity": worst_severity,
+        "severity": overall_severity,
         "watch_threshold_pct": check.watch_threshold_pct,
         "at_risk_threshold_pct": check.at_risk_threshold_pct,
         "description": check.description,
