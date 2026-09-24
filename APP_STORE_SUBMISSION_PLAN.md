@@ -19,7 +19,7 @@ something, don't just add new prose underneath stale tags.
 | 1.2 | Service-role key isolation | ✅ Done — re-verified against the actual built bundle, not just source |
 | 1.3 | `app.json` / `eas.json` fields | ✅ Done — bundle IDs, icon, version strategy all set |
 | 1.4 | Privacy Policy | ✅ Done — live at danzlotnikov.github.io/APeX/privacy-policy.html, linked from signup + both Settings screens; legal review still recommended |
-| 2.1 | Worker cadence during review | 🟡 Built + verified, currently **disabled by request** — credentials are set, re-enable with `Enable-ScheduledTask -TaskName "APeX Worker Drain"` when ready |
+| 2.1 | Worker cadence during review | ✅ Since 2026-09-24 a **continuous** worker runs as the "APeX Worker" scheduled task (`backend/server/run_worker_continuous.sh`: starts at logon, 5-min watchdog restarts it, uploads picked up within seconds). The old 30-min "APeX Worker Drain" task stays disabled; both share `.worker.lock`, so they can't double-load the GPU |
 | 2.2 | Health/fitness risk framing | ✅ Done — risk wording removed app-wide, disclaimer added at signup and in both Settings screens |
 | 2.3 | Sign in with Apple | ✅ N/A — confirmed still not required, no change needed |
 | 2.4 | Unnecessary microphone permission | ✅ Done — removed at every layer, including one not originally anticipated |
