@@ -53,6 +53,10 @@ class JointRomCheck:
     # "window_range": max - min of the signal over every frame between the two selectors (per side,
     # then averaged) — for a joint whose deepest point isn't one of the rep's own marked frames.
     measure: str = "frames"
+    # "both": achieved = mean of left and right (bilateral movements, e.g. knees in a squat).
+    # "max": achieved = whichever side moved more — for one-sided movements like a racket arm's
+    # swing, where averaging in the idle arm only dilutes the number. Handedness-free.
+    sides: str = "both"
 
 
 @dataclass(frozen=True)
@@ -284,26 +288,33 @@ register_rom(ExerciseRomProfile(
 # the 70-90% band; 42 gives 80% (.mp4) / 78% (.mov encode of the same clip).
 # Still 82% / 80% after stroke windows were trimmed to the movement itself
 # (exercises/movement.py), so the target didn't need to move again.
+#
+# 42 -> 60 (2026-09-24): measured on the racket arm only (sides="max"), not
+# the mean of both arms — averaging in the idle arm diluted every swing (e.g.
+# 57deg racket arm + 11deg other arm read as 34deg) and left the per-rep
+# breakdown showing a meaningless Left/Right split. Racket-arm swings on the
+# same clip are 58.4/43.3/42.7deg; 60 keeps them at 80% (.mp4) / 79% (.mov).
 register_rom(ExerciseRomProfile(
     exercise_key="stroke",
     checks=(
         JointRomCheck(
             id="swing_rom", label="Swing range", joint="SHOULDER",
             signal="shoulder_angle", start_selector="start", end_selector="bottom",
-            target_rom_deg=42.0, watch_threshold_pct=70.0, at_risk_threshold_pct=45.0,
+            target_rom_deg=60.0, watch_threshold_pct=70.0, at_risk_threshold_pct=45.0,
+            sides="max",
             research=(
                 "Holland Osteopathy — shoulder biomechanics in tennis: wind-up-phase "
                 "shoulder horizontal abduction of ~30-40deg generates the torque for the "
-                "stroke; target_rom_deg has been revised three times against a real "
+                "stroke; target_rom_deg has been revised four times against a real "
                 "2026-08-03 test clip (see the target_rom_deg history note above), most "
-                "recently to read that clip's normal swings at ~80%, not derived from "
-                "this citation.",
+                "recently to read that clip's normal racket-arm swings at ~80%, not "
+                "derived from this citation.",
                 "Padel-specific shoulder kinematics research (e.g. cross-sectional studies "
                 "of padel players' shoulder ROM during strokes) confirms strokes rely on "
                 "substantial shoulder rotation/horizontal ab-adduction, without pinning "
                 "down one comparable total-excursion figure to cite directly.",
             ),
-            description="How far the upper arm swings via shoulder rotation, from the "
+            description="How far the racket arm swings via shoulder rotation, from the "
                          "ready stance to the peak of the swing — the stroke's actual "
                          "amplitude, independent of how fixed the elbow itself stayed.",
             informational=True,
@@ -326,14 +337,17 @@ register_rom(ExerciseRomProfile(
         JointRomCheck(
             id="swing_rom", label="Swing range", joint="SHOULDER",
             signal="shoulder_angle", start_selector="start", end_selector="bottom",
-            target_rom_deg=42.0, watch_threshold_pct=70.0, at_risk_threshold_pct=45.0,
+            target_rom_deg=60.0, watch_threshold_pct=70.0, at_risk_threshold_pct=45.0,
+            sides="max",
             research=(
                 "Same real-footage calibration as padel stroke (see that exercise's "
                 "registration above and its target_rom_deg history) — this pipeline's "
                 "shoulder_angle signal doesn't distinguish the two motions. On 40 Penn "
-                "Action forehands the median swing reads ~85% at this target.",
+                "Action forehands the median racket-arm swing (37.7deg) reads ~63% at "
+                "this target; those are ~1s broadcast clips from varied angles, so they "
+                "spread widely (quartiles 26-64deg).",
             ),
-            description="How far the upper arm swings via shoulder rotation, from the "
+            description="How far the racket arm swings via shoulder rotation, from the "
                          "ready stance to the peak of the swing — the stroke's actual "
                          "amplitude, independent of how fixed the elbow itself stayed.",
             informational=True,

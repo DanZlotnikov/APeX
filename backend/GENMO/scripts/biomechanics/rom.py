@@ -7,8 +7,10 @@ citations, and analysis.py for how this plugs into the orchestrator).
 Where balance.py compares LEFT against RIGHT at one frame, this compares
 ACHIEVED angle change against an EXPECTED (literature-derived) angle change,
 between a rep's "start" (extended/standing/hanging reference) and "bottom"
-(peak-flexion) frames — bilaterally averaged (mean of left+right), since ROM
-here is "how far did the joint travel," not an interlimb comparison. See
+(peak-flexion) frames — bilaterally averaged (mean of left+right) by default,
+since ROM here is "how far did the joint travel," not an interlimb comparison;
+one-sided movements (a racket arm) use the side that moved more instead
+(JointRomCheck.sides). See
 rom_thresholds.py's module docstring for why vertical_jump's check reads
 start->end rather than start->bottom (a FLIGHT_PHASE rep's "bottom" field
 means something different from every other counting strategy's).
@@ -50,7 +52,7 @@ def _evaluate_check(joints_np: np.ndarray, reps: list[dict], check: JointRomChec
             l_end, r_end = side_values(joints_np[end_idx], check.signal)
             l_deg = abs(l_start - l_end)
             r_deg = abs(r_start - r_end)
-        achieved_deg = (l_deg + r_deg) / 2.0
+        achieved_deg = max(l_deg, r_deg) if check.sides == "max" else (l_deg + r_deg) / 2.0
 
         rom_pct = max(0.0, min(130.0, achieved_deg / max(check.target_rom_deg, 1e-6) * 100.0))
         severity = _severity(rom_pct, check.watch_threshold_pct, check.at_risk_threshold_pct)
@@ -72,6 +74,7 @@ def _evaluate_check(joints_np: np.ndarray, reps: list[dict], check: JointRomChec
     return {
         "id": check.id, "label": check.label, "joint": check.joint,
         "informational": check.informational,
+        "sides": check.sides,
         "target_rom_deg": check.target_rom_deg,
         "rom_pct": round(mean_rom_pct, 2),
         "severity": overall_severity,
