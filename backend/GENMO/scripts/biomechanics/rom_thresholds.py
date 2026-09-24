@@ -49,6 +49,10 @@ class JointRomCheck:
     research: tuple[str, ...]
     description: str
     informational: bool = False  # True: target is an engineering estimate, not literature-validated
+    # "frames": |value at start_selector - value at end_selector|.
+    # "window_range": max - min of the signal over every frame between the two selectors (per side,
+    # then averaged) — for a joint whose deepest point isn't one of the rep's own marked frames.
+    measure: str = "frames"
 
 
 @dataclass(frozen=True)
@@ -270,20 +274,28 @@ register_rom(ExerciseRomProfile(
 # with that source, but the specific value was picked to hit the target
 # score, not derived from it. Tighten again once more real clips (ideally
 # including known-poor technique for contrast) are available.
+#
+# 29 -> 42 (2026-09-24): that ~80% was propped up by the spurious 0% rep —
+# once the swing detector stopped producing it (commit a91dee5), the three
+# real reps averaged ~107%. Then strokes switched to peak-based counting
+# (exercises.py's count_peaks), so each rep now runs ready -> follow-through
+# instead of follow-through -> recovery, measuring 41.9/26.4/32.3deg on the
+# same clip. The user confirmed these are normal swings that should read in
+# the 70-90% band; 42 gives 80% (.mp4) / 78% (.mov encode of the same clip).
 register_rom(ExerciseRomProfile(
     exercise_key="stroke",
     checks=(
         JointRomCheck(
             id="swing_rom", label="Swing range", joint="SHOULDER",
             signal="shoulder_angle", start_selector="start", end_selector="bottom",
-            target_rom_deg=29.0, watch_threshold_pct=70.0, at_risk_threshold_pct=45.0,
+            target_rom_deg=42.0, watch_threshold_pct=70.0, at_risk_threshold_pct=45.0,
             research=(
                 "Holland Osteopathy — shoulder biomechanics in tennis: wind-up-phase "
                 "shoulder horizontal abduction of ~30-40deg generates the torque for the "
-                "stroke; target_rom_deg has been revised twice against a real 2026-08-03 "
-                "test clip (see this file's module-level note above), most recently to "
-                "deliberately read that clip's own reps at ~80%, not derived from this "
-                "citation — it happens to land near its lower bound.",
+                "stroke; target_rom_deg has been revised three times against a real "
+                "2026-08-03 test clip (see the target_rom_deg history note above), most "
+                "recently to read that clip's normal swings at ~80%, not derived from "
+                "this citation.",
                 "Padel-specific shoulder kinematics research (e.g. cross-sectional studies "
                 "of padel players' shoulder ROM during strokes) confirms strokes rely on "
                 "substantial shoulder rotation/horizontal ab-adduction, without pinning "
@@ -312,17 +324,41 @@ register_rom(ExerciseRomProfile(
         JointRomCheck(
             id="swing_rom", label="Swing range", joint="SHOULDER",
             signal="shoulder_angle", start_selector="start", end_selector="bottom",
-            target_rom_deg=29.0, watch_threshold_pct=70.0, at_risk_threshold_pct=45.0,
+            target_rom_deg=42.0, watch_threshold_pct=70.0, at_risk_threshold_pct=45.0,
             research=(
-                "Inherited unchanged from padel stroke's own real-footage-calibrated "
-                "target_rom_deg (see that exercise's registration above) — no separate "
-                "tennis footage exists yet, and this pipeline's shoulder_angle signal "
-                "doesn't distinguish the two motions.",
+                "Same real-footage calibration as padel stroke (see that exercise's "
+                "registration above and its target_rom_deg history) — this pipeline's "
+                "shoulder_angle signal doesn't distinguish the two motions. On 40 Penn "
+                "Action forehands the median swing reads ~85% at this target.",
             ),
             description="How far the upper arm swings via shoulder rotation, from the "
                          "ready stance to the peak of the swing — the stroke's actual "
                          "amplitude, independent of how fixed the elbow itself stayed.",
             informational=True,
+        ),
+        # Knee flexion-extension range over the whole stroke (window_range: the
+        # deepest knee bend isn't one of the rep's own marked frames). Target is
+        # the mean of Martin et al.'s three forehand-stance means (53/42/56deg).
+        # Differences worth knowing: that study measured the dominant knee with
+        # 3D motion capture on maximal-effort strokes after a run-in; this
+        # averages both knees' own ranges from monocular video on ordinary
+        # strokes. Checked against a real 3-stroke low-ball clip (job 23b090a7):
+        # 47/36/56deg per stroke, ~93% overall.
+        JointRomCheck(
+            id="knee_bend", label="Knee bend", joint="KNEE",
+            signal="knee_angle", start_selector="start", end_selector="end",
+            measure="window_range",
+            target_rom_deg=50.0, watch_threshold_pct=70.0, at_risk_threshold_pct=45.0,
+            research=(
+                "Martin C. et al. (2020), 'Influence of the forehand stance on knee "
+                "biomechanics: Implications for potential injury risks in tennis "
+                "players', J Sports Sci, doi:10.1080/02640414.2020.1853335 — 8 advanced "
+                "(ITN 4-5) players, dominant-knee flexion-extension range during the "
+                "forehand: 53+/-7deg attacking neutral, 42+/-8deg attacking open, "
+                "56+/-7deg defensive open stance (Table 2).",
+            ),
+            description="How much the knees bend and straighten through the stroke — "
+                         "loading the legs and driving up into the shot.",
         ),
     ),
 ))

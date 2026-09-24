@@ -43,10 +43,15 @@ def _evaluate_check(joints_np: np.ndarray, reps: list[dict], check: JointRomChec
         if not (0 <= start_idx < joints_np.shape[0]) or not (0 <= end_idx < joints_np.shape[0]):
             continue
 
-        l_start, r_start = side_values(joints_np[start_idx], check.signal)
-        l_end, r_end = side_values(joints_np[end_idx], check.signal)
-        l_deg = abs(l_start - l_end)
-        r_deg = abs(r_start - r_end)
+        if check.measure == "window_range":
+            lo, hi = sorted((start_idx, end_idx))
+            vals = np.array([side_values(f, check.signal) for f in joints_np[lo:hi + 1]])
+            l_deg, r_deg = float(np.ptp(vals[:, 0])), float(np.ptp(vals[:, 1]))
+        else:
+            l_start, r_start = side_values(joints_np[start_idx], check.signal)
+            l_end, r_end = side_values(joints_np[end_idx], check.signal)
+            l_deg = abs(l_start - l_end)
+            r_deg = abs(r_start - r_end)
         achieved_deg = (l_deg + r_deg) / 2.0
 
         rom_pct = max(0.0, min(130.0, achieved_deg / max(check.target_rom_deg, 1e-6) * 100.0))
