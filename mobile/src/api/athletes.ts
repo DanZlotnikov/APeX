@@ -145,12 +145,14 @@ function buildViewModel(
     ? allSessions.filter((s) => new Date(s.recorded_at) >= new Date(statsResetAt))
     : allSessions;
 
-  // Readiness history — last 30 days, oldest → newest (unchanged; feeds AthleteDetailPreview)
+  // Readiness history — last 30 days, oldest → newest (feeds AthleteDetailPreview).
+  // Sessions without a score (still processing, or failed) are left out
+  // rather than plotted as 0%, which would drag down LATEST/AVG.
   const readinessHistory = sessions
-    .filter((s) => new Date(s.recorded_at) >= cutoff30)
+    .filter((s) => new Date(s.recorded_at) >= cutoff30 && s.readiness_score != null)
     .slice()
     .reverse()
-    .map((s) => s.readiness_score ?? 0);
+    .map((s) => s.readiness_score as number);
 
   // Safe to read synchronously here: by the time buildViewModel runs, its
   // caller has already awaited getRoutine/getRoutinesForAthletes, which

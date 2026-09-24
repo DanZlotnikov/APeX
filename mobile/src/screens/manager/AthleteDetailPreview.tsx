@@ -141,7 +141,6 @@ function AthleteProfileStack({ athlete, onStatusChanged }: Props) {
 function AthleteProfileTab({ athlete, onStatusChanged }: Props) {
   const navigation = useNavigation<any>();
   const { accentColor, accentOn } = useSettings();
-  const readinessColor = colorForReadiness(athlete.readiness);
   const [marking, setMarking] = useState(false);
   const [markError, setMarkError] = useState<string | null>(null);
   const [poking, setPoking] = useState(false);
@@ -201,6 +200,11 @@ function AthleteProfileTab({ athlete, onStatusChanged }: Props) {
   }
 
   const history       = athlete.readinessHistory;
+  // The trend card's LATEST is the most recent session's score, like BEST and
+  // AVG beside it — not athlete.readiness, which is today's routine
+  // compliance (0 until every required set is done).
+  const latest        = history.length > 0 ? history[history.length - 1] : 0;
+  const readinessColor = colorForReadiness(latest);
   const best          = history.length > 0 ? Math.max(...history) : 0;
   const avg           = history.length > 0
     ? Math.round(history.reduce((a, b) => a + b, 0) / history.length)
@@ -269,7 +273,7 @@ function AthleteProfileTab({ athlete, onStatusChanged }: Props) {
             </View>
 
             <View style={styles.trendMiniStats}>
-              <TrendStat label="LATEST"   value={`${athlete.readiness}%`}       color={readinessColor} />
+              <TrendStat label="LATEST"   value={`${latest}%`}                   color={readinessColor} />
               <TrendStat label="BEST"     value={`${best}%`}                     color={colors.text} />
               <TrendStat label="AVG"      value={`${avg}%`}                      color={colors.text} />
               <TrendStat label="SESSIONS" value={String(athlete.totalSessions)}  color={colors.text} />
