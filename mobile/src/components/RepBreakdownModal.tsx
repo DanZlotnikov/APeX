@@ -37,6 +37,9 @@ export default function RepBreakdownModal({ visible, onClose, kind, check, reps 
   const lColor = otherColors[0];
   const rColor = otherColors[1];
 
+  // One-sided metrics (a racket arm's swing) have no meaningful Left/Right split.
+  const showSides = !(kind === 'rom' && (check as JointRomCheck).sides === 'max');
+
   const series: TrendSeries[] = [];
   if (kind === 'balance') {
     const c = check as JointCheck;
@@ -47,11 +50,13 @@ export default function RepBreakdownModal({ visible, onClose, kind, check, reps 
     );
   } else if (kind === 'rom') {
     const c = check as JointRomCheck;
-    series.push(
-      { key: 'l', label: 'Left', color: lColor, dashed: true, points: c.reps.map((r) => ({ x: r.rep, y: r.l_deg })) },
-      { key: 'r', label: 'Right', color: rColor, dashed: true, points: c.reps.map((r) => ({ x: r.rep, y: r.r_deg })) },
-      { key: 'score', label: 'ROM %', color: accentColor, points: c.reps.map((r) => ({ x: r.rep, y: r.rom_pct })) },
-    );
+    if (showSides) {
+      series.push(
+        { key: 'l', label: 'Left', color: lColor, dashed: true, points: c.reps.map((r) => ({ x: r.rep, y: r.l_deg })) },
+        { key: 'r', label: 'Right', color: rColor, dashed: true, points: c.reps.map((r) => ({ x: r.rep, y: r.r_deg })) },
+      );
+    }
+    series.push({ key: 'score', label: 'ROM %', color: accentColor, points: c.reps.map((r) => ({ x: r.rep, y: r.rom_pct })) });
   } else {
     const c = check as JointFixationCheck;
     series.push(
@@ -116,8 +121,8 @@ export default function RepBreakdownModal({ visible, onClose, kind, check, reps 
           <View style={styles.table}>
             <View style={styles.tableHeader}>
               <Text style={[styles.th, styles.colRep]}>REP</Text>
-              <Text style={[styles.th, styles.colVal]}>L</Text>
-              <Text style={[styles.th, styles.colVal]}>R</Text>
+              {showSides && <Text style={[styles.th, styles.colVal]}>L</Text>}
+              {showSides && <Text style={[styles.th, styles.colVal]}>R</Text>}
               {kind !== 'balance' && <Text style={[styles.th, styles.colVal]}>{kind === 'rom' ? 'ACH°' : 'DEV'}</Text>}
               <Text style={[styles.th, styles.colVal]}>{kind === 'balance' ? 'BAL%' : kind === 'rom' ? 'ROM%' : 'FIX%'}</Text>
               <Text style={[styles.th, styles.colTime]}>TIME</Text>
@@ -135,15 +140,15 @@ export default function RepBreakdownModal({ visible, onClose, kind, check, reps 
                     <Text style={[styles.td, styles.colRep]}>{r.rep + 1}</Text>
                     {c ? (
                       <>
-                        <Text style={[styles.td, styles.colVal]}>{lVal}</Text>
-                        <Text style={[styles.td, styles.colVal]}>{rVal}</Text>
+                        {showSides && <Text style={[styles.td, styles.colVal]}>{lVal}</Text>}
+                        {showSides && <Text style={[styles.td, styles.colVal]}>{rVal}</Text>}
                         {kind !== 'balance' && <Text style={[styles.td, styles.colVal]}>{achVal}</Text>}
                         <Text style={[styles.td, styles.colVal]}>{Math.round(pctVal)}%</Text>
                       </>
                     ) : (
                       <>
-                        <Text style={[styles.td, styles.colVal]}>—</Text>
-                        <Text style={[styles.td, styles.colVal]}>—</Text>
+                        {showSides && <Text style={[styles.td, styles.colVal]}>—</Text>}
+                        {showSides && <Text style={[styles.td, styles.colVal]}>—</Text>}
                         {kind !== 'balance' && <Text style={[styles.td, styles.colVal]}>—</Text>}
                         <Text style={[styles.td, styles.colVal]}>—</Text>
                       </>

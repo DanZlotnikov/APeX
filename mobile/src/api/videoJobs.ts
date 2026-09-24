@@ -77,6 +77,9 @@ export interface JointRomCheck {
   description: string;
   research: string[];
   reps: JointRomCheckRep[];
+  // 'max': a one-sided movement (a racket arm) — achieved_deg is the side that moved more, so a
+  // Left/Right split is meaningless. Absent on analyses saved before this field existed.
+  sides?: 'both' | 'max';
 }
 
 export interface RomReport {
