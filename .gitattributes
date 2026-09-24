@@ -1,0 +1,2 @@
+# Shell scripts run inside WSL: CRLF line endings break bash, so never convert them.
+*.sh text eol=lf
