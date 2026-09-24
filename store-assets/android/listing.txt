@@ -1,24 +1,21 @@
 APP NAME
-APeX: Athlete Performance
+APeX: Tennis Swing Analysis
 
 SHORT DESCRIPTION
-Record a set on video. Get rep counts, balance and range-of-motion feedback.
+Film your tennis strokes. Get swing count, swing range and knee bend feedback.
 
 FULL DESCRIPTION
-APeX turns a short phone video into movement feedback. Prop your phone up, record a set, and APeX reconstructs your movement in 3D to count your reps and measure how you move — no wearables, no markers.
+APeX analyzes your tennis swing from a short phone video. Prop your phone up, record a few strokes, and APeX reconstructs your movement in 3D to count your swings and measure how you move — no sensors, no wearables.
 
 WHAT YOU GET
-• Automatic rep counting from video
-• Left/right balance, to spot one side doing more of the work
-• Range of motion for every rep, against research-based targets
+• Automatic swing counting from video
+• Swing range: how far your arm swings through each stroke
+• Knee bend: how much you load your legs into each shot, compared with published research on tennis players
 • A readiness score and its trend over time
-• A replay of your set with a skeleton overlay, so you can review your form
-
-SPORTS AND EXERCISES
-General fitness (squat, vertical jump, pull-up, push-up, ab crunch), padel strokes, and tennis strokes and serves.
+• A replay of your strokes with a skeleton overlay, so you can review your technique
 
 FOR COACHES AND TEAMS
-Create a team, invite athletes with a code, set each athlete's routine, and follow their readiness and history in one place. Athletes who train on their own keep their data private to themselves.
+Create a team, invite players with a code, set each player's routine, and follow their progress in one place. Players who train on their own keep their data private to themselves.
 
 PRIVACY
 Videos are recorded without audio and stored privately. No ads, no third-party analytics, and your data is never sold. Delete any session, or your whole account, from inside the app.

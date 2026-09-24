@@ -221,44 +221,14 @@ memory, so re-check it if either changes.
 - Phone screenshots: 🔴 **not done** — 2–8 needed, taken from an emulator or device (§4). These
   are the only listing item that genuinely needs Android running.
 
-**App name** (max 30): `APeX: Athlete Performance`
-
-**Short description** (max 80):
-> Record a set on video. Get rep counts, balance and range-of-motion feedback.
-
-**Full description** (max 4000):
-> APeX turns a short phone video into movement feedback. Prop your phone up, record a set, and
-> APeX reconstructs your movement in 3D to count your reps and measure how you move — no wearables,
-> no markers.
->
-> WHAT YOU GET
-> • Automatic rep counting from video
-> • Left/right balance, to spot one side doing more of the work
-> • Range of motion for every rep, against research-based targets
-> • A readiness score and its trend over time
-> • A replay of your set with a skeleton overlay, so you can review your form
->
-> SPORTS AND EXERCISES
-> General fitness (squat, vertical jump, pull-up, push-up, ab crunch), padel strokes, and tennis
-> strokes and serves.
->
-> FOR COACHES AND TEAMS
-> Create a team, invite athletes with a code, set each athlete's routine, and follow their
-> readiness and history in one place. Athletes who train on their own keep their data private to
-> themselves.
->
-> PRIVACY
-> Videos are recorded without audio and stored privately. No ads, no third-party analytics, and
-> your data is never sold. Delete any session, or your whole account, from inside the app.
->
-> IMPORTANT
-> APeX provides training feedback based on computer-vision movement analysis — pose estimation,
-> balance, and range of motion. It is not a medical device, is not a diagnostic tool, and is not a
-> substitute for professional medical advice. Consult a physician before beginning any exercise
-> program.
-
-(The last paragraph is the in-app About text from `SettingsScreen.tsx`, verbatim — keep the two
-in sync.)
+**App name, short and full description** — ✅ paste-ready in `store-assets/android/listing.txt`
+(the single source; don't copy it into this doc, a duplicate here already went stale once). As of
+2026-09-24 it describes the app as **tennis swing analysis only** — the app's current purpose — and
+lists only what the tennis analysis actually produces: swing count, swing range, knee bend,
+readiness trend and the skeleton replay (no left/right balance: tennis has no balance check).
+Name `APeX: Tennis Swing Analysis` (27/30), short description 78/80, full 1263/4000. Its last
+paragraph is the in-app About text from `SettingsScreen.tsx`, verbatim — keep the two in sync.
+The same text works for the App Store listing.
 
 **Category**: Health & Fitness. **Contact email**: `danzlotnikov+apex@gmail.com`.
 **Website/support**: `https://danzlotnikov.github.io/APeX/support.html`.
@@ -291,7 +261,8 @@ Play requires. 🟡 That edit to `docs/support.html` is only live once pushed to
 
 **App access**: the app starts at a login screen, so Play's reviewers need credentials. Reuse the
 existing App Store reviewer demo account (see `APP_STORE_SUBMISSION_PLAN.md`'s review notes), and
-add the same note that video analysis runs on a schedule and isn't instant.
+add the same note that video analysis runs on a schedule and isn't instant, and that the app
+analyzes **tennis swings only** — ask reviewers to record a few tennis strokes.
 
 **Other App content forms**:
 - Ads: **No ads**.
@@ -331,9 +302,9 @@ tracks its own findings — don't let this list live only in chat history.
 **Closed testers must be tennis players (decided 2026-09-23):** production stays in tennis-only
 detection mode (`analyze.ENABLED_EXERCISE_KEYS` in `backend/GENMO/scripts/exercises/analyze.py`),
 so a tester recording a squat, jump, pull-up, push-up or crunch gets no result or a wrong one.
-Tell testers to record tennis swings only. Before the public production release, either restore
-full detection or cut the listing's "SPORTS AND EXERCISES" paragraph (§3.4) down to tennis, so the
-listing doesn't promise exercises the backend won't detect.
+Tell testers to record tennis swings only. The store listing (§3.4) was rewritten as tennis-only
+on 2026-09-24, so it no longer promises exercises the backend won't detect; if full detection is
+ever restored, widen the listing again to match.
 
 ---
 

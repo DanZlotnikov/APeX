@@ -46,9 +46,8 @@ blank.
 
 ### 2.3 Movement Videos
 The core feature of APeX is recording a short (about 20 seconds or less)
-video of yourself performing an exercise (e.g., squat, jump, pull-up,
-deadlift, push-up, ab crunch), which is uploaded so our system can analyze
-your movement. A few important specifics:
+video of yourself performing a movement (e.g., a few tennis swings), which
+is uploaded so our system can analyze your movement. A few important specifics:
 
 - **Video only, no audio.** Recordings made in-app are captured with audio
   explicitly disabled — we do not collect or store sound from your

@@ -67,10 +67,10 @@ def feature_graphic():
     # Content kept inside the central ~80%: Play may crop edges or overlay a play button.
     badge(d, 270, H // 2, 300)
     x = 470
-    d.text((x, 150), "Movement analysis", font=font(54), fill=TEXT)
-    d.text((x, 214), "for athletes", font=font(54), fill=PRIMARY)
-    d.text((x, 306), "Record a set. Get reps, balance", font=font(28, "Regular"), fill=MUTED)
-    d.text((x, 344), "and range of motion.", font=font(28, "Regular"), fill=MUTED)
+    d.text((x, 150), "Tennis swing", font=font(54), fill=TEXT)
+    d.text((x, 214), "analysis", font=font(54), fill=PRIMARY)
+    d.text((x, 306), "Film your strokes. Get swing count,", font=font(28, "Regular"), fill=MUTED)
+    d.text((x, 344), "swing range and knee bend.", font=font(28, "Regular"), fill=MUTED)
     img.save(OUT / "feature-graphic-1024x500.png")
 
 
