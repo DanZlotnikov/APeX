@@ -19,6 +19,7 @@ computed from `__file__` rather than a relative path.
 from __future__ import annotations
 
 import sys
+from fractions import Fraction
 from pathlib import Path
 
 SERVER_ROOT = Path(__file__).resolve().parent
@@ -58,6 +59,126 @@ CROP_PAD_FRAC = 0.18  # padding around the athlete's full range-of-motion bbox
 # (a hard guarantee) over a maximally tight per-panel crop (best-effort,
 # only overridden when the natural crop would otherwise exceed this).
 MAX_PANEL_ASPECT = 0.6
+PIPELINE_FPS = 30
+
+
+def normalize_video_to_cfr(video_path: Path, output_path: Path, fps: int = PIPELINE_FPS) -> None:
+    """Transcode a phone recording to the pipeline's constant frame rate.
+
+    Phone recordings are commonly variable-frame-rate: their first frames can
+    be 30 FPS and later frames 60 FPS. ``read_video_np`` deliberately returns
+    just pixels, so passing that mixed-rate frame sequence straight to
+    ``save_video(..., fps=30)`` would retain every frame but assign every one
+    a 1/30-second duration. The 60-FPS portion would consequently play at
+    half speed in the rendered result.
+
+    The pose, smoothing, rep-counting, and rendering code all use a 30-FPS
+    time base already. Resample *before* any of those stages, using the
+    source presentation timestamps, so that every downstream frame sequence
+    and the final video agree on both frame rate and elapsed time.
+
+    This uses PyAV directly rather than an ``ffmpeg`` command-line binary:
+    PyAV is already required by the GEM video reader and is available in the
+    worker environment, while a standalone ffmpeg executable is not assumed.
+    Audio is intentionally omitted because APeX's two-panel result has
+    always been a silent analysis video.
+    """
+    import av
+
+    from gem.utils.video_io_utils import get_rotation_degrees, rotate_frames
+
+    video_path = Path(video_path)
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    input_container = av.open(str(video_path))
+    output_container = av.open(str(output_path), mode="w")
+    try:
+        input_stream = next((stream for stream in input_container.streams if stream.type == "video"), None)
+        if input_stream is None:
+            raise ValueError(f"no video stream found in {video_path}")
+
+        # Preserve the project's explicit display-matrix correction. PyAV
+        # exposes encoded pixels without applying phone rotation metadata.
+        rotation = get_rotation_degrees(video_path)
+        source_fps = float(input_stream.average_rate or fps)
+        source_duration = (
+            float(input_stream.duration * input_stream.time_base)
+            if input_stream.duration is not None and input_stream.time_base is not None
+            else None
+        )
+
+        output_stream = None
+        emitted = 0
+        next_output_time = 0.0
+        previous_image: np.ndarray | None = None
+        previous_time: float | None = None
+        last_interval = 1.0 / source_fps
+
+        def emit(image: np.ndarray) -> None:
+            """Encode one frame at its canonical CFR presentation index."""
+            nonlocal output_stream, emitted, next_output_time
+
+            # libx264/yuv420p requires even dimensions. Normal phone camera
+            # dimensions already meet this; padding only protects odd-sized
+            # uploads without changing their geometric scale.
+            h, w = image.shape[:2]
+            if h % 2 or w % 2:
+                image = cv2.copyMakeBorder(image, 0, h % 2, 0, w % 2, cv2.BORDER_REPLICATE)
+                h, w = image.shape[:2]
+
+            if output_stream is None:
+                output_stream = output_container.add_stream("libx264", rate=fps)
+                output_stream.width = w
+                output_stream.height = h
+                output_stream.pix_fmt = "yuv420p"
+                output_stream.options = {"crf": "17"}
+
+            encoded = av.VideoFrame.from_ndarray(image, format="rgb24")
+            encoded = encoded.reformat(width=w, height=h, format="yuv420p")
+            encoded.pts = emitted
+            encoded.time_base = Fraction(1, fps)
+            for packet in output_stream.encode(encoded):
+                output_container.mux(packet)
+
+            emitted += 1
+            next_output_time = emitted / fps
+
+        for decoded_index, frame in enumerate(input_container.decode(input_stream)):
+            current_time = frame.time
+            if current_time is None:
+                current_time = decoded_index / source_fps
+            else:
+                current_time = float(current_time)
+
+            image = frame.to_ndarray(format="rgb24")
+            image = rotate_frames(image, rotation)
+
+            if previous_image is not None and previous_time is not None:
+                last_interval = max(0.0, current_time - previous_time) or last_interval
+                # Hold the last source frame until the next source timestamp,
+                # then emit each 30-FPS instant that belongs to that interval.
+                while next_output_time <= current_time + 1e-9:
+                    emit(previous_image)
+
+            previous_image = image
+            previous_time = current_time
+
+        if previous_image is None:
+            raise ValueError(f"no decodable video frames found in {video_path}")
+
+        end_time = source_duration
+        if end_time is None:
+            end_time = (previous_time or 0.0) + last_interval
+        while next_output_time < end_time - 1e-9:
+            emit(previous_image)
+
+        if output_stream is not None:
+            for packet in output_stream.encode():
+                output_container.mux(packet)
+    finally:
+        input_container.close()
+        output_container.close()
 
 
 def compute_union_crop_box(bbx_xys, W: int, H: int, pad_frac: float = CROP_PAD_FRAC) -> tuple[int, int, int, int]:
@@ -160,6 +281,13 @@ def process_video_two_panel(
     video_path = Path(video_path)
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    # The rest of the stack assumes 30 FPS for smoothing, exercise timing,
+    # and final encoding. Normalize variable-frame-rate phone recordings once
+    # at the boundary so all three stages share the same clock.
+    normalized_video_path = output_dir / "input_cfr30.mp4"
+    normalize_video_to_cfr(video_path, normalized_video_path)
+    video_path = normalized_video_path
     preprocess_dir = output_dir / "preprocess"
 
     r = worker.run_core_pipeline(
@@ -217,7 +345,7 @@ def process_video_two_panel(
 
     combined = combine_two_panel(left_panel, right_panel)
     output_path = output_dir / "two_panel.mp4"
-    save_video(combined, str(output_path), fps=30)
+    save_video(combined, str(output_path), fps=PIPELINE_FPS)
 
     analysis_path = output_dir / "analysis.json"
     analysis_path.write_text(json.dumps(r["analysis"], indent=2))
