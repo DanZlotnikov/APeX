@@ -294,20 +294,26 @@ register_rom(ExerciseRomProfile(
 # 57deg racket arm + 11deg other arm read as 34deg) and left the per-rep
 # breakdown showing a meaningless Left/Right split. Racket-arm swings on the
 # same clip are 58.4/43.3/42.7deg; 60 keeps them at 80% (.mp4) / 79% (.mov).
+#
+# 60 -> 52 (2026-10-18): a good tennis swing from a real test video (job 98d53db2,
+# racket arm 46.1/42.2deg) read 74%; the user rated it ~85%. 52 reads it 85%.
+# Side effects, from the same measurements: the padel clip's 58.4/43.3/42.7deg
+# now read ~93% (was 80%), the coaching video ~82% (was 71%), and the median
+# Penn Action forehand (37.7deg) ~73% (was 63%).
 register_rom(ExerciseRomProfile(
     exercise_key="stroke",
     checks=(
         JointRomCheck(
             id="swing_rom", label="Swing range", joint="SHOULDER",
             signal="shoulder_angle", start_selector="start", end_selector="bottom",
-            target_rom_deg=60.0, watch_threshold_pct=70.0, at_risk_threshold_pct=45.0,
+            target_rom_deg=52.0, watch_threshold_pct=70.0, at_risk_threshold_pct=45.0,
             sides="max",
             research=(
                 "Holland Osteopathy — shoulder biomechanics in tennis: wind-up-phase "
                 "shoulder horizontal abduction of ~30-40deg generates the torque for the "
-                "stroke; target_rom_deg has been revised four times against a real "
+                "stroke; target_rom_deg has been revised five times against a real "
                 "2026-08-03 test clip (see the target_rom_deg history note above), most "
-                "recently to read that clip's normal racket-arm swings at ~80%, not "
+                "recently (to 52, on a real tennis swing rated ~85%), not "
                 "derived from this citation.",
                 "Padel-specific shoulder kinematics research (e.g. cross-sectional studies "
                 "of padel players' shoulder ROM during strokes) confirms strokes rely on "
@@ -337,13 +343,13 @@ register_rom(ExerciseRomProfile(
         JointRomCheck(
             id="swing_rom", label="Swing range", joint="SHOULDER",
             signal="shoulder_angle", start_selector="start", end_selector="bottom",
-            target_rom_deg=60.0, watch_threshold_pct=70.0, at_risk_threshold_pct=45.0,
+            target_rom_deg=52.0, watch_threshold_pct=70.0, at_risk_threshold_pct=45.0,
             sides="max",
             research=(
                 "Same real-footage calibration as padel stroke (see that exercise's "
                 "registration above and its target_rom_deg history) — this pipeline's "
                 "shoulder_angle signal doesn't distinguish the two motions. On 40 Penn "
-                "Action forehands the median racket-arm swing (37.7deg) reads ~63% at "
+                "Action forehands the median racket-arm swing (37.7deg) reads ~73% at "
                 "this target; those are ~1s broadcast clips from varied angles, so they "
                 "spread widely (quartiles 26-64deg).",
             ),
