@@ -1,0 +1,573 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font:14px system-ui,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>מדריך APeX לאנדרואיד</title>
+<script>document.documentElement.className += " js";</script>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700;900&family=Roboto:wght@400;500;700&family=Rubik:wght@600;700&display=swap">
+<style>
+/* Layout: one calm column. Each step is a number, a plain sentence or two, and drawn phone screens with the button to press ringed in pink. */
+:root {
+  --bg: #F1F5F3;
+  --surface: #FFFFFF;
+  --ink: #10201D;
+  --muted: #4B605B;
+  --line: #D3DEDA;
+  --accent: #00786A;
+  --accent-ink: #FFFFFF;
+  --tap: #E5304F;
+  --note-bg: #FFF3CF;
+  --note-ink: #5A4200;
+  --good-bg: #DDF3EC;
+  --good-ink: #0B4F43;
+  --display: Rubik, Heebo, "Arial Hebrew", Arial, sans-serif;
+  --body: Heebo, "Segoe UI", Arial, sans-serif;
+  --phone: Roboto, Heebo, "Segoe UI", Arial, sans-serif;
+  /* colours of the drawn APeX screens (these depict the real app, so they do not change with the page theme) */
+  --app-bg: #07101C;
+  --app-surface: #0E1E2F;
+  --app-line: #1C2E40;
+  --app-text: #F0F6FF;
+  --app-muted: #6B7F96;
+  --app-teal: #00D4BC;
+  --app-on-teal: #001A18;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0A1311; --surface: #111F1C; --ink: #E8F2EF; --muted: #9DB2AC; --line: #243A35;
+    --accent: #3FD9C4; --accent-ink: #00201B; --tap: #FF5C78;
+    --note-bg: #2D2510; --note-ink: #F0D98F; --good-bg: #12362F; --good-ink: #A9ECDD;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0A1311; --surface: #111F1C; --ink: #E8F2EF; --muted: #9DB2AC; --line: #243A35;
+  --accent: #3FD9C4; --accent-ink: #00201B; --tap: #FF5C78;
+  --note-bg: #2D2510; --note-ink: #F0D98F; --good-bg: #12362F; --good-ink: #A9ECDD;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--body); font-size: 18px; line-height: 1.5;
+  padding-block: 28px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+main { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 48px; }
+h1, h2, h3 { font-family: var(--display); text-wrap: balance; line-height: 1.2; margin: 0; }
+h1 { font-size: clamp(2rem, 7vw, 3rem); font-weight: 700; }
+h2 { font-size: clamp(1.5rem, 5vw, 2rem); font-weight: 700; }
+h3 { font-size: 1.3rem; font-weight: 600; }
+p { margin: 0; max-width: 62ch; }
+a { color: var(--accent); }
+:focus-visible { outline: 3px solid var(--tap); outline-offset: 3px; border-radius: 4px; }
+
+.lede { font-size: 1.2rem; color: var(--muted); }
+.facts { display: flex; flex-wrap: wrap; gap: 8px 10px; margin: 0; padding: 0; list-style: none; }
+.facts li { background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 4px 14px; font-size: .95rem; font-weight: 600; }
+
+.hero { display: flex; flex-direction: column; gap: 16px; }
+.linkcard { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 12px; }
+.linkcard b { font-family: var(--display); font-size: 1.05rem; color: var(--muted); font-weight: 600; }
+.linkcard code { direction: ltr; text-align: left; display: block; font-size: .85rem; word-break: break-all; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; user-select: all; }
+.row { display: flex; flex-wrap: wrap; gap: 10px; }
+.btn { font: 700 1rem var(--body); border: 0; border-radius: 10px; padding: 12px 18px; cursor: pointer; text-decoration: none; display: inline-block; }
+.btn.main { background: var(--accent); color: var(--accent-ink); }
+.btn.alt { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+.small { font-size: .95rem; color: var(--muted); }
+
+.contents { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin: 0; padding: 0; list-style: none; }
+.contents a { display: block; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; text-decoration: none; color: var(--ink); font-weight: 600; height: 100%; }
+.contents span { display: block; font-size: .85rem; color: var(--muted); font-weight: 400; }
+
+section { display: flex; flex-direction: column; gap: 28px; scroll-margin-top: 16px; }
+section > div:first-child { display: flex; flex-direction: column; gap: 10px; }
+.intro { color: var(--muted); }
+
+.step { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 4px 14px; }
+.num { font-family: var(--display); font-weight: 700; font-size: 2.6rem; line-height: 1; color: var(--accent); }
+.step > div { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+@media (max-width: 460px) { .step { grid-template-columns: 1fr; } .num { font-size: 2rem; } }
+
+.note { background: var(--note-bg); color: var(--note-ink); border-radius: 12px; padding: 12px 16px; font-size: 1rem; max-width: 62ch; }
+.good { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; max-width: 62ch; }
+
+/* ---------- drawn phones ---------- */
+.phones { display: flex; flex-wrap: wrap; gap: 18px 12px; }
+.phone { margin: 0; width: 170px; }
+.phone figcaption { font-size: .85rem; line-height: 1.3; color: var(--muted); margin-top: 8px; }
+.frame { height: 310px; border: 6px solid #1A2421; border-radius: 26px; overflow: hidden; background: #fff; box-shadow: 0 0 0 1px var(--line); }
+.scr { direction: ltr; height: 100%; display: flex; flex-direction: column; font: 400 10.5px/1.35 var(--phone); color: #1C1B1F; }
+.scr::before { content: "12:30"; display: block; padding: 6px 12px 2px; font-size: 9px; font-weight: 500; }
+.scr.app { background: var(--app-bg); color: var(--app-text); }
+.scr.dimmed { background: #9BA7AD; }
+
+.hit { position: relative; box-shadow: 0 0 0 2px #fff, 0 0 0 4.5px var(--tap); border-radius: 8px; }
+.hit::after { content: "לחצו"; position: absolute; top: -10px; right: -7px; background: var(--tap); color: #fff; font: 700 8px/1 Heebo, var(--phone); padding: 2.5px 5px; border-radius: 6px; direction: rtl; }
+.hit.pill { border-radius: 999px; }
+
+/* android dialogs */
+.dlg-wrap { flex: 1; display: flex; align-items: center; padding: 12px; }
+.dlg { background: #fff; border-radius: 18px; padding: 14px; width: 100%; }
+.dlg h4 { margin: 0 0 6px; font-size: 12.5px; font-weight: 500; }
+.dlg p { font-size: 10px; color: #49454F; margin: 0 0 12px; }
+.dlg .btns { display: flex; justify-content: flex-end; gap: 12px; align-items: center; font-weight: 500; color: #00639B; }
+.dlg .btns span { padding: 4px 6px; }
+.dlg .btns .fill { background: #00639B; color: #fff; border-radius: 999px; padding: 5px 12px; }
+.shield { width: 22px; height: 26px; background: #1E8E3E; border-radius: 3px 3px 12px 12px; margin-bottom: 8px; }
+.appicon { width: 34px; height: 34px; border-radius: 9px; background: var(--app-bg); color: var(--app-teal); font: 700 17px/34px var(--phone); text-align: center; margin-bottom: 8px; }
+
+/* browser */
+.url { margin: 2px 8px 8px; background: #ECEFF1; border-radius: 14px; padding: 5px 10px; font-size: 9px; color: #444; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.page { padding: 8px 14px; display: flex; flex-direction: column; gap: 8px; }
+.page h5 { margin: 0; font-size: 14px; font-weight: 700; }
+.page .meta { color: #607D8B; font-size: 9.5px; }
+.bigbtn { background: #111; color: #fff; text-align: center; padding: 9px; border-radius: 8px; font-weight: 700; font-size: 12px; margin-top: 6px; }
+.snack { margin: auto 10px 12px; background: #322F35; color: #F4EFF4; border-radius: 6px; padding: 10px 12px; display: flex; justify-content: space-between; align-items: center; font-size: 10px; }
+.snack b { color: #D0BCFF; font-weight: 500; padding: 2px 4px; }
+
+/* settings lists */
+.list h4 { margin: 8px 14px 12px; font-size: 16px; font-weight: 400; }
+.list .item { padding: 9px 14px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.list .item small { display: block; color: #6B6B70; font-size: 9px; }
+.list .item.hit { margin: 0 8px; padding: 9px 6px; }
+.sw { display: block; width: 30px; height: 17px; border-radius: 9px; background: #C9C5CA; position: relative; flex: none; }
+.sw::after { content: ""; position: absolute; top: 2.5px; left: 2.5px; width: 12px; height: 12px; border-radius: 50%; background: #fff; }
+.sw.on { background: #00639B; }
+.sw.on::after { left: 15.5px; }
+.swh { display: block; line-height: 0; border-radius: 10px; flex: none; }
+.chev { color: #8A8A90; }
+
+/* apex screens */
+.ap { padding: 8px 12px; display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; }
+.logo { font: 900 30px/1 var(--phone); letter-spacing: .12em; color: var(--app-teal); text-align: center; margin-top: 12px; }
+.tag { text-align: center; color: var(--app-muted); font-size: 6.5px; letter-spacing: .22em; font-weight: 700; }
+.lbl { color: var(--app-muted); font-size: 7.5px; letter-spacing: .14em; font-weight: 700; }
+.fld { background: var(--app-surface); border: 1px solid var(--app-line); border-radius: 7px; padding: 7px 9px; color: var(--app-muted); font-size: 10px; }
+.abtn { background: var(--app-teal); color: var(--app-on-teal); text-align: center; font-weight: 900; letter-spacing: .15em; font-size: 10px; padding: 8px; border-radius: 8px; opacity: .55; }
+.alink { text-align: center; color: var(--app-muted); font-size: 8px; }
+.alink b { color: var(--app-teal); font-weight: 700; padding: 1px 3px; white-space: nowrap; }
+.cards { display: flex; gap: 6px; }
+.card { flex: 1; background: var(--app-surface); border: 1px solid var(--app-line); border-radius: 9px; padding: 8px 6px; text-align: center; font-weight: 900; font-size: 8.5px; letter-spacing: .1em; }
+.card.sel { border-color: var(--app-teal); color: var(--app-teal); }
+.chip { align-self: flex-start; background: var(--app-teal); color: var(--app-on-teal); font-weight: 700; font-size: 9.5px; padding: 4px 10px; border-radius: 8px; }
+.topbar { display: flex; gap: 5px; align-items: center; padding: 6px 10px; border-bottom: 1px solid var(--app-line); }
+.ib { width: 22px; height: 22px; border-radius: 6px; background: var(--app-surface); border: 1px solid var(--app-line); display: grid; place-items: center; font-size: 10px; color: var(--app-muted); }
+.tb { white-space: nowrap; margin-left: auto; background: var(--app-surface); border: 1px solid var(--app-line); border-radius: 7px; padding: 5px 7px; font-weight: 900; font-size: 8px; letter-spacing: .06em; }
+.tb.rec { background: var(--app-teal); color: var(--app-on-teal); border-color: var(--app-teal); margin-left: 0; }
+.kick { color: var(--app-muted); font-size: 7.5px; letter-spacing: .25em; font-weight: 700; }
+.big { font-size: 17px; font-weight: 800; }
+.banner { background: var(--app-surface); border: 1px solid var(--app-line); border-radius: 9px; padding: 9px 10px; display: flex; align-items: center; justify-content: space-between; font-weight: 600; font-size: 10px; }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--app-teal); }
+.video { flex: 1; background: linear-gradient(180deg, #243746, #0E1822); position: relative; overflow: hidden; }
+.person { position: absolute; left: 50%; bottom: 0; transform: translateX(-50%); width: 34px; height: 150px; background: #3E5568; border-radius: 17px 17px 4px 4px; }
+.person::before { content: ""; position: absolute; top: -20px; left: 7px; width: 20px; height: 20px; border-radius: 50%; background: #3E5568; }
+.rhead { text-align: center; color: var(--app-teal); font-weight: 900; font-size: 10px; letter-spacing: .08em; padding: 8px 0; }
+.round { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 15px; }
+.round.no { background: var(--app-surface); color: var(--app-text); border: 1px solid var(--app-line); }
+.round.yes { background: var(--app-teal); color: var(--app-on-teal); }
+.rbar { display: flex; justify-content: center; gap: 26px; padding: 10px 0 14px; background: var(--app-bg); }
+.res { background: var(--app-surface); border: 1px solid var(--app-line); border-radius: 9px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
+.res .t { display: flex; justify-content: space-between; align-items: baseline; font-weight: 700; font-size: 9.5px; }
+.res .t em { font-style: normal; font-weight: 900; font-size: 15px; color: var(--app-teal); }
+.bar { height: 5px; border-radius: 3px; background: var(--app-line); overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--app-teal); }
+.tag2 { align-self: flex-start; font-size: 7.5px; font-weight: 700; letter-spacing: .08em; padding: 2px 6px; border-radius: 6px; background: #0E3B38; color: var(--app-teal); }
+.example { text-align: center; color: var(--app-muted); font-size: 8px; letter-spacing: .1em; font-weight: 700; }
+
+/* outline demo */
+.demo { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
+.demo div { background: var(--app-bg); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; }
+.demo small { color: #9FB1C6; font: 600 .85rem var(--body); }
+.demo .ok { font: 700 1.5rem var(--body); color: #AFC0D3; }
+.demo .bad { font: 700 1.5rem var(--body); color: #6B7F96; -webkit-text-stroke: 3px #fff; paint-order: stroke fill; }
+
+/* what the numbers mean */
+.metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+.metric { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; display: flex; flex-direction: column; gap: 6px; }
+.metric h3 { font-size: 1.3rem; }
+table { border-collapse: collapse; width: 100%; font-size: 1rem; }
+.scroll { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+th, td { text-align: start; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font: 600 .9rem var(--body); color: var(--muted); }
+tr:last-child td { border-bottom: 0; }
+
+details { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 0 16px; }
+details + details { margin-top: 10px; }
+summary { cursor: pointer; font-weight: 700; padding: 14px 0; list-style-position: outside; }
+details p { padding-bottom: 14px; }
+footer { color: var(--muted); font-size: .9rem; }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+
+.rtl { direction: rtl; }
+.en { direction: ltr; unicode-bidi: isolate; display: inline; }
+.dict td:nth-child(2) { direction: ltr; text-align: left; }
+.dict th:nth-child(2) { text-align: left; }
+
+/* ---- one stage at a time ---- */
+[hidden] { display: none !important; }
+h2:focus, h3:focus { outline: none; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 20; background: var(--bg); }
+main { gap: 18px; }
+.wbar, .nav { flex: none; }
+.wbar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 15; background: var(--bg); padding-block: 8px 10px; display: flex; flex-direction: column; gap: 8px; }
+.bartop { display: flex; justify-content: flex-end; align-items: center; gap: 12px; font-size: .95rem; font-weight: 600; color: var(--muted); min-height: 28px; }
+.link { background: none; border: 0; color: var(--accent); font: 600 .95rem var(--body); cursor: pointer; padding: 4px 0; }
+.track { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.track i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 3px; transition: width .25s ease; }
+.js .stage { display: none; }
+.js .stage.on { display: block; }
+@media (prefers-reduced-motion: no-preference) { .js .stage.on { animation: rise .25s ease; } }
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.stage:not(:last-child) { margin-bottom: 0; }
+.kicker { font: 600 .95rem var(--body); color: var(--accent); margin-bottom: 8px; }
+.kicker:empty { display: none; }
+.stagebody { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.lead { display: flex; flex-direction: column; gap: 8px; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
+.nav { position: sticky; bottom: env(safe-area-inset-bottom, 0px); z-index: 15; background: var(--bg); display: flex; gap: 10px; padding-block: 12px; border-top: 1px solid var(--line); }
+.nav .btn { flex: 1; font-size: 1.1rem; padding: 14px 18px; }
+.nav #back { flex: 0 0 auto; }
+.gate { display: flex; flex-direction: column; gap: 10px; }
+.gate .btn { font-size: 1.05rem; padding: 14px 18px; text-align: center; }
+.plan { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.plan li { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+.plan b { display: block; }
+.plan span { display: block; font-size: .9rem; color: var(--muted); }
+.goodbig { background: var(--good-bg); color: var(--good-ink); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 4px; }
+.goodbig b { font-family: var(--display); font-size: 1.5rem; }
+</style>
+</head>
+<body>
+<main dir="rtl" lang="he"><div class="wbar"><div class="bartop"><button class="link" id="restart" type="button" hidden>מההתחלה</button></div><div class="track" id="track" role="progressbar" aria-label="התקדמות" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="fill"></i></div></div><div id="stages"><article class="stage" data-kind="start"><div class="stagebody">
+    <h1>מתקינים את APeX בטלפון האנדרואיד</h1>
+    <ul class="facts">
+      <li>טלפון אנדרואיד</li>
+      <li>Wi-Fi או אינטרנט סלולרי</li>
+    </ul>
+    <div class="linkcard">
+      <b>קישור ההתקנה שלכם</b>
+      <code id="link">https://expo.dev/accounts/danzlotnikov/projects/apex-athlete-performance/builds/91905217-e3ae-4f80-9600-3057c3639caa</code>
+      <div class="row">
+        <a class="btn main" id="open" href="https://expo.dev/accounts/danzlotnikov/projects/apex-athlete-performance/builds/91905217-e3ae-4f80-9600-3057c3639caa">פתחו את הקישור</a>
+        <button class="btn alt" id="copy" type="button">העתיקו את הקישור</button>
+      </div>
+      <p class="small" id="copied" aria-live="polite">עושים את זה בטלפון עצמו, לא במחשב. טיפ: העתיקו את הקישור כאן, שלחו אותו לעצמכם בהודעה ופתחו אותו בטלפון.</p>
+    </div>
+    <p class="small">המסכים במדריך הם ציורים. ייתכן שבטלפון שלכם הניסוח יהיה קצת שונה, לפי היצרן (Samsung, Pixel ואחרים). הכפתור שצריך ללחוץ עליו תמיד מוקף בוורוד.</p>
+
+    <h3>הטלפון שלכם באנגלית?</h3>
+    <p class="small" style="margin-top:-8px">הכפתורים במדריך מופיעים בעברית. אם הטלפון מוגדר לאנגלית, אלה הכפתורים המקבילים:</p>
+    <div class="scroll"><table class="dict">
+      <thead><tr><th>בעברית</th><th>English</th></tr></thead>
+      <tbody>
+        <tr><td>אישור</td><td>OK</td></tr>
+        <tr><td>ביטול</td><td>Cancel</td></tr>
+        <tr><td>הגדרות</td><td>Settings</td></tr>
+        <tr><td>פרטים נוספים</td><td>More details</td></tr>
+        <tr><td>התקן בכל זאת</td><td>Install anyway</td></tr>
+        <tr><td>התקנה</td><td>Install</td></tr>
+        <tr><td>פתיחה</td><td>Open</td></tr>
+      </tbody>
+    </table></div>
+
+    
+  </div></article>
+<article class="stage"><div class="stagebody"><div class="lead"><h2>חלק 1. מתקינים את האפליקציה</h2><p class="intro">APeX עדיין לא נמצאת בחנות Play, ולכן הטלפון מבקש כמה אישורים נוספים.</p></div>
+        <h3>פותחים את הקישור ולוחצים על Install</h3>
+        <p>פתחו את קישור ההתקנה בטלפון. תראו דף על האפליקציה. לחצו על הכפתור השחור <b class="en">Install</b>. קובץ האפליקציה של APeX מתחיל לרדת.</p>
+        <div class="phones">
+          <figure class="phone"><div class="frame"><div class="scr">
+            <div class="url">expo.dev/accounts/danzlotnikov/…</div>
+            <div class="page">
+              <h5>APeX</h5>
+              <div class="meta">Android · version 1.0.0</div>
+              <div class="bigbtn hit">Install</div>
+            </div>
+          </div></div><figcaption>הקישור נפתח בדפדפן.</figcaption></figure>
+        </div></div></article>
+<article class="stage"><div class="stagebody">
+        <h3>אם הטלפון שואל אם לשמור את הקובץ, מאשרים</h3>
+        <p>ההודעה הזו מופיעה בכל אפליקציה שלא מגיעה מחנות Play. לחצו על <b>אישור</b> או על <b>הורד בכל זאת</b>.</p>
+        <div class="phones">
+          <figure class="phone"><div class="frame"><div class="scr dimmed rtl">
+            <div class="dlg-wrap"><div class="dlg">
+              <h4>להוריד את הקובץ?</h4>
+              <p>סוג הקובץ הזה עלול לגרום נזק למכשיר שלך. לשמור את הקובץ בכל זאת?</p>
+              <div class="btns"><span class="hit">אישור</span><span>ביטול</span></div>
+            </div></div>
+          </div></div><figcaption>הניסוח משתנה בין טלפונים. בחרו באפשרות ששומרת את הקובץ.</figcaption></figure>
+        </div></div></article>
+<article class="stage"><div class="stagebody">
+        <h3>פותחים את הקובץ שירד</h3>
+        <p>כשההורדה מסתיימת, מופיעה הודעה בתחתית המסך. לחצו על <b>פתיחה</b>. אם היא נעלמה, משכו את סרגל ההתראות מלמעלה ולחצו על ההורדה שהסתיימה.</p>
+        <div class="phones">
+          <figure class="phone"><div class="frame"><div class="scr">
+            <div class="url">expo.dev/accounts/danzlotnikov/…</div>
+            <div class="page"><h5>APeX</h5><div class="meta">Android · version 1.0.0</div><div class="bigbtn">Install</div></div>
+            <div class="snack rtl"><span>ההורדה הושלמה</span><b class="hit">פתיחה</b></div>
+          </div></div><figcaption>ההודעה בתחתית המסך.</figcaption></figure>
+        </div></div></article>
+<article class="stage"><div class="stagebody">
+        <h3>מאפשרים לדפדפן להתקין אפליקציות</h3>
+        <p>לחצו על <b>הגדרות</b>, ואז הפעילו את <b>אפשר ממקור זה</b>. חזרו אחורה בעזרת החץ כדי להמשיך בהתקנה.</p>
+        <div class="phones">
+          <figure class="phone"><div class="frame"><div class="scr dimmed rtl">
+            <div class="dlg-wrap"><div class="dlg">
+              <h4>ההתקנה נחסמה</h4>
+              <p>מטעמי אבטחה, הטלפון שלך לא מורשה להתקין אפליקציות לא ידועות ממקור זה.</p>
+              <div class="btns"><span class="hit">הגדרות</span><span>ביטול</span></div>
+            </div></div>
+          </div></div><figcaption>קודם מופיעה ההודעה הזו. לוחצים על הגדרות.</figcaption></figure>
+          <figure class="phone"><div class="frame"><div class="scr list rtl">
+            <h4>התקנת אפליקציות לא ידועות</h4>
+            <div class="item"><span>Chrome<small>הדפדפן שלך</small></span></div>
+            <div class="item"><span>אפשר ממקור זה</span><span class="hit swh"><span class="sw on"></span></span></div>
+          </div></div><figcaption>אחר כך מפעילים את המתג וחוזרים אחורה.</figcaption></figure>
+        </div></div></article>
+<article class="stage"><div class="stagebody">
+        <h3>אם Play Protect מזהיר, בוחרים התקן בכל זאת</h3>
+        <p>לחצו על <b>פרטים נוספים</b> ואז על <b>התקן בכל זאת</b>. הניסוח משתנה בין טלפונים.</p>
+        <div class="phones">
+          <figure class="phone"><div class="frame"><div class="scr dimmed rtl">
+            <div class="dlg-wrap"><div class="dlg">
+              <div class="shield"></div>
+              <h4>Play Protect</h4>
+              <p>Play Protect לא מזהה את המפתח של האפליקציה הזו.</p>
+              <div class="btns"><span class="fill">אישור</span><span class="hit">פרטים נוספים</span></div>
+            </div></div>
+          </div></div><figcaption>לחצו על פרטים נוספים.</figcaption></figure>
+          <figure class="phone"><div class="frame"><div class="scr dimmed rtl">
+            <div class="dlg-wrap"><div class="dlg">
+              <div class="shield"></div>
+              <h4>אפליקציה לא מזוהה</h4>
+              <p>האפליקציה לא נסרקה על ידי Google. אפשר עדיין להתקין אותה.</p>
+              <div class="btns"><span class="fill">הבנתי</span><span class="hit">התקן בכל זאת</span></div>
+            </div></div>
+          </div></div><figcaption>ואז על התקן בכל זאת.</figcaption></figure>
+        </div></div></article>
+<article class="stage"><div class="stagebody">
+        <h3>לוחצים על התקנה ואז על פתיחה</h3>
+        <p>הטלפון שואל אם להתקין את APeX. לחצו על <b>התקנה</b>. אחרי כמה שניות לחצו על <b>פתיחה</b>. מעכשיו תמצאו את APeX יחד עם שאר האפליקציות.</p>
+        <div class="phones">
+          <figure class="phone"><div class="frame"><div class="scr rtl">
+            <div class="dlg-wrap"><div class="dlg" style="box-shadow:none;padding:6px 8px">
+              <div class="appicon">A</div>
+              <h4>להתקין את האפליקציה?</h4>
+              <p>APeX</p>
+              <div class="btns"><span class="hit">התקנה</span><span>ביטול</span></div>
+            </div></div>
+          </div></div><figcaption>לחצו על התקנה.</figcaption></figure>
+          <figure class="phone"><div class="frame"><div class="scr rtl">
+            <div class="dlg-wrap"><div class="dlg" style="box-shadow:none;padding:6px 8px">
+              <div class="appicon">A</div>
+              <h4>האפליקציה הותקנה</h4>
+              <p>APeX מוכנה לשימוש.</p>
+              <div class="btns"><span class="hit">פתיחה</span><span>סיום</span></div>
+            </div></div>
+          </div></div><figcaption>ואז על פתיחה.</figcaption></figure>
+        </div></div></article>
+<article class="stage" data-kind="gate"><div class="stagebody"><div class="lead"><h2>חלק 2. טלפוני Samsung: הגדרה אחת</h2><p class="intro">בטלפוני Samsung יש הגדרת נגישות שמציירת מסגרת לבנה סביב האותיות בכל אפליקציה, וזה מקשה על הקריאה ב-APeX. אפשר לכבות אותה בהגדרות הטלפון. אם האותיות אצלכם נראות רגילות, דלגו על החלק הזה.</p></div><div class="demo" aria-label="דוגמה לטקסט רגיל ולטקסט עם מסגרת">
+      <div><small>רגיל</small><span class="ok">Swing range</span></div>
+      <div><small>עם מסגרת (ההגדרה פועלת)</small><span class="bad">Swing range</span></div>
+    </div><div class="gate"><button class="btn main" type="button" data-act="yes">יש לי טלפון Samsung</button><button class="btn alt" type="button" data-act="no">אין לי, מדלגים על החלק הזה</button></div></div></article>
+<article class="stage" data-optional><div class="stagebody">
+        <h3>פותחים הגדרות, ואז נגישות, ואז שיפורי ראייה</h3>
+        <p>מצאו את אפליקציית <b>הגדרות</b> (הגלגל האפור). גללו אל <b>נגישות</b>, לחצו עליה, ואז לחצו על <b>שיפורי ראייה</b> (באנגלית: <span class="en">Visibility enhancements</span>).</p>
+        <div class="phones">
+          <figure class="phone"><div class="frame"><div class="scr list rtl">
+            <h4>נגישות</h4>
+            <div class="item"><span>קורא מסך</span><span class="chev">‹</span></div>
+            <div class="item hit"><span>שיפורי ראייה</span><span class="chev">‹</span></div>
+            <div class="item"><span>שיפורי שמיעה</span><span class="chev">‹</span></div>
+            <div class="item"><span>אינטראקציה וזריזות</span><span class="chev">‹</span></div>
+          </div></div><figcaption>הגדרות, ואז נגישות.</figcaption></figure>
+        </div>
+        <p class="note">לא מוצאים? בהגדרות לחצו על הזכוכית המגדלת וחפשו <b>ניגודיות גבוהה</b> (או <span class="en">high contrast</span>). הניסוח משתנה בין דגמים וגרסאות.</p></div></article>
+<article class="stage" data-optional><div class="stagebody">
+        <h3>מכבים את גופנים בניגודיות גבוהה</h3>
+        <p>לחצו על המתג ליד <b>גופנים בניגודיות גבוהה</b> (<span class="en">High contrast fonts</span>) כדי שיהפוך לאפור. פתחו שוב את APeX. האותיות כבר רגילות.</p>
+        <div class="phones">
+          <figure class="phone"><div class="frame"><div class="scr list rtl">
+            <h4>שיפורי ראייה</h4>
+            <div class="item"><span>ערכת נושא בניגודיות גבוהה</span><span class="sw"></span></div>
+            <div class="item"><span>גופנים בניגודיות גבוהה</span><span class="hit swh"><span class="sw on"></span></span></div>
+            <div class="item"><span>הצגת צורות כפתורים</span><span class="sw"></span></div>
+          </div></div><figcaption>לחצו על המתג הכחול. הוא הופך לאפור.</figcaption></figure>
+        </div>
+        <p class="small">יצרנים אחרים קוראים לזה אולי "טקסט בניגודיות גבוהה" (<span class="en">High contrast text</span>). שנו את ההגדרה רק אם האותיות ב-APeX נראות עם מסגרת.</p></div></article>
+<article class="stage"><div class="stagebody"><div class="lead"><h2>חלק 3. פותחים חשבון ושולחים סרטון</h2><p class="intro">פותחים חשבון ושולחים את הסרטון הראשון. האפליקציה עצמה באנגלית, ולכן שמות הכפתורים שלה כתובים כאן באנגלית.</p></div>
+        <h3>פותחים חשבון</h3>
+        <p>פתחו את APeX. במסך הראשון לחצו על <b class="en">Create one</b> בתחתית.</p>
+        <div class="phones">
+          <figure class="phone"><div class="frame"><div class="scr app"><div class="ap">
+            <div class="logo">APeX</div>
+            <div class="tag">ATHLETIC PERFORMANCE EXCELLENCE</div>
+            <div class="lbl" style="margin-top:6px">EMAIL</div><div class="fld">you@example.com</div>
+            <div class="lbl">PASSWORD</div><div class="fld">••••••••</div>
+            <div class="abtn">LOG IN</div>
+            <div class="alink">Don't have an account? <b class="hit">Create one</b></div>
+          </div></div></div><figcaption>המסך הראשון של APeX.</figcaption></figure>
+        </div></div></article>
+<article class="stage"><div class="stagebody">
+        <h3>בוחרים תפקיד ובודקים את הענף</h3>
+        <p>בחרו <b class="en">ATHLETE</b> כדי לצלם את הסווינגים של עצמכם. בחרו <b class="en">MANAGER</b> אם אתם מנהלים קבוצת שחקנים ורוצים לראות את כולם. אם מאמן נתן לכם קוד הזמנה, הקלידו אותו כשתתבקשו. ודאו שהענף הראשי הוא <b class="en">Tennis</b>, ואז מלאו שם, אימייל וסיסמה.</p>
+        <div class="phones">
+          <figure class="phone"><div class="frame"><div class="scr app"><div class="ap">
+            <div class="kick">CREATE ACCOUNT</div>
+            <div class="lbl" style="font-size:9px;letter-spacing:.02em;color:var(--app-text);font-weight:700">I am joining as a…</div>
+            <div class="cards"><div class="card">MANAGER</div><div class="card sel hit">ATHLETE</div></div>
+            <div class="lbl" style="font-size:9px;letter-spacing:.02em;color:var(--app-text);font-weight:700;margin-top:4px">What's your main sport?</div>
+            <div class="chip">Tennis</div>
+            <div class="lbl" style="margin-top:4px">FULL NAME</div><div class="fld">Your name</div>
+          </div></div></div><figcaption>בוחרים תפקיד. Tennis אמור להיות מסומן כבר.</figcaption></figure>
+        </div></div></article>
+<article class="stage"><div class="stagebody">
+        <h3>מצלמים סווינג</h3>
+        <p>במסך הראשי לחצו על <b class="en">RECORD</b> למעלה. בפעם הראשונה הטלפון יבקש רשות להשתמש במצלמה. בחרו <b>בזמן השימוש באפליקציה</b>. ההקלטה מתחילה אחרי ספירה לאחור קצרה ונעצרת מעצמה אחרי 20 שניות. כדי להשתמש בסרטון שכבר נמצא בטלפון, לחצו על <b class="en">UPLOAD</b>.</p>
+        <div class="phones">
+          <figure class="phone"><div class="frame"><div class="scr app">
+            <div class="topbar"><span class="ib">⏻</span><span class="tb">UPLOAD ↑</span><span class="tb rec hit">RECORD ●</span></div>
+            <div class="ap">
+              <div class="kick" style="margin-top:6px">OVERVIEW</div>
+              <div class="big">Your name</div>
+              <div class="banner"><span>Last swing</span><span class="dot"></span></div>
+            </div>
+          </div></div><figcaption>החלק העליון של המסך הראשי.</figcaption></figure>
+        </div>
+        <div class="note"><b>כדי לקבל תוצאה טובה:</b> שהגוף כולו יהיה בתמונה, מהראש עד הרגליים. השעינו את הטלפון על תיק או גדר כדי שלא יזוז. הקפידו על תאורה טובה ועל כך שאין אחרים בתמונה. כמה סווינגים בסרטון אחד זה בסדר.</div></div></article>
+<article class="stage"><div class="stagebody">
+        <h3>בודקים את הסרטון ושולחים</h3>
+        <p>כשההקלטה מסתיימת תראו את הסרטון ואת המילים <b class="en">READY TO RUMBLE?</b> לחצו על הוי כדי לשלוח. לחצו על האיקס כדי למחוק ולצלם שוב.</p>
+        <div class="phones">
+          <figure class="phone"><div class="frame"><div class="scr app">
+            <div class="rhead">READY TO RUMBLE?</div>
+            <div class="video"><div class="person"></div></div>
+            <div class="rbar"><span class="round no">✕</span><span class="round yes hit pill">✓</span></div>
+          </div></div><figcaption>הוי שולח. איקס מצלם מחדש.</figcaption></figure>
+        </div></div></article>
+<article class="stage"><div class="stagebody">
+        <h3>ממתינים דקה או שתיים</h3>
+        <p>הסרטון מנותח במחשב, ולכן התוצאה מגיעה אחרי כדקה עד שתיים. במסך הראשי מופיע כרטיס עם הכיתוב <b class="en">1 video processing</b> עד שהניתוח מסתיים. אפשר לסגור את האפליקציה ולחזור אחר כך.</p>
+        <div class="phones">
+          <figure class="phone"><div class="frame"><div class="scr app"><div class="ap">
+            <div class="kick" style="margin-top:6px">OVERVIEW</div>
+            <div class="big">Your name</div>
+            <div class="banner"><span>1 video processing</span><span class="dot"></span></div>
+          </div></div></div><figcaption>הכרטיס נעלם כשהתוצאה מוכנה.</figcaption></figure>
+        </div></div></article>
+<article class="stage" data-kind="finish"><div class="stagebody"><h2>תקוע? פתרונות מהירים</h2><div>
+      <details>
+        <summary>האפליקציה לא מותקנת, או שמופיעה ההודעה "App not installed"</summary>
+        <p>מחקו קודם כל גרסה ישנה של APeX מהטלפון. לחצו לחיצה ארוכה על הסמל שלה ובחרו הסרת התקנה. פתחו שוב את קישור ההתקנה וחזרו על חלק 1. תצטרכו להתחבר מחדש.</p>
+      </details>
+      <details>
+        <summary>לאותיות יש מסגרת לבנה וקשה לקרוא</summary>
+        <p>זו ההגדרה של Samsung גופנים בניגודיות גבוהה. ראו חלק 2, הגדרת Samsung.</p>
+      </details>
+      <details>
+        <summary>הטקסט באפליקציה מופיע מימין לשמאל, או שהיא נראית שונה מהתמונות</summary>
+        <p>יש לכם גרסה ישנה. בקשו את קישור ההתקנה העדכני וחזרו על חלק 1. החשבון שלכם נשאר כמו שהוא.</p>
+      </details>
+      <details>
+        <summary>המצלמה לא נפתחת</summary>
+        <p>פתחו הגדרות, ואז אפליקציות, APeX, הרשאות, מצלמה. בחרו <b>אפשר רק בזמן השימוש באפליקציה</b>.</p>
+      </details>
+      <details>
+        <summary>הסרטון תקוע על Queued או על Processing יותר מ-5 דקות</summary>
+        <p>הניתוח רץ על מחשב שצריך להיות דלוק. שלחו למי שנתן לכם את המדריך את השעה שבה העליתם את הסרטון, והוא יוכל לבדוק.</p>
+      </details>
+      <details>
+        <summary>קישור ההתקנה לא נפתח</summary>
+        <p>קישורים מפסיקים לעבוד אחרי זמן מה. בקשו קישור חדש.</p>
+      </details>
+    </div><button class="btn alt" type="button" data-act="restart">מההתחלה</button></div></article></div><nav class="nav" id="nav"><button class="btn alt" id="back" type="button">חזרה</button><button class="btn main" id="next" type="button">הבא</button></nav></main>
+<script>
+(function () {
+  var L = {"lang_tpl_kicker": "חלק {p} · שלב {n} מתוך {t}", "kicker_gate": "חלק {p}", "where": "חלק {x} מתוך {n}", "start": "בואו נתחיל", "done": "הבא", "back": "חזרה", "restart": "מההתחלה", "yes": "יש לי טלפון Samsung", "no": "אין לי, מדלגים על החלק הזה", "allset": "הכול מוכן", "allset_sub": "אפשר לחזור לדף הזה בכל זמן. אלה הפתרונות המהירים אם משהו משתבש.", "plan": "<ol class=\"plan\"><li><b>מתקינים את האפליקציה</b><span>6 שלבים</span></li><li><b>טלפוני Samsung: הגדרה אחת</b><span>2 שלבים, רק אם יש לכם Samsung</span></li><li><b>פותחים חשבון ושולחים סרטון</b><span>5 שלבים</span></li></ol>", "copied": "הקישור הועתק. הדביקו אותו בהודעה לעצמכם ופתחו אותו בטלפון.", "selected": "הקישור מסומן. לחצו עליו לחיצה ארוכה ובחרו העתקה.", "progress": "התקדמות"};
+  var KEY = 'apex-guide-he-v3';
+  var stages = [].slice.call(document.querySelectorAll('.stage'));
+  var fill = document.getElementById('fill');
+  var track = document.getElementById('track');
+  var back = document.getElementById('back');
+  var next = document.getElementById('next');
+  var nav = document.getElementById('nav');
+  var restart = document.getElementById('restart');
+  var cur = 0, samsung = null;
+
+  function isActive(s) { return !(s.hasAttribute('data-optional') && samsung === false); }
+  function active() { return stages.filter(isActive); }
+
+  function save() { try { localStorage.setItem(KEY, JSON.stringify({ i: cur, s: samsung })); } catch (e) {} }
+  function load() {
+    var h = /^#s(\d+)$/.exec(location.hash || '');
+    if (h && +h[1] < stages.length) return { i: +h[1], s: null };
+    try { var v = JSON.parse(localStorage.getItem(KEY) || 'null'); if (v && v.i >= 0 && v.i < stages.length) return v; } catch (e) {}
+    return null;
+  }
+
+  function show(i, noScroll) {
+    cur = i;
+    var st = stages[i], act = active(), pos = act.indexOf(st);
+    var kind = st.getAttribute('data-kind');
+    stages.forEach(function (s) { s.classList.toggle('on', s === st); });
+
+    var pct = kind === 'finish' ? 100 : Math.round(pos / (act.length - 1) * 100);
+    fill.style.width = pct + '%';
+    track.setAttribute('aria-valuenow', pct);
+
+    back.hidden = (pos === 0);
+    next.hidden = (kind === 'gate' || kind === 'finish');
+    nav.hidden = (kind === 'finish');
+    next.textContent = kind === 'start' ? L.start : L.done;
+    restart.hidden = (kind === 'start');
+
+    var hd = st.querySelector('h2, h3');
+    if (hd) { hd.setAttribute('tabindex', '-1'); try { hd.focus({ preventScroll: true }); } catch (e) {} }
+    if (!noScroll) { try { window.scrollTo(0, 0); } catch (e) {} }
+    save();
+  }
+  function go(delta) {
+    var act = active(), pos = act.indexOf(stages[cur]) + delta;
+    if (pos >= 0 && pos < act.length) show(stages.indexOf(act[pos]));
+  }
+
+  next.addEventListener('click', function () { go(1); });
+  back.addEventListener('click', function () { go(-1); });
+  restart.addEventListener('click', function () { samsung = null; show(0); });
+  stages.forEach(function (s) {
+    [].slice.call(s.querySelectorAll('[data-act]')).forEach(function (b) {
+      b.addEventListener('click', function () {
+        var a = b.getAttribute('data-act');
+        if (a === 'yes') samsung = true;
+        if (a === 'no') samsung = false;
+        if (a === 'restart') { samsung = null; show(0); return; }
+        go(1);
+      });
+    });
+  });
+
+  var start = load();
+  if (start) { samsung = start.s; var idx = start.i; if (stages[idx] && stages[idx].getAttribute('data-kind') === 'finish') idx = 0; show(idx, true); }
+  else show(0, true);
+
+  var btn = document.getElementById('copy'), msg = document.getElementById('copied'), link = document.getElementById('link');
+  if (btn && msg && link) {
+    var original = msg.textContent;
+    function select() { try { var r = document.createRange(); r.selectNodeContents(link); var s = window.getSelection(); s.removeAllRanges(); s.addRange(r); } catch (e) {} }
+    btn.addEventListener('click', function () {
+      var text = link.textContent.trim();
+      var done = function () { msg.textContent = L.copied; };
+      var fail = function () { select(); msg.textContent = L.selected; };
+      try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, fail); else fail(); } catch (e) { fail(); }
+      setTimeout(function () { msg.textContent = original; }, 6000);
+    });
+  }
+})();
+</script>
+</body>
+</html>
