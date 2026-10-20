@@ -209,6 +209,11 @@ footer { color: var(--muted); font-size: .9rem; }
 .dict td:nth-child(2) { direction: ltr; text-align: left; }
 .dict th:nth-child(2) { text-align: left; }
 
+.file { border: 1px solid #CFD8DC; border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.file b { font-size: 12px; }
+.file span { color: #607D8B; font-size: 9.5px; }
+.prog { height: 4px; border-radius: 2px; background: #E0E6E9; overflow: hidden; }
+.prog i { display: block; width: 62%; height: 100%; background: #00639B; }
 /* ---- one stage at a time ---- */
 [hidden] { display: none !important; }
 h2:focus, h3:focus { outline: none; }
@@ -251,9 +256,9 @@ main { gap: 18px; }
     </ul>
     <div class="linkcard">
       <b>קישור ההתקנה שלכם</b>
-      <code id="link">https://expo.dev/accounts/danzlotnikov/projects/apex-athlete-performance/builds/27f6d8e0-27e7-460a-9131-9d278bc2f3d2</code>
+      <code id="link">https://expo.dev/artifacts/eas/SHvldnPePzeEoD2VP-vTYjI9dFITOV34ziURKfKqqz0.apk</code>
       <div class="row">
-        <a class="btn main" id="open" href="https://expo.dev/accounts/danzlotnikov/projects/apex-athlete-performance/builds/27f6d8e0-27e7-460a-9131-9d278bc2f3d2">פתחו את הקישור</a>
+        <a class="btn main" id="open" href="https://expo.dev/artifacts/eas/SHvldnPePzeEoD2VP-vTYjI9dFITOV34ziURKfKqqz0.apk">פתחו את הקישור</a>
         <button class="btn alt" id="copy" type="button">העתיקו את הקישור</button>
       </div>
       <p class="small" id="copied" aria-live="polite">עושים את זה בטלפון עצמו, לא במחשב. טיפ: העתיקו את הקישור כאן, שלחו אותו לעצמכם בהודעה ופתחו אותו בטלפון.</p>
@@ -278,17 +283,13 @@ main { gap: 18px; }
     
   </div></article>
 <article class="stage"><div class="stagebody"><div class="lead"><h2>חלק 1. מתקינים את האפליקציה</h2><p class="intro">APeX עדיין לא נמצאת בחנות Play, ולכן הטלפון מבקש כמה אישורים נוספים.</p></div>
-        <h3>פותחים את הקישור ולוחצים על Install</h3>
-        <p>פתחו את קישור ההתקנה בטלפון. תראו דף על האפליקציה. לחצו על הכפתור השחור <b class="en">Install</b>. קובץ האפליקציה של APeX מתחיל לרדת.</p>
+        <h3>פותחים את הקישור</h3>
+        <p>פתחו את קישור ההתקנה בטלפון. קובץ האפליקציה של APeX מתחיל לרדת מעצמו.</p>
         <div class="phones">
           <figure class="phone"><div class="frame"><div class="scr">
-            <div class="url">expo.dev/accounts/danzlotnikov/…</div>
-            <div class="page">
-              <h5>APeX</h5>
-              <div class="meta">Android · version 1.0.0</div>
-              <div class="bigbtn hit">Install</div>
-            </div>
-          </div></div><figcaption>הקישור נפתח בדפדפן.</figcaption></figure>
+            <div class="url">expo.dev/artifacts/eas/…</div>
+            <div class="page"><div class="file"><b>APeX.apk</b><span>Downloading…</span><div class="prog"><i></i></div></div></div>
+          </div></div><figcaption>ההורדה מתחילה בדפדפן.</figcaption></figure>
         </div></div></article>
 <article class="stage"><div class="stagebody">
         <h3>אם הטלפון שואל אם לשמור את הקובץ, מאשרים</h3>
@@ -307,8 +308,8 @@ main { gap: 18px; }
         <p>כשההורדה מסתיימת, מופיעה הודעה בתחתית המסך. לחצו על <b>פתיחה</b>. אם היא נעלמה, משכו את סרגל ההתראות מלמעלה ולחצו על ההורדה שהסתיימה.</p>
         <div class="phones">
           <figure class="phone"><div class="frame"><div class="scr">
-            <div class="url">expo.dev/accounts/danzlotnikov/…</div>
-            <div class="page"><h5>APeX</h5><div class="meta">Android · version 1.0.0</div><div class="bigbtn">Install</div></div>
+            <div class="url">expo.dev/artifacts/eas/…</div>
+            <div class="page"><div class="file"><b>APeX.apk</b><span>Downloaded</span><div class="prog"><i></i></div></div></div>
             <div class="snack rtl"><span>ההורדה הושלמה</span><b class="hit">פתיחה</b></div>
           </div></div><figcaption>ההודעה בתחתית המסך.</figcaption></figure>
         </div></div></article>
