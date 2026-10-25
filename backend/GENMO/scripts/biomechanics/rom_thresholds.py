@@ -408,38 +408,60 @@ register_rom(ExerciseRomProfile(
 # Same two checks as tennis_stroke, scored separately per stroke type (exercises/stroke_type.py
 # decides which is which). Swing range is measured on the arm that holds the racket (sides="racket")
 # so it's right for left-handers and for two-handed backhands.
-# Forehand keeps tennis_stroke's targets: they were calibrated on forehands (2026-10-20).
-# Backhand targets (2026-10-25) are set relative to the forehand on the same players, so a backhand
-# swung as fully as the player's forehand scores about the same. Measured with this pipeline on the
-# THETIS dataset (Gourgari et al. 2013; 55 players, beginners and experienced, filmed from the front
-# shadow-swinging without a ball), flat/topspin strokes, median racket-arm swing: forehand 47.2deg
-# (n=91), one-handed backhand 62.0deg (n=45, x1.31), two-handed backhand 31.6deg (n=39, x0.67) ->
-# 66.5 x 1.31 = 87 and 66.5 x 0.67 = 44.5. Knee bend was about the same in all three (forehand
-# 29.1deg, one-handed 26.4, two-handed 27.7), so backhands keep the forehand's knee target.
+#
+# Swing range here is the arm's FULL TRAVEL over the stroke (window_range: max - min of the shoulder
+# angle between the stroke's start and end), not tennis_stroke's start -> follow-through difference
+# (2026-10-25). A stroke's "start" is where the hand speeds up, which for a big looping forehand is
+# already partway through the takeback: Mia's saved video (job 9694967a) lifts the racket arm from
+# ~36deg at rest to ~120deg behind her head and swings through, yet the two-point measure read only
+# 35deg (53%) because the stroke "started" at 82deg. Full travel reads 84deg / 76deg. On ordinary
+# swings the two agree within ~10-30% (real clips: median 42.8 -> 53.1deg).
+#
+# Targets, re-anchored on the full-travel measure to keep the two clips the user rated "~85%" at 85%:
+# the 2026-10-20 coach video (job d9280feb, strokes 60.8/70.8/74.6deg, mean 68.7) -> 80deg reads it 86%,
+# and the 2026-10-18 clip (job 98d53db2, 68.5/66.7deg) reads 84%. Mia's looping forehand (84/76deg) reads
+# 100%. Knee bend is unchanged from tennis_stroke (50 -> 76.5, 2026-10-20).
+#
+# Backhand targets (2026-10-25) are set relative to the forehand on the same players, so a backhand swung
+# as fully as the player's forehand scores about the same. Measured with this pipeline on the THETIS
+# dataset (Gourgari et al. 2013; 55 players, beginners and experienced, filmed from the front
+# shadow-swinging without a ball), flat/topspin strokes, median racket-arm travel: forehand 57.3deg
+# (n=80), one-handed backhand 70.6deg (n=41, x1.23), two-handed backhand 43.3deg (n=39, x0.75) ->
+# 80 x 1.23 = 98.5 and 80 x 0.75 = 60.4. Knee bend was about the same in all three (forehand 29.1deg,
+# one-handed 26.4, two-handed 27.7), so backhands keep the forehand's knee target.
+FOREHAND_SWING_TARGET_DEG = 80.0
+BACKHAND_SWING_TARGET_DEG = 98.5             # one-handed
+BACKHAND_SWING_TARGET_TWO_HANDED_DEG = 60.4  # two-handed
 _TENNIS_STROKE_CHECKS = {c.id: c for c in ROM_PROFILES["tennis_stroke"].checks}
+_FULL_TRAVEL_SWING = dataclasses.replace(
+    _TENNIS_STROKE_CHECKS["swing_rom"], sides="racket", measure="window_range", end_selector="end",
+    description="How far the racket arm travels via shoulder rotation over the whole stroke, from the "
+                "lowest to the highest point of its swing, takeback included.",
+)
 
 register_rom(ExerciseRomProfile(
     exercise_key="tennis_forehand",
     checks=(
-        dataclasses.replace(_TENNIS_STROKE_CHECKS["swing_rom"], sides="racket"),
+        dataclasses.replace(
+            _FULL_TRAVEL_SWING, target_rom_deg=FOREHAND_SWING_TARGET_DEG,
+            research=("Full-travel measure, anchored on the stroke the user rated ~85%: see the note above "
+                      "this registration (target 80deg). Shoulder angle (elbow-shoulder-hip) of the "
+                      "racket arm, from the pipeline's SMPL pose.",),
+        ),
         _TENNIS_STROKE_CHECKS["knee_bend"],
     ),
 ))
 
-BACKHAND_SWING_TARGET_DEG = 87.0             # one-handed
-BACKHAND_SWING_TARGET_TWO_HANDED_DEG = 44.5  # two-handed
 register_rom(ExerciseRomProfile(
     exercise_key="tennis_backhand",
     checks=(
         dataclasses.replace(
-            _TENNIS_STROKE_CHECKS["swing_rom"], sides="racket", target_rom_deg=BACKHAND_SWING_TARGET_DEG,
+            _FULL_TRAVEL_SWING, target_rom_deg=BACKHAND_SWING_TARGET_DEG,
             target_rom_deg_two_handed=BACKHAND_SWING_TARGET_TWO_HANDED_DEG,
             research=("Calibrated relative to the forehand target on the same players (THETIS dataset, "
-                      "Gourgari et al. 2013): one-handed backhands swing the racket arm about 1.3x as far "
-                      "as forehands, two-handed about 0.7x, so the targets are 87deg and 44.5deg — a "
+                      "Gourgari et al. 2013): one-handed backhands travel the racket arm about 1.23x as far "
+                      "as forehands, two-handed about 0.75x, so the targets are 98.5deg and 60.4deg — a "
                       "backhand swung as fully as the player's forehand reads about the same.",),
-            description="How far the racket arm swings via shoulder rotation, from the backswing "
-                         "across the body to the finish on the racket side.",
         ),
         _TENNIS_STROKE_CHECKS["knee_bend"],
     ),
