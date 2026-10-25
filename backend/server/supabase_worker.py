@@ -58,6 +58,7 @@ per-job or per-cycle:
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import shutil
 import sys
@@ -71,6 +72,42 @@ import pipeline
 
 POLL_SECONDS = 3.0
 JOBS_PER_POLL = 5
+
+# A CUDA context that has gone bad (seen after a GPU reset or sleep: "CUDA
+# error: unknown error" the first time a model touches the GPU) stays bad for
+# the life of the process, so every later job would fail too while the models
+# in memory look fine. The GPU itself is usually healthy again, so the fix is
+# a fresh process: exit, and run_worker_continuous.sh starts a new worker that
+# reclaims the job (it is left in 'processing', see reclaim_stale_processing_jobs).
+# Each job gets this restart at most GPU_RESTARTS_PER_JOB times, so a video that
+# deterministically trips a CUDA error ends up marked failed instead of looping.
+GPU_ERROR_MARKERS = ("CUDA error", "cudaError", "CUBLAS_STATUS", "CUDNN_STATUS", "device-side assert", "illegal memory access")
+GPU_RESTARTS_PER_JOB = 2
+GPU_RESTART_FILE = Path(__file__).with_name(".gpu_restarts.json")
+EXIT_GPU_CONTEXT_LOST = 75
+
+
+class GpuContextLost(Exception):
+    pass
+
+
+def _is_gpu_failure(exc: BaseException) -> bool:
+    text = f"{type(exc).__name__}: {exc}"
+    return any(marker in text for marker in GPU_ERROR_MARKERS)
+
+
+def _count_gpu_restart(job_id: str) -> int:
+    """Records one more GPU-triggered restart for this job and returns the new count."""
+    try:
+        counts = json.loads(GPU_RESTART_FILE.read_text())
+    except Exception:  # noqa: BLE001 - missing or unreadable file just means no history
+        counts = {}
+    counts[job_id] = counts.get(job_id, 0) + 1
+    try:
+        GPU_RESTART_FILE.write_text(json.dumps(counts))
+    except Exception:  # noqa: BLE001
+        pass
+    return counts[job_id]
 
 # A real (even near-instant) mp4 recording still has header/moov data — an
 # empty or near-empty download means the upload itself was bad (confirmed on
@@ -155,11 +192,12 @@ def handle_job(models: "pipeline.worker.Models", job: dict) -> None:
             return
 
         sport_key = supabase_client.get_effective_sport(athlete_id)
+        handedness = supabase_client.get_handedness(athlete_id)
         try:
             result = pipeline.process_video_two_panel(
                 models, str(local_video), tmp_dir / "out",
                 cancel_check=lambda: supabase_client.is_cancel_requested(job_id),
-                sport_key=sport_key,
+                sport_key=sport_key, handedness=handedness,
             )
         except pipeline.worker.PipelineCancelled:
             print(f"[supabase-worker] {job_id}: cancelled during preprocessing, skipping inference")
@@ -168,6 +206,9 @@ def handle_job(models: "pipeline.worker.Models", job: dict) -> None:
             return
         except Exception as e:  # noqa: BLE001
             traceback.print_exc()
+            if _is_gpu_failure(e) and _count_gpu_restart(job_id) <= GPU_RESTARTS_PER_JOB:
+                print(f"[supabase-worker] {job_id}: GPU context unusable, restarting the worker; the job stays queued for the new process")
+                raise GpuContextLost() from e
             supabase_client.mark_failed(job_id, "Processing this video failed. Please try recording again.")
             return
 
@@ -250,6 +291,8 @@ def main(drain_on_idle: bool = False, idle_sleep_seconds: float = POLL_SECONDS) 
                 continue  # claimed/removed by something else since fetch_queued_jobs
             try:
                 handle_job(models, job)
+            except GpuContextLost:
+                sys.exit(EXIT_GPU_CONTEXT_LOST)
             except Exception:  # noqa: BLE001
                 traceback.print_exc()
                 try:

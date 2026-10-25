@@ -29,6 +29,13 @@ fi
     source <(tr -d '\r' < .env)
     set +a
   fi
-  python -u supabase_worker.py
-  echo "=== $(date -Iseconds) continuous worker exited ($?) ==="
+  # Keep the worker alive: it exits on purpose when its GPU context goes bad
+  # (supabase_worker.py, exit 75) and a fresh process fixes that. The pause
+  # stops a worker that dies at startup from spinning.
+  while true; do
+    code=0
+    python -u supabase_worker.py || code=$?
+    echo "=== $(date -Iseconds) continuous worker exited ($code), restarting in 10s ==="
+    sleep 10
+  done
 } >> "$LOG_FILE" 2>&1

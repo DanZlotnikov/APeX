@@ -33,3 +33,4 @@ mobile/google-play-service-account.json
 # this on every build); local ones are only for emulator testing.
 mobile/android/
 mobile/ios/
+backend/server/.gpu_restarts.json
