@@ -12,6 +12,7 @@ export interface DbProfile {
   stats_reset_at: string | null;
   main_sport_key: string;
   sport_override_key: string | null;
+  handedness: 'left' | 'right' | null; // racket hand; null = not chosen yet
   created_at: string;
 }
 

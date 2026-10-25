@@ -74,6 +74,7 @@ export default function BiomechanicsReport({ analysis, fallbackExerciseType, rep
   const [infoFor, setInfoFor] = useState<InfoTarget | null>(null);
 
   const readinessPct = readinessPctFromAnalysis(analysis);
+  const notes = strokeNotes(analysis, repWindows);
 
   return (
     <View>
@@ -81,6 +82,10 @@ export default function BiomechanicsReport({ analysis, fallbackExerciseType, rep
         <Text style={styles.exercise}>{exerciseLabel(exerciseType)}</Text>
         <Text style={styles.reps}>{repCount} rep{repCount === 1 ? '' : 's'}</Text>
       </View>
+      {notes.grip && <Text style={styles.grip}>{notes.grip}</Text>}
+      {notes.messages.map((m) => (
+        <Text key={m} style={styles.strokeNote}>{m}</Text>
+      ))}
 
       {readinessPct != null ? (
         <>
@@ -174,6 +179,26 @@ export default function BiomechanicsReport({ analysis, fallbackExerciseType, rep
   );
 }
 
+// Tennis forehand/backhand: the grip for backhands, and why some strokes in the video weren't scored.
+function strokeNotes(analysis: VideoJobAnalysis | null, reps: { two_handed?: boolean }[]) {
+  const messages: string[] = [];
+  let grip: string | null = null;
+  if (analysis?.exercise === 'tennis_backhand' && reps.length > 0 && reps.every((r) => r.two_handed != null)) {
+    const two = reps.filter((r) => r.two_handed).length;
+    grip = two === reps.length ? 'Two-handed' : two === 0 ? 'One-handed' : 'One- and two-handed';
+  }
+  for (const [key, n] of Object.entries(analysis?.excluded_strokes ?? {})) {
+    if (n > 0) {
+      const name = exerciseLabel(key).replace(/^Tennis /, '').toLowerCase();
+      messages.push(`${n} ${name}${n === 1 ? '' : 's'} in this video ${n === 1 ? "wasn't" : "weren't"} scored. Record forehands and backhands in separate videos.`);
+    }
+  }
+  if (analysis?.handedness_mismatch) {
+    messages.push('The racket looked like it was in your other hand. Check Playing hand in Settings.');
+  }
+  return { grip, messages };
+}
+
 function JointRow({
   check, pctValue, color, onPressRow, onPressInfo,
 }: {
@@ -220,6 +245,8 @@ const styles = StyleSheet.create({
   headRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
   exercise: { color: colors.text, fontSize: 18, fontWeight: '800' },
   reps: { color: colors.muted, fontSize: 13, fontWeight: '600' },
+  grip: { color: colors.muted, fontSize: 12, fontWeight: '700', marginTop: 2 },
+  strokeNote: { color: colors.muted, fontSize: 12, lineHeight: 17, marginTop: spacing.sm },
 
   noData: { alignItems: 'center', paddingVertical: spacing.lg },
   noDataText: { color: colors.muted, fontSize: 13 },

@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Text, TextInput } from '../../components/ui/Text';
-import { deleteAccount } from '../../api/auth';
-import { getEffectiveSport, updateMainSport } from '../../api/profile';
+import { deleteAccount, joinTeamWithCode, lookupTeamByCode } from '../../api/auth';
+import { getEffectiveSport, getHandedness, Handedness, updateHandedness, updateMainSport } from '../../api/profile';
+import HandPicker from '../../components/HandPicker';
 import SportPicker from '../../components/SportPicker';
 import { useSettings } from '../../state/SettingsContext';
 import { ACCENTS, AccentKey, colors, FontScaleKey, spacing } from '../../theme';
@@ -22,9 +23,11 @@ interface Props {
   onLogout: () => void;
   userId?: string;
   teamId?: string;
+  /** Called after the athlete joins a team here, so the app switches to team mode right away. */
+  onJoinedTeam?: (teamId: string) => void;
 }
 
-export default function SettingsScreen({ onLogout, userId, teamId }: Props) {
+export default function SettingsScreen({ onLogout, userId, teamId, onJoinedTeam }: Props) {
   const { settings, profile, update, updateProfile, accentColor, accentOn, fontScale } = useSettings();
 
   const [name, setName] = useState(profile.name);
@@ -41,6 +44,28 @@ export default function SettingsScreen({ onLogout, userId, teamId }: Props) {
   const [effectiveSport, setEffectiveSport] = useState<string | null>(null);
   const [mySport, setMySport] = useState<string | null>(null);
   const [sportSaving, setSportSaving] = useState(false);
+  const [hand, setHand] = useState<Handedness | null>(null);
+  const [handSaving, setHandSaving] = useState(false);
+
+  useEffect(() => {
+    if (!userId) return;
+    getHandedness(userId).then(setHand).catch(() => setHand(null));
+  }, [userId]);
+
+  async function handlePickHand(next: Handedness) {
+    if (!userId || handSaving || next === hand) return;
+    setHandSaving(true);
+    const prev = hand;
+    setHand(next); // optimistic, same as the sport picker
+    try {
+      await updateHandedness(next);
+    } catch (e) {
+      setHand(prev);
+      Alert.alert('Could not update', 'Something went wrong changing your playing hand. Please try again.');
+    } finally {
+      setHandSaving(false);
+    }
+  }
 
   useEffect(() => {
     if (!userId) return;
@@ -63,6 +88,45 @@ export default function SettingsScreen({ onLogout, userId, teamId }: Props) {
       Alert.alert('Could not update', 'Something went wrong changing your main sport. Please try again.');
     } finally {
       setSportSaving(false);
+    }
+  }
+
+  // ── Join a team (individual athletes only) ──
+  const [inviteCode, setInviteCode] = useState('');
+  const [teamPreview, setTeamPreview] = useState<string | null>(null); // null = not looked up; '' = no match
+  const [joining, setJoining] = useState(false);
+  const lookupTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function handleCodeChange(code: string) {
+    setInviteCode(code);
+    setTeamPreview(null);
+    if (lookupTimer.current) clearTimeout(lookupTimer.current);
+    if (code.trim().length >= 4) {
+      lookupTimer.current = setTimeout(async () => {
+        const team = await lookupTeamByCode(code);
+        setTeamPreview(team ? team.teamName : '');
+      }, 500);
+    }
+  }
+
+  async function handleJoinTeam() {
+    if (joining || !teamPreview) return;
+    const confirmed = await confirmAsync(
+      `Join ${teamPreview}?`,
+      "Your manager will be able to see all your sessions and videos, including ones from before you " +
+        "joined, and will set your main sport and routine. You can't leave a team from the app.",
+      { confirmLabel: 'Join' },
+    );
+    if (!confirmed) return;
+    setJoining(true);
+    try {
+      const { teamId: joinedId, teamName } = await joinTeamWithCode(inviteCode);
+      Alert.alert('Joined', `You're now on ${teamName}. Your manager has been notified.`);
+      onJoinedTeam?.(joinedId);
+    } catch (e: any) {
+      Alert.alert('Could not join', e?.message ?? 'Something went wrong. Please try again.');
+    } finally {
+      setJoining(false);
     }
   }
 
@@ -149,6 +213,58 @@ export default function SettingsScreen({ onLogout, userId, teamId }: Props) {
               <SportPicker value={mySport} onChange={handlePickSport} accentColor={accentColor} accentOn={accentOn} />
             </View>
           )}
+        </View>
+
+        {/* ── Team (individual athletes) ── */}
+        {!teamId && (
+          <>
+            <Section title="TEAM" fontScale={fontScale} />
+            <View style={styles.card}>
+              <View style={styles.sportPickerWrap}>
+                <Text style={styles.teamIntro}>
+                  You're training on your own. To join your coach's team, enter the invite code they gave you.
+                </Text>
+                <TextInput
+                  value={inviteCode}
+                  onChangeText={handleCodeChange}
+                  placeholder="Invite code"
+                  placeholderTextColor={colors.muted}
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                  maxLength={8}
+                  selectionColor={accentColor}
+                  style={[styles.codeInput, teamPreview === '' && styles.codeInputError]}
+                />
+                {teamPreview === null && inviteCode.trim().length >= 4 && <Text style={styles.handNote}>Checking…</Text>}
+                {!!teamPreview && <Text style={[styles.codeFound, { color: accentColor }]}>✓  {teamPreview}</Text>}
+                {teamPreview === '' && <Text style={styles.codeMissing}>Code not found</Text>}
+                <Pressable
+                  onPress={() => void handleJoinTeam()}
+                  disabled={!teamPreview || joining}
+                  style={({ pressed }) => [
+                    styles.joinBtn, { backgroundColor: accentColor },
+                    (!teamPreview || joining) && styles.joinBtnDisabled,
+                    pressed && !!teamPreview && { opacity: 0.8 },
+                  ]}
+                >
+                  {joining
+                    ? <ActivityIndicator color={accentOn} size="small" />
+                    : <Text style={[styles.joinBtnText, { color: accentOn }]}>JOIN TEAM</Text>}
+                </Pressable>
+              </View>
+            </View>
+          </>
+        )}
+
+        {/* ── Playing hand ── */}
+        <Section title="PLAYING HAND" fontScale={fontScale} />
+        <View style={styles.card}>
+          <View style={styles.sportPickerWrap}>
+            <HandPicker value={hand} onChange={handlePickHand} accentColor={accentColor} accentOn={accentOn} />
+            <Text style={styles.handNote}>
+              {hand ? 'Applies to videos you record from now on.' : 'Not set yet. Choose the hand that holds the racket.'}
+            </Text>
+          </View>
         </View>
 
         {/* ── Appearance ── */}
@@ -320,6 +436,20 @@ const styles = StyleSheet.create({
   sportReadOnly: { paddingVertical: spacing.sm },
   sportReadOnlyText: { color: colors.text, fontSize: 16, fontWeight: '700' },
   sportReadOnlyNote: { color: colors.muted, fontSize: 11, fontWeight: '500', marginTop: 2 },
+  handNote: { color: colors.muted, fontSize: 11, fontWeight: '500', marginTop: spacing.sm },
+
+  teamIntro: { color: colors.muted, fontSize: 12, lineHeight: 17, marginBottom: spacing.sm },
+  codeInput: {
+    color: colors.text, fontSize: 16, fontWeight: '700', letterSpacing: 2,
+    backgroundColor: colors.bg, borderRadius: 10, borderWidth: 1, borderColor: colors.border,
+    paddingHorizontal: spacing.md, paddingVertical: 10,
+  },
+  codeInputError: { borderColor: colors.danger },
+  codeFound: { fontSize: 12, fontWeight: '700', marginTop: spacing.sm },
+  codeMissing: { color: colors.danger, fontSize: 12, fontWeight: '700', marginTop: spacing.sm },
+  joinBtn: { borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginTop: spacing.md },
+  joinBtnDisabled: { opacity: 0.4 },
+  joinBtnText: { fontSize: 13, fontWeight: '900', letterSpacing: 1.5 },
 
   swatches: { flexDirection: 'row', gap: spacing.sm, paddingBottom: spacing.sm },
   swatch: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'transparent' },

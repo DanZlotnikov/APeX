@@ -113,6 +113,12 @@ export default function ManagerDashboard({ teamId, onAthleteSelect }: Props) {
           { event: '*', schema: 'public', table: 'athlete_routines' },
           () => { void loadAthletes(); },
         )
+        // An athlete joining the team (migration 031) posts a notification — show them right away.
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'notifications' },
+          () => { void loadAthletes(); },
+        )
         .subscribe();
     });
 

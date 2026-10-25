@@ -9,6 +9,7 @@ import { decode as decodeBase64 } from 'base64-arraybuffer';
 import * as FileSystem from 'expo-file-system/legacy';
 import { Platform } from 'react-native';
 import { deleteVideo, readJSON, resolveVideo, saveVideo, writeJSON } from '../utils/storage';
+import { deleteTemporaryVideo, prepareVideoForUpload } from '../utils/videoCompression';
 import { supabase } from './supabase';
 
 export type VideoJobStatus = 'queued' | 'processing' | 'completed' | 'failed';
@@ -78,8 +79,9 @@ export interface JointRomCheck {
   research: string[];
   reps: JointRomCheckRep[];
   // 'max': a one-sided movement (a racket arm) — achieved_deg is the side that moved more, so a
-  // Left/Right split is meaningless. Absent on analyses saved before this field existed.
-  sides?: 'both' | 'max';
+  // Left/Right split is meaningless. 'racket': same, measured on the arm holding the racket.
+  // Absent on analyses saved before this field existed.
+  sides?: 'both' | 'max' | 'racket';
 }
 
 export interface RomReport {
@@ -137,6 +139,9 @@ export interface RepWindow {
   start_sec: number;
   end_sec: number;
   duration_sec: number;
+  // Tennis forehand/backhand only (stroke_type.py): which arm held the racket and whether both did.
+  racket_hand?: 'left' | 'right';
+  two_handed?: boolean;
 }
 
 export interface VideoJobAnalysis {
@@ -152,6 +157,11 @@ export interface VideoJobAnalysis {
   // run_biomechanical_analysis. Optional: absent on any session saved
   // before this field existed.
   reps?: RepWindow[];
+  // Tennis forehand/backhand only. Strokes of the other type in the same video, by exercise key —
+  // left out of this analysis rather than mixed in (a video is scored as one type).
+  excluded_strokes?: Record<string, number>;
+  // The hand that swung wasn't the athlete's Playing hand setting (wrong setting, or a mirrored video).
+  handedness_mismatch?: boolean;
 }
 
 export interface VideoJob {
@@ -311,8 +321,26 @@ export async function uploadAndQueueVideoJob(params: {
   durationSec: number;
   jobId?: string;
 }): Promise<VideoJob> {
-  const { athleteId, localUri, durationSec } = params;
+  const { athleteId, durationSec } = params;
   const jobId = params.jobId ?? generateJobId();
+
+  // Whatever the athlete filmed or picked, what's uploaded has to fit the server's file-size limit:
+  // big clips are compressed on the phone first (see utils/videoCompression.ts).
+  const prepared = await prepareVideoForUpload(params.localUri, durationSec);
+  try {
+    return await uploadPreparedVideo({ athleteId, jobId, durationSec, uri: prepared.uri });
+  } finally {
+    await deleteTemporaryVideo(prepared);
+  }
+}
+
+async function uploadPreparedVideo(params: {
+  athleteId: string;
+  jobId: string;
+  durationSec: number;
+  uri: string;
+}): Promise<VideoJob> {
+  const { athleteId, jobId, durationSec, uri: localUri } = params;
   const ext = (localUri.split('.').pop()?.split('?')[0] || 'mp4').toLowerCase();
   const contentType = VIDEO_MIME_BY_EXT[ext] ?? 'video/mp4';
   const path = `raw/${athleteId}/${jobId}.${ext}`;

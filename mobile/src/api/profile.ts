@@ -39,6 +39,23 @@ export async function updateMainSport(sportKey: string): Promise<void> {
   if (error) throw error;
 }
 
+// Racket hand (profiles.handedness, migration 030). Unlike the main sport it's the athlete's own
+// to set even on a team. null = never chosen (accounts from before it existed).
+export type Handedness = 'left' | 'right';
+
+export async function getHandedness(userId: string): Promise<Handedness | null> {
+  const { data, error } = await supabase.from('profiles').select('handedness').eq('id', userId).single();
+  if (error) throw error;
+  return (data?.handedness as Handedness | null) ?? null;
+}
+
+export async function updateHandedness(hand: Handedness): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not signed in.');
+  const { error } = await supabase.from('profiles').update({ handedness: hand }).eq('id', user.id);
+  if (error) throw error;
+}
+
 // Accounts for team inheritance / per-athlete override — the one place this
 // resolution logic lives (mirrored server-side in effective_sport() for the
 // Python pipeline, so both always agree).

@@ -56,11 +56,13 @@ interface Props {
   onRecord: () => void;
   onUpload: () => void;
   onLogout: () => void;
+  /** An individual athlete joined a team from Settings. */
+  onJoinedTeam?: (teamId: string) => void;
   /** Bumped by App.tsx when a "video ready" notification is tapped — jumps to Performance > Processing. */
   jumpToProcessingSignal?: number;
 }
 
-export default function DashboardScreen({ userId, teamId, onRecord, onUpload, onLogout, jumpToProcessingSignal }: Props) {
+export default function DashboardScreen({ userId, teamId, onRecord, onUpload, onLogout, onJoinedTeam, jumpToProcessingSignal }: Props) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [performanceSub, setPerformanceSub] = useState<PerformanceSub>('history');
   const navRef = useNavigationContainerRef();
@@ -90,7 +92,7 @@ export default function DashboardScreen({ userId, teamId, onRecord, onUpload, on
         onBack={() => setSettingsOpen(false)}
       />
       <ProcessingBanner count={processingCount} onPress={goToProcessing} shineTrigger={processingIncreaseSignal} />
-      <UploadFailedBanner count={failedUploads.length} onDismiss={() => removeLocalUploadsByStatus('failed')} />
+      <UploadFailedBanner count={failedUploads.length} reason={failedUploads[failedUploads.length - 1]?.errorMessage} onDismiss={() => removeLocalUploadsByStatus('failed')} />
       <View style={styles.body}>
         <NavigationContainer ref={navRef} theme={navTheme}>
           <Tab.Navigator
@@ -118,7 +120,7 @@ export default function DashboardScreen({ userId, teamId, onRecord, onUpload, on
             underneath survives opening/closing it. */}
         {settingsOpen && (
           <View style={styles.settingsOverlay}>
-            <SettingsScreen onLogout={onLogout} userId={userId} teamId={teamId} />
+            <SettingsScreen onLogout={onLogout} userId={userId} teamId={teamId} onJoinedTeam={onJoinedTeam} />
           </View>
         )}
       </View>

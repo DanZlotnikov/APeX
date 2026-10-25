@@ -333,6 +333,7 @@ function AppInner() {
               onRecord={goToCamera}
               onUpload={() => void handleUpload()}
               onLogout={handleAthleteLogout}
+              onJoinedTeam={setTeamId}
               jumpToProcessingSignal={processingDeepLinkToken}
             />
           </FadeScreen>

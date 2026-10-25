@@ -15,7 +15,9 @@ import { Text, TextInput } from '../components/ui/Text';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { lookupTeamByCode, signUpAthlete, signUpManager } from '../api/auth';
 import { getProfile } from '../api/auth';
+import HandPicker from '../components/HandPicker';
 import SportPicker from '../components/SportPicker';
+import { Handedness } from '../api/profile';
 import { useSettings } from '../state/SettingsContext';
 import { ACCENTS, colors, spacing } from '../theme';
 
@@ -27,7 +29,7 @@ interface Props {
 }
 
 type Role = 'manager' | 'athlete';
-type Step = 'role' | 'sport' | 'form';
+type Step = 'role' | 'sport' | 'hand' | 'form';
 
 export default function SignUpScreen({ onSuccess, onBack }: Props) {
   const insets = useSafeAreaInsets();
@@ -41,6 +43,7 @@ export default function SignUpScreen({ onSuccess, onBack }: Props) {
   const [step,        setStep]        = useState<Step>('role');
   const [role,        setRole]        = useState<Role | null>(null);
   const [sportKey,    setSportKey]    = useState('general_fitness');
+  const [hand,        setHand]        = useState<Handedness | null>(null);
   const [name,        setName]        = useState('');
   const [teamName,    setTeamName]    = useState('');
   const [inviteCode,  setInviteCode]  = useState('');
@@ -101,7 +104,7 @@ export default function SignUpScreen({ onSuccess, onBack }: Props) {
         // athlete, no team." A code that IS entered still has to be valid
         // (checked inside signUpAthlete); a typo shouldn't silently fall
         // through to an individual signup.
-        user = await signUpAthlete(email.trim(), password, name.trim(), inviteCode.trim() || undefined, sportKey);
+        user = await signUpAthlete(email.trim(), password, name.trim(), inviteCode.trim() || undefined, sportKey, hand ?? undefined);
       }
 
       const profile = await getProfile(user.id);
@@ -181,7 +184,7 @@ export default function SignUpScreen({ onSuccess, onBack }: Props) {
               />
 
               <Pressable
-                onPress={() => setStep('form')}
+                onPress={() => setStep(role === 'athlete' ? 'hand' : 'form')}
                 style={({ pressed }) => [
                   styles.submitBtn,
                   { backgroundColor: role === 'manager' ? '#B794F6' : accentColor },
@@ -198,7 +201,36 @@ export default function SignUpScreen({ onSuccess, onBack }: Props) {
             </View>
           )}
 
-          {/* ── Step 3: Form ── */}
+          {/* ── Step 3 (athletes): Playing hand ── */}
+          {step === 'hand' && role === 'athlete' && (
+            <View style={styles.roleSection}>
+              <Text style={styles.rolePrompt}>Which hand do you play with?</Text>
+              <Text style={styles.sportSubtitle}>
+                The hand that holds the racket. It tells your forehand apart from your backhand.
+                You can change it later in Settings.
+              </Text>
+
+              <HandPicker value={hand} onChange={setHand} accentColor={accentColor} accentOn={accentOn} />
+
+              <Pressable
+                onPress={() => setStep('form')}
+                disabled={!hand}
+                style={({ pressed }) => [
+                  styles.submitBtn,
+                  { backgroundColor: accentColor },
+                  !hand && styles.submitBtnDisabled,
+                  pressed && hand && { opacity: 0.8 },
+                ]}
+              >
+                <Text style={[styles.submitBtnText, { color: accentOn }]}>CONTINUE</Text>
+              </Pressable>
+              <Pressable onPress={() => { setStep('sport'); setError(''); }} style={styles.sportBack}>
+                <Text style={styles.changeRole}>← Back</Text>
+              </Pressable>
+            </View>
+          )}
+
+          {/* ── Step 4: Form ── */}
           {step === 'form' && role && (
             <View style={styles.formSection}>
               {/* Role badge */}

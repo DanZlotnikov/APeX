@@ -39,7 +39,8 @@ export default function RepBreakdownModal({ visible, onClose, kind, check, reps 
   const rColor = otherColors[1];
 
   // One-sided metrics (a racket arm's swing) have no meaningful Left/Right split.
-  const showSides = !(kind === 'rom' && (check as JointRomCheck).sides === 'max');
+  const romSides = kind === 'rom' ? (check as JointRomCheck).sides : undefined;
+  const showSides = !(romSides === 'max' || romSides === 'racket');
 
   const series: TrendSeries[] = [];
   if (kind === 'balance') {

@@ -43,6 +43,7 @@ export async function signUpAthlete(
   fullName: string,
   inviteCode?: string,
   mainSportKey?: string,
+  handedness?: 'left' | 'right',
 ) {
   const code = inviteCode?.trim();
 
@@ -62,7 +63,28 @@ export async function signUpAthlete(
     : await supabase.rpc('create_individual_athlete', { p_full_name: fullName, p_main_sport_key: sportKey });
   if (joinErr) throw joinErr;
 
+  // A plain profile update rather than an RPC parameter, so the sign-up RPCs (and older app
+  // builds calling them) stay unchanged. Not fatal: the hand can be set later in Settings, and
+  // the pipeline works it out from the motion until then.
+  if (handedness) {
+    const { error: handErr } = await supabase.from('profiles').update({ handedness }).eq('id', data.user.id);
+    if (handErr) console.warn('[APeX] Could not save handedness at sign-up:', handErr);
+  }
+
   return data.user;
+}
+
+// An individual athlete joining a team after sign-up (migration 031's join_team_with_code): moves
+// them onto the team and notifies the manager. Throws with the server's message on a bad code.
+export async function joinTeamWithCode(code: string): Promise<{ teamId: string; teamName: string }> {
+  const { data, error } = await supabase.rpc('join_team_with_code', { p_invite_code: code.trim() });
+  if (error) {
+    throw new Error(error.message.includes('Invalid invite code')
+      ? 'Invalid invite code. Ask your manager for the correct code.'
+      : error.message);
+  }
+  const row = Array.isArray(data) ? data[0] : data;
+  return { teamId: row.team_id, teamName: row.team_name };
 }
 
 export async function lookupTeamByCode(
