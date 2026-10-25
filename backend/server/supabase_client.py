@@ -189,6 +189,28 @@ def get_effective_sport(athlete_id: str) -> str:
         return "general_fitness"
 
 
+def get_handedness(athlete_id: str) -> str | None:
+    """The athlete's racket hand, "left" or "right" (profiles.handedness, migration 030), or None if
+    they haven't set it — or on any error, which only means the pipeline works the racket hand out
+    from the motion instead (see exercises/stroke_type.py), so a DB hiccup never fails the job.
+    """
+    url, key = _config()
+    try:
+        resp = httpx.get(
+            f"{url}/rest/v1/profiles",
+            headers=_rest_headers(key),
+            params={"id": f"eq.{athlete_id}", "select": "handedness"},
+            timeout=15.0,
+        )
+        resp.raise_for_status()
+        rows = resp.json()
+        hand = rows[0].get("handedness") if rows else None
+        return hand if hand in ("left", "right") else None
+    except Exception as e:  # noqa: BLE001
+        print(f"[supabase-client] failed to fetch handedness for {athlete_id}, working it out from the motion: {e}")
+        return None
+
+
 def delete_job(job_id: str) -> None:
     """Used when a job is cancelled mid-processing (see is_cancel_requested)
     — the row is deleted outright rather than parked in some 'cancelled'

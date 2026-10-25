@@ -148,9 +148,13 @@ def compute_signals(joints: np.ndarray) -> dict:
     wrist_side = (wrist_rel * lateral[:, None, :]).sum(-1) / torso_len  # (L, 2)
     step = np.linalg.norm(np.diff(wrist_rel, axis=0, prepend=wrist_rel[:1]), axis=-1)  # (L, 2), per frame
     hand_speed = step.max(axis=1) / torso_len  # faster hand = the racket hand; torso lengths per frame
+    # Per hand, plus how far apart the hands are — what stroke_type.py tells forehand from backhand
+    # with: which hand swings, which way it crosses the body, and whether both hands hold the racket.
+    hands_gap = np.linalg.norm(joints[:, L_WRIST] - joints[:, R_WRIST], axis=-1) / torso_len
 
     return dict(
-        hand_speed=hand_speed, wrist_side_l=wrist_side[:, 0], wrist_side_r=wrist_side[:, 1],
+        hand_speed=hand_speed, hand_speed_l=step[:, 0] / torso_len, hand_speed_r=step[:, 1] / torso_len,
+        hands_gap=hands_gap, wrist_side_l=wrist_side[:, 0], wrist_side_r=wrist_side[:, 1],
         knee_angle=knee_angle, hip_angle=hip_angle, elbow_angle=elbow_angle,
         body_line_angle=body_line_angle, torso_lean=torso_lean,
         ankle_y=ankle_y, shoulder_y=shoulder_y, hip_y=hip_y, knee_y=knee_y, wrist_y=wrist_y,

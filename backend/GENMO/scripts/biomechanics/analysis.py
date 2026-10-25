@@ -36,7 +36,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from exercises import get_exercise_reps
+from exercises import EXERCISE_REGISTRY, get_exercise_reps
+from exercises.analyze import stroke_hand_mismatch
 
 from . import balance, fixation, rom
 
@@ -52,6 +53,7 @@ def run_biomechanical_analysis(
     exercise_key: str | None,
     fps: float = 30.0,
     incam_joints: np.ndarray | None = None,
+    handedness: str | None = None,
 ) -> dict:
     """joints_np: (L, 22, 3) world-space SMPL joints for the clip.
     exercise_key: the winning exercise from analyze_exercises() (timeline["key"]),
@@ -69,21 +71,39 @@ def run_biomechanical_analysis(
     samples one frame per rep (no start/end pair of its own), so this is the
     only place a per-rep duration or the rest between consecutive reps can
     come from. Used by the mobile app's per-rep breakdown modal.
+
+    handedness: the athlete's racket hand, for tennis forehand/backhand (see exercises/stroke_type.py).
+    Their report also carries, per rep, "racket_hand" and "two_handed", plus "excluded_strokes":
+    how many strokes of the other type the clip had (left out of this analysis, not mixed in), and
+    "handedness_mismatch" when the swinging hand disagreed with the athlete's setting.
     """
     if exercise_key is None:
-        return {"exercise": None, "rep_count": 0, "analyses": {}, "reps": []}
+        report = {"exercise": None, "rep_count": 0, "analyses": {}, "reps": []}
+        if stroke_hand_mismatch(joints_np, fps=fps, handedness=handedness):
+            report["handedness_mismatch"] = True  # strokes swung with the other hand: see stroke_hand_mismatch
+        return report
 
-    reps = get_exercise_reps(joints_np, exercise_key, fps=fps, incam_joints=incam_joints)
+    reps = get_exercise_reps(joints_np, exercise_key, fps=fps, incam_joints=incam_joints, handedness=handedness)
     rep_windows = [
         {
             "rep": i,
             "start_sec": round(r["start"] / fps, 2),
             "end_sec": round(r["end"] / fps, 2),
             "duration_sec": round((r["end"] - r["start"]) / fps, 2),
+            **({"racket_hand": r["racket_hand"], "two_handed": r["two_handed"]} if "racket_hand" in r else {}),
         }
         for i, r in enumerate(reps)
     ]
     report = {"exercise": exercise_key, "rep_count": len(reps), "analyses": {}, "reps": rep_windows}
+    defn = EXERCISE_REGISTRY.get(exercise_key)
+    if defn is not None and defn.stroke_type is not None:
+        others = [d.key for d in EXERCISE_REGISTRY.values()
+                  if d.stroke_type not in (None, defn.stroke_type) and d.category == defn.category]
+        report["excluded_strokes"] = {
+            k: len(get_exercise_reps(joints_np, k, fps=fps, incam_joints=incam_joints, handedness=handedness))
+            for k in others
+        }
+        report["handedness_mismatch"] = any(r.get("handedness_mismatch") for r in reps)
     for name, analyzer in _ANALYZERS.items():
         result = analyzer(joints_np, exercise_key, reps, fps)
         if result is not None:

@@ -32,6 +32,7 @@ different places.
 """
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass, field
 
 
@@ -56,7 +57,14 @@ class JointRomCheck:
     # "both": achieved = mean of left and right (bilateral movements, e.g. knees in a squat).
     # "max": achieved = whichever side moved more — for one-sided movements like a racket arm's
     # swing, where averaging in the idle arm only dilutes the number. Handedness-free.
+    # "racket": the arm holding the racket, as the stroke classifier found it (rep["racket_hand"],
+    # exercises/stroke_type.py) — right for a two-handed backhand too, where both arms swing; falls
+    # back to "max" for a rep without one.
     sides: str = "both"
+    # Target for a two-handed stroke (rep["two_handed"], exercises/stroke_type.py) when it differs
+    # from target_rom_deg — the racket arm stays bent and close to the body in a two-handed backhand,
+    # so it swings about half as far as in a one-handed one. None = same target.
+    target_rom_deg_two_handed: float | None = None
 
 
 @dataclass(frozen=True)
@@ -331,27 +339,26 @@ register_rom(ExerciseRomProfile(
 # ═══════════════════════════════════════════════════════════════════════════
 # TENNIS STROKE
 # ═══════════════════════════════════════════════════════════════════════════
-# Same signal/target as padel stroke's swing_rom check above, unchanged —
-# per the user's own reasoning ("tennis and padel strokes are very similar"),
-# this pipeline has no basis to guess a different number for a motion its
-# signals treat identically. Revisit only once real tennis footage suggests
-# otherwise (see padel stroke's own real-footage recalibration history above
-# for what that process looks like).
+# Same signal as padel stroke's swing_rom check above, with its own target
+# from 2026-10-20: swing_rom 52 -> 66.5 and knee_bend 50 -> 76.5, set on the
+# latest coach video (job d9280feb: racket arm 53.5/58.2/58.1deg, knee
+# 29.5/32.8/29.5deg) which read 109% / 61% and, per the user, should read
+# ~85% swing range and ~40% knee bend. Padel stroke keeps its own target.
 register_rom(ExerciseRomProfile(
     exercise_key="tennis_stroke",
     checks=(
         JointRomCheck(
             id="swing_rom", label="Swing range", joint="SHOULDER",
             signal="shoulder_angle", start_selector="start", end_selector="bottom",
-            target_rom_deg=52.0, watch_threshold_pct=70.0, at_risk_threshold_pct=45.0,
+            target_rom_deg=66.5, watch_threshold_pct=70.0, at_risk_threshold_pct=45.0,
             sides="max",
             research=(
-                "Same real-footage calibration as padel stroke (see that exercise's "
-                "registration above and its target_rom_deg history) — this pipeline's "
-                "shoulder_angle signal doesn't distinguish the two motions. On 40 Penn "
-                "Action forehands the median racket-arm swing (37.7deg) reads ~73% at "
-                "this target; those are ~1s broadcast clips from varied angles, so they "
-                "spread widely (quartiles 26-64deg).",
+                "Started from the padel stroke calibration (see that exercise's "
+                "registration above and its target_rom_deg history); tennis has its own "
+                "target since 2026-10-20 (52 -> 66.5, see the comment above this "
+                "registration). On 40 Penn Action forehands the median racket-arm swing "
+                "(37.7deg) reads ~57% at this target; those are ~1s broadcast clips from "
+                "varied angles, so they spread widely (quartiles 26-64deg).",
             ),
             description="How far the racket arm swings via shoulder rotation, from the "
                          "ready stance to the peak of the swing — the stroke's actual "
@@ -374,8 +381,14 @@ register_rom(ExerciseRomProfile(
             id="knee_bend", label="Knee bend", joint="KNEE",
             signal="knee_angle", start_selector="start", end_selector="end",
             measure="window_range",
-            target_rom_deg=50.0, watch_threshold_pct=70.0, at_risk_threshold_pct=45.0,
+            target_rom_deg=76.5, watch_threshold_pct=70.0, at_risk_threshold_pct=45.0,
             research=(
+                "Target raised 50 -> 76.5 on 2026-10-20 as a deliberate strictness choice, "
+                "not from the citation below: the user wants a knee bend of ~30deg to read "
+                "~40% (at risk), since the latest coach video's strokes measured "
+                "29.5/32.8/29.5deg and read 61%. Martin et al.'s figures are maximal-effort, "
+                "3D motion-capture ranges, so a stricter monocular target is defensible. "
+                "Original source: "
                 "Martin C. et al. (2020), 'Influence of the forehand stance on knee "
                 "biomechanics: Implications for potential injury risks in tennis "
                 "players', J Sports Sci, doi:10.1080/02640414.2020.1853335 — 8 advanced "
@@ -386,6 +399,49 @@ register_rom(ExerciseRomProfile(
             description="How much the knees bend and straighten through the stroke — "
                          "loading the legs and driving up into the shot.",
         ),
+    ),
+))
+
+# ═══════════════════════════════════════════════════════════════════════════
+# TENNIS FOREHAND / BACKHAND
+# ═══════════════════════════════════════════════════════════════════════════
+# Same two checks as tennis_stroke, scored separately per stroke type (exercises/stroke_type.py
+# decides which is which). Swing range is measured on the arm that holds the racket (sides="racket")
+# so it's right for left-handers and for two-handed backhands.
+# Forehand keeps tennis_stroke's targets: they were calibrated on forehands (2026-10-20).
+# Backhand targets (2026-10-25) are set relative to the forehand on the same players, so a backhand
+# swung as fully as the player's forehand scores about the same. Measured with this pipeline on the
+# THETIS dataset (Gourgari et al. 2013; 55 players, beginners and experienced, filmed from the front
+# shadow-swinging without a ball), flat/topspin strokes, median racket-arm swing: forehand 47.2deg
+# (n=91), one-handed backhand 62.0deg (n=45, x1.31), two-handed backhand 31.6deg (n=39, x0.67) ->
+# 66.5 x 1.31 = 87 and 66.5 x 0.67 = 44.5. Knee bend was about the same in all three (forehand
+# 29.1deg, one-handed 26.4, two-handed 27.7), so backhands keep the forehand's knee target.
+_TENNIS_STROKE_CHECKS = {c.id: c for c in ROM_PROFILES["tennis_stroke"].checks}
+
+register_rom(ExerciseRomProfile(
+    exercise_key="tennis_forehand",
+    checks=(
+        dataclasses.replace(_TENNIS_STROKE_CHECKS["swing_rom"], sides="racket"),
+        _TENNIS_STROKE_CHECKS["knee_bend"],
+    ),
+))
+
+BACKHAND_SWING_TARGET_DEG = 87.0             # one-handed
+BACKHAND_SWING_TARGET_TWO_HANDED_DEG = 44.5  # two-handed
+register_rom(ExerciseRomProfile(
+    exercise_key="tennis_backhand",
+    checks=(
+        dataclasses.replace(
+            _TENNIS_STROKE_CHECKS["swing_rom"], sides="racket", target_rom_deg=BACKHAND_SWING_TARGET_DEG,
+            target_rom_deg_two_handed=BACKHAND_SWING_TARGET_TWO_HANDED_DEG,
+            research=("Calibrated relative to the forehand target on the same players (THETIS dataset, "
+                      "Gourgari et al. 2013): one-handed backhands swing the racket arm about 1.3x as far "
+                      "as forehands, two-handed about 0.7x, so the targets are 87deg and 44.5deg — a "
+                      "backhand swung as fully as the player's forehand reads about the same.",),
+            description="How far the racket arm swings via shoulder rotation, from the backswing "
+                         "across the body to the finish on the racket side.",
+        ),
+        _TENNIS_STROKE_CHECKS["knee_bend"],
     ),
 ))
 

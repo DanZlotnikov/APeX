@@ -258,6 +258,7 @@ def process_video_two_panel(
     models: "worker.Models", video_path: str, output_dir: Path,
     cancel_check: "worker.Callable[[], bool] | None" = None,
     sport_key: str | None = None,
+    handedness: str | None = None,
 ) -> dict:
     """Runs the full pipeline on a local video path and writes a two-panel
     (original-cropped | skeleton+counter) video to output_dir/two_panel.mp4,
@@ -273,6 +274,9 @@ def process_video_two_panel(
     sport_key: passed straight through to worker.run_core_pipeline /
     analyze_exercises — the athlete's effective main sport, or None. See
     supabase_client.get_effective_sport().
+
+    handedness: passed straight through too — the athlete's racket hand or None. See
+    supabase_client.get_handedness().
     """
     import json
 
@@ -292,6 +296,7 @@ def process_video_two_panel(
 
     r = worker.run_core_pipeline(
         models, video_path, preprocess_dir, log_prefix="[server]", cancel_check=cancel_check, sport_key=sport_key,
+        handedness=handedness,
     )
 
     # Left panel: original frames, no overlay. Normally cropped to the

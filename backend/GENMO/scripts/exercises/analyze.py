@@ -8,6 +8,8 @@ file.
 """
 from __future__ import annotations
 
+import dataclasses
+
 import numpy as np
 
 from . import exercises as _exercises_data  # noqa: F401  registers every ExerciseDefinition on import
@@ -16,11 +18,14 @@ from .definitions import EXERCISE_REGISTRY, BodyOrientation, CountingStrategy, e
 from .movement import apply_movement_rule
 from .orientation import classify_orientation
 from .signals import compute_signals, flight_height_signals, smooth_signals
+from .stroke_type import classify_strokes
 
 MIN_FRAMES = 15
 
 # Temporary tennis-only mode: only these keys are ever evaluated. None restores every registered exercise.
-ENABLED_EXERCISE_KEYS: frozenset[str] | None = frozenset({"tennis_stroke"})
+# Forehand and backhand replaced the single tennis_stroke on 2026-10-25 (supabase migration 030 adds them
+# to public.exercises, which video_jobs.exercise_type must reference — apply it before deploying this).
+ENABLED_EXERCISE_KEYS: frozenset[str] | None = frozenset({"tennis_forehand", "tennis_backhand"})
 
 
 def _corroboration_mask(defn, signals) -> np.ndarray | None:
@@ -106,9 +111,25 @@ def _merge_close_reps(defn, reps: list[dict], times: np.ndarray, signal: np.ndar
     ]
 
 
-def _run_exercise(defn, signals: dict, times: np.ndarray, flight_signals: tuple[np.ndarray, np.ndarray] | None = None) -> list[dict]:
+def _classify_stroke_types(defn, reps: list[dict], signals: dict, times: np.ndarray, handedness: str | None) -> list[dict]:
+    """See ExerciseDefinition.stroke_type: annotates every candidate stroke with its classification
+    (racket_hand is also what the swing-range check measures). Runs before the exclusion/requirement
+    checks on purpose: telling a takeback or a return to ready from a stroke needs the swings around
+    it, including a stroke those checks then reject (e.g. a deep-lunge slice under the squat gate)."""
+    if defn.stroke_type is None:
+        return reps
+    return [
+        {**r, "stroke": call["stroke"], "racket_hand": call["racket_hand"], "two_handed": call["two_handed"],
+         "handedness_mismatch": call["handedness_mismatch"], "confidence": call["confidence"]}
+        for r, call in zip(reps, classify_strokes(reps, signals, times, handedness))
+    ]
+
+
+def _run_exercise(defn, signals: dict, times: np.ndarray, flight_signals: tuple[np.ndarray, np.ndarray] | None = None,
+                  handedness: str | None = None) -> list[dict]:
     """Dispatches to the counting engine matching defn.counting_strategy,
     then applies exclusion_check (if any) — see its docstring.
+    handedness: the athlete's racket hand ("left"/"right"/None), for stroke_type exercises.
     """
     if defn.counting_strategy == CountingStrategy.THRESHOLD_CROSSING:
         reps = count_threshold_crossing(
@@ -173,8 +194,12 @@ def _run_exercise(defn, signals: dict, times: np.ndarray, flight_signals: tuple[
 
     reps = _merge_close_reps(defn, reps, times, signals[defn.primary_signal])
     reps = apply_movement_rule(defn, reps, signals, times)
+    reps = _classify_stroke_types(defn, reps, signals, times, handedness)
     reps = _apply_exclusion_check(defn, reps, signals)
-    return _apply_requirement_check(defn, reps, signals)
+    reps = _apply_requirement_check(defn, reps, signals)
+    if defn.stroke_type is not None:
+        reps = [r for r in reps if r["stroke"] == defn.stroke_type]
+    return reps
 
 
 def _resolve_standing(signals: dict, reps_by_key: dict[str, list], defs: list) -> dict[str, list]:
@@ -207,9 +232,16 @@ def _resolve_by_priority(signals: dict, reps_by_key: dict[str, list], defs: list
     double-counting, until/unless it earns its own resolver like
     _resolve_standing above.
     """
-    for defn in defs:  # already sorted by descending priority
+    # Already sorted by descending priority. A forehand and a backhand in the same clip: the type
+    # with more strokes wins, a tie goes to the type classified more confidently (stroke_type.py);
+    # the other type's strokes aren't counted as anything.
+    for defn in defs:
         if reps_by_key.get(defn.key):
-            return {d.key: (reps_by_key.get(d.key, []) if d.key == defn.key else []) for d in defs}
+            peers = [defn] if defn.stroke_type is None else [
+                d for d in defs if d.stroke_type is not None and d.priority == defn.priority]
+            winner = max(peers, key=lambda d: (len(reps_by_key.get(d.key, [])),
+                                               sum(r.get("confidence", 0.0) for r in reps_by_key.get(d.key, []))))
+            return {d.key: (reps_by_key.get(d.key, []) if d.key == winner.key else []) for d in defs}
     return {d.key: [] for d in defs}
 
 
@@ -228,7 +260,7 @@ def _flight_signals(incam_joints: np.ndarray | None, times: np.ndarray) -> tuple
 
 def analyze_exercises(
     joints: np.ndarray, fps: float = 30.0, incam_joints: np.ndarray | None = None,
-    sport_key: str | None = None,
+    sport_key: str | None = None, handedness: str | None = None,
 ) -> dict[str, int]:
     """joints: (L, 22, 3) world-space SMPL joints for one clip.
     incam_joints: optional (L, 22, 3) in-camera (non-world-grounded) SMPL
@@ -245,6 +277,8 @@ def analyze_exercises(
         competing for the same clip. "general_fitness"/None is a no-op —
         every exercise stays eligible, same as before this param existed
         ("whatever comes out during analysis").
+    handedness: the athlete's racket hand (profiles.handedness: "left"/"right") or None; only
+        tennis forehand/backhand use it (see stroke_type.py).
 
     Returns a rep count per exercise KEY for every registered exercise
     (0 for anything not detected) — a stable, predictable shape regardless
@@ -274,7 +308,7 @@ def analyze_exercises(
     if not defs:
         return zero_counts
 
-    reps_by_key = {defn.key: _run_exercise(defn, signals, times, flight_signals) for defn in defs}
+    reps_by_key = {defn.key: _run_exercise(defn, signals, times, flight_signals, handedness) for defn in defs}
     resolver = _RESOLVERS.get(orientation, _resolve_by_priority)
     resolved = resolver(signals, reps_by_key, defs)
 
@@ -284,7 +318,8 @@ def analyze_exercises(
     return counts
 
 
-def get_exercise_reps(joints: np.ndarray, exercise_key: str, fps: float = 30.0, incam_joints: np.ndarray | None = None) -> list[dict]:
+def get_exercise_reps(joints: np.ndarray, exercise_key: str, fps: float = 30.0, incam_joints: np.ndarray | None = None,
+                      handedness: str | None = None) -> list[dict]:
     """Raw {"start", "bottom", "end"} frame-index windows for every rep of
     the given exercise key, exactly as its counting engine produced them —
     the same reps analyze_exercises()/compute_rep_timeline() already derive
@@ -299,10 +334,29 @@ def get_exercise_reps(joints: np.ndarray, exercise_key: str, fps: float = 30.0, 
     raw = compute_signals(joints)
     signals = smooth_signals(raw, times)
     flight_signals = _flight_signals(incam_joints, times)
-    return _run_exercise(EXERCISE_REGISTRY[exercise_key], signals, times, flight_signals)
+    return _run_exercise(EXERCISE_REGISTRY[exercise_key], signals, times, flight_signals, handedness)
 
 
-def compute_rep_timeline(joints: np.ndarray, counts: dict[str, int], fps: float = 30.0, incam_joints: np.ndarray | None = None) -> dict:
+def stroke_hand_mismatch(joints: np.ndarray, fps: float = 30.0, handedness: str | None = None) -> bool:
+    """True if any tennis stroke in the clip was swung faster by the hand that ISN'T the athlete's
+    playing hand. Those strokes are left unclassified (stroke_type.py), so when it's all of them the
+    clip has no forehand or backhand at all — this lets the report say why (wrong Playing hand
+    setting, most likely) instead of just "nothing detected". False when no hand is set or tennis
+    strokes aren't enabled."""
+    stroke_keys = [k for k, d in EXERCISE_REGISTRY.items() if d.stroke_type is not None]
+    if handedness not in ("left", "right") or not stroke_keys or joints.shape[0] < MIN_FRAMES:
+        return False
+    if ENABLED_EXERCISE_KEYS is not None and not set(stroke_keys) & ENABLED_EXERCISE_KEYS:
+        return False
+    times = np.arange(joints.shape[0]) / fps
+    signals = smooth_signals(compute_signals(joints), times)
+    # Every stroke the shared detector found, before any forehand/backhand filtering.
+    candidates = _run_exercise(dataclasses.replace(EXERCISE_REGISTRY[stroke_keys[0]], stroke_type=None), signals, times)
+    return any(c["handedness_mismatch"] for c in classify_strokes(candidates, signals, times, handedness))
+
+
+def compute_rep_timeline(joints: np.ndarray, counts: dict[str, int], fps: float = 30.0, incam_joints: np.ndarray | None = None,
+                         handedness: str | None = None) -> dict:
     """Per-frame cumulative rep count for whichever exercise won
     analyze_exercises(), plus which exercise key is active (for the HUD
     label / grip-stabilization hook in worker.py). Re-derives the winning
@@ -324,7 +378,7 @@ def compute_rep_timeline(joints: np.ndarray, counts: dict[str, int], fps: float 
     raw = compute_signals(joints)
     signals = smooth_signals(raw, times)
     flight_signals = _flight_signals(incam_joints, times)
-    reps = _run_exercise(EXERCISE_REGISTRY[active_key], signals, times, flight_signals)
+    reps = _run_exercise(EXERCISE_REGISTRY[active_key], signals, times, flight_signals, handedness)
 
     cumulative = np.zeros(L, dtype=int)
     c, ei = 0, 0

@@ -198,6 +198,10 @@ class ExerciseDefinition:
     # checks the window's own range instead, which doesn't care when within
     # the rep the movement happened.
     requirement_check: tuple[str, str, str] | None = None
+    # Tennis groundstrokes only: "forehand" or "backhand". Each detected stroke is classified
+    # (stroke_type.py) and kept only if it's this type, so the two exercises share one detector but
+    # never each other's strokes. None = no such filter.
+    stroke_type: str | None = None
     priority: int = 0
     # Mirrors Supabase's exercise_categories.key (see
     # supabase/migrations/026_exercise_categories.sql /

@@ -191,6 +191,7 @@ def run_core_pipeline(
     log_prefix: str = "[pipeline]",
     cancel_check: Callable[[], bool] | None = None,
     sport_key: str | None = None,
+    handedness: str | None = None,
 ) -> dict:
     """Stages 1-3 (preprocess, assemble, GEM inference) + exercise detection
     + biomechanical analysis — the full video -> pose -> exercise ->
@@ -214,6 +215,9 @@ def run_core_pipeline(
         exercises (e.g. padel vs. tennis stroke). None/"general_fitness" is
         a no-op — every exercise stays eligible, unchanged from before this
         param existed.
+
+    handedness: the athlete's racket hand ("left"/"right", profiles.handedness) or None — used to
+        tell tennis forehands from backhands (exercises/stroke_type.py).
 
     Returns a dict: kp2d, bbx_xys, pred, joints_np, counts, timeline,
     analysis (see biomechanics.run_biomechanical_analysis), L, W, H,
@@ -328,9 +332,9 @@ def run_core_pipeline(
     joints = get_normalized_global_joints(models.body_model, pred["body_params_global"])
     joints_np = joints.numpy()
     incam_joints_np = get_incam_joints(models.body_model, pred["body_params_incam"]).numpy()
-    counts = analyze_exercises(joints_np, fps=30.0, incam_joints=incam_joints_np, sport_key=sport_key)
-    timeline = compute_rep_timeline(joints_np, counts, fps=30.0, incam_joints=incam_joints_np)
-    analysis = run_biomechanical_analysis(joints_np, timeline["key"], fps=30.0, incam_joints=incam_joints_np)
+    counts = analyze_exercises(joints_np, fps=30.0, incam_joints=incam_joints_np, sport_key=sport_key, handedness=handedness)
+    timeline = compute_rep_timeline(joints_np, counts, fps=30.0, incam_joints=incam_joints_np, handedness=handedness)
+    analysis = run_biomechanical_analysis(joints_np, timeline["key"], fps=30.0, incam_joints=incam_joints_np, handedness=handedness)
     # Second opinion, independent of the legacy resolver above -- see
     # exercises/ml_classifier.py. Purely additive: analysis["exercise"] (the
     # legacy pipeline's winning key, used everywhere downstream today) is

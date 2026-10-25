@@ -17,6 +17,7 @@ from __future__ import annotations
 import dataclasses
 
 from .definitions import (
+    EXERCISE_REGISTRY,
     BodyOrientation,
     CountingStrategy,
     ExerciseDefinition,
@@ -589,6 +590,30 @@ register(ExerciseDefinition(
     # app's own "which sport was that?" prompt exists to resolve.
     priority=60,
     category="tennis",
+))
+
+# ═══════════════════════════════════════════════════════════════════════════
+# TENNIS FOREHAND / BACKHAND
+# ═══════════════════════════════════════════════════════════════════════════
+# Replace tennis_stroke (2026-10-25): the same stroke detector, then every stroke is classified as a
+# forehand or a backhand from the motion (exercises/stroke_type.py) and each exercise keeps only its
+# own, so they're scored against their own targets and tracked separately. A clip is reported as
+# whichever type it has more of (analyze.py's resolver); strokes of the other type are left out of
+# its analysis and counted in the report's "excluded_strokes". tennis_stroke stays registered only
+# for the sessions already saved under it.
+_TENNIS_STROKE = EXERCISE_REGISTRY["tennis_stroke"]
+register(dataclasses.replace(
+    _TENNIS_STROKE,
+    key="tennis_forehand", label="Tennis Forehand", short_label="FOREHAND",
+    description="A tennis forehand — the racket swings from the racket-hand side across the body.",
+    stroke_type="forehand",
+))
+register(dataclasses.replace(
+    _TENNIS_STROKE,
+    key="tennis_backhand", label="Tennis Backhand", short_label="BACKHAND",
+    description="A tennis backhand, one- or two-handed — the racket swings from the other side of "
+                "the body toward the racket-hand side.",
+    stroke_type="backhand",
 ))
 
 # ═══════════════════════════════════════════════════════════════════════════

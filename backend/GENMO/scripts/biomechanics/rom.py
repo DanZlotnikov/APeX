@@ -52,14 +52,22 @@ def _evaluate_check(joints_np: np.ndarray, reps: list[dict], check: JointRomChec
             l_end, r_end = side_values(joints_np[end_idx], check.signal)
             l_deg = abs(l_start - l_end)
             r_deg = abs(r_start - r_end)
-        achieved_deg = max(l_deg, r_deg) if check.sides == "max" else (l_deg + r_deg) / 2.0
+        if check.sides == "racket" and rep.get("racket_hand") in ("left", "right"):
+            achieved_deg = l_deg if rep["racket_hand"] == "left" else r_deg
+        elif check.sides in ("max", "racket"):  # "racket" without a known racket hand: the arm that moved more
+            achieved_deg = max(l_deg, r_deg)
+        else:
+            achieved_deg = (l_deg + r_deg) / 2.0
 
-        rom_pct = max(0.0, min(130.0, achieved_deg / max(check.target_rom_deg, 1e-6) * 100.0))
+        target = check.target_rom_deg
+        if rep.get("two_handed") and check.target_rom_deg_two_handed is not None:
+            target = check.target_rom_deg_two_handed
+        rom_pct = max(0.0, min(130.0, achieved_deg / max(target, 1e-6) * 100.0))
         severity = _severity(rom_pct, check.watch_threshold_pct, check.at_risk_threshold_pct)
         rep_results.append({
             "rep": i, "start_frame": int(start_idx), "end_frame": int(end_idx),
             "l_deg": round(l_deg, 2), "r_deg": round(r_deg, 2),
-            "achieved_deg": round(achieved_deg, 2),
+            "achieved_deg": round(achieved_deg, 2), "target_rom_deg": target,
             "rom_pct": round(rom_pct, 2),
             "severity": severity,
         })
